@@ -9,13 +9,13 @@ from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-BRAND_NAME = "SRI RAKSHA HOSPITAL"
+BRAND_NAME = "AYU POLYCLINIC"
 BRAND_TAGLINE = "POLYCLINIC & DIAGNOSTICS"
 
 
 @lru_cache(maxsize=1)
 def _frontend_logo_path():
-    """Return the approved black Sri Raksha Hospital print logo for offline/PyInstaller builds."""
+    """Return the approved black Ayu Polyclinic print logo for offline/PyInstaller builds."""
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     meipass = getattr(__import__("sys"), "_MEIPASS", "")
     candidates = [
@@ -40,7 +40,7 @@ def _footer_symbol_path():
 
 
 def draw_pdf_brand_header(pdf, left_margin: float, top_y: float, title_width: float = 120):
-    """Draw the approved Sri Raksha Hospital logo/address header used by every PDF export."""
+    """Draw the approved Ayu Polyclinic logo/address header used by every PDF export."""
     logo_path = _frontend_logo_path()
     if logo_path:
         try:
@@ -131,7 +131,7 @@ def generate_pdf(patient_name: str, doc_type: str, ocr_text: str, date_str: str 
 
     class HospitalDocumentPDF(FPDF):
         def footer(self):
-            # Unified approved Sri Raksha Hospital footer used by dashboard and exported reports.
+            # Unified approved Ayu Polyclinic footer used by dashboard and exported reports.
             self.set_draw_color(0, 0, 0)
             self.set_line_width(0.45)
             self.line(15, 280.2, 95.5, 280.2)
@@ -146,7 +146,7 @@ def generate_pdf(patient_name: str, doc_type: str, ocr_text: str, date_str: str 
             self.set_font("Helvetica", "I", 7.5)
             self.set_text_color(0, 0, 0)
             self.set_x(15)
-            self.cell(82, 5, _pdf_clean("Thank you for choosing Sri Raksha Hospital."), align="L")
+            self.cell(82, 5, _pdf_clean("Thank you for choosing Ayu Polyclinic."), align="L")
             self.set_x(113)
             # "Valid for 7 days or 2 times" is prescription/report-refill language --
             # meaningless on an administrative export like the dashboard, so it's
@@ -197,7 +197,7 @@ def generate_pdf(patient_name: str, doc_type: str, ocr_text: str, date_str: str 
         pdf.cell(105, 6, _pdf_clean(document_title), ln=True)
         pdf.set_x(left_margin)
         pdf.set_font("Helvetica", "", 8.5)
-        pdf.cell(105, 5, _pdf_clean("Sri Raksha Hospital | Pharmacy | Diagnostic"))
+        pdf.cell(105, 5, _pdf_clean("Ayu Polyclinic | Pharmacy | Diagnostic"))
 
         try:
             generated_dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
@@ -400,7 +400,7 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
             self.set_font("Helvetica", "I", 7.5)
             self.set_text_color(0, 0, 0)
             self.set_x(15)
-            self.cell(82, 5, _clean("Thank you for choosing Sri Raksha Hospital."), align="L")
+            self.cell(82, 5, _clean("Thank you for choosing Ayu Polyclinic."), align="L")
             self.set_x(113)
             self.cell(82, 5, _clean(f"Page {self.page_no()} of {{nb}}"), align="R")
 

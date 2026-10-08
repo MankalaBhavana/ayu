@@ -13,9 +13,7 @@ import security
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
-FRONTEND_DIST = os.path.join(PROJECT_ROOT, "frontend_code", "dist")
-if not os.path.isdir(FRONTEND_DIST):
-    FRONTEND_DIST = os.path.join(PROJECT_ROOT, "frontend", "dist")
+FRONTEND_DIST = os.path.join(PROJECT_ROOT, "frontend", "dist")
 
 app = FastAPI(title="HospAI API")
 
