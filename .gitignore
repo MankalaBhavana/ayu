@@ -1,0 +1,31 @@
+# Environment secrets — never commit real credentials
+.env
+*.env
+!.env.example
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node
+node_modules/
+
+# frontend/dist/ is intentionally committed: backend/main.py serves it
+# directly, so the repo runs out of the box with just the backend started.
+# frontend_code/dist/ is the build workspace's copy of the same output
+# before it gets synced to frontend/dist/ — redundant, so kept out of git.
+frontend_code/dist/
+
+# Local database dumps and rebuild backups — contain real data, never commit
+backups/
+
+# OS/editor cruft
+.DS_Store
+Thumbs.db
+frontend_code/public.zip
+*.db
+
+# Runtime logs from local uvicorn/cloudflared launches
+*.log
