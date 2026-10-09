@@ -39,37 +39,86 @@ def _footer_symbol_path():
     return next((path for path in candidates if path and os.path.exists(path)), None)
 
 
-def draw_pdf_brand_header(pdf, left_margin: float, top_y: float, title_width: float = 120):
+def draw_pdf_brand_header(pdf, left_margin: float, top_y: float, title_width: float = 120, is_prescription: bool = False):
     """Draw the approved Ayu Polyclinic logo/address header used by every PDF export."""
     logo_path = _frontend_logo_path()
-    if logo_path:
-        try:
-            pdf.image(logo_path, x=left_margin, y=top_y, w=82)
-        except Exception:
-            logo_path = None
-    if not logo_path:
-        pdf.set_xy(left_margin, top_y + 3)
-        pdf.set_font("Helvetica", "B", 15)
+    
+    if is_prescription:
+        max_h = 28
+        if logo_path:
+            try:
+                from PIL import Image
+                with Image.open(logo_path) as img:
+                    img_w, img_h = img.size
+                max_w = 82
+                ratio = min(max_w / img_w, max_h / img_h)
+                final_w = img_w * ratio
+                final_h = img_h * ratio
+                pdf.image(logo_path, x=left_margin, y=top_y, w=final_w, h=final_h)
+            except Exception:
+                pass
+        
+        address_x = 130
+        pdf.set_xy(address_x, top_y)
+        pdf.set_font("Helvetica", "B", 8.1)
         pdf.set_text_color(0, 0, 0)
-        pdf.cell(82, 12, BRAND_NAME)
+        for line in (
+            "H.NO.1-2-288/23/2",
+            "SBH COLONY, DOMALGUDA",
+            "HYDERABAD, TELANGANA 500029",
+            "Ph: 9949237676, 7032774699",
+        ):
+            pdf.cell(65, 4.5, line, ln=True)
+            pdf.set_x(address_x)
 
-    address_x = 130
-    pdf.set_xy(address_x, top_y)
-    pdf.set_font("Helvetica", "B", 8.1)
-    pdf.set_text_color(0, 0, 0)
-    for line in (
-        "H.NO.1-2-288/23/2",
-        "SBH COLONY, DOMALGUDA",
-        "HYDERABAD, TELANGANA 500029",
-        "Ph: 9949237676, 7032774699",
-    ):
-        pdf.cell(65, 4.5, line, ln=True)
-        pdf.set_x(address_x)
+        pdf.set_draw_color(0, 0, 0)
+        pdf.set_line_width(0.65)
+        pdf.line(left_margin, top_y + 33, 195, top_y + 33)
+        pdf.set_text_color(0, 0, 0)
+    else:
+        max_h = 24
+        # For standard reports, we draw the logo icon, then text AYU POLYCLINIC next to it
+        if logo_path:
+            try:
+                from PIL import Image
+                with Image.open(logo_path) as img:
+                    img_w, img_h = img.size
+                ratio = max_h / img_h
+                final_w = img_w * ratio
+                pdf.image(logo_path, x=left_margin, y=top_y, w=final_w, h=max_h)
+            except Exception:
+                final_w = 0
+        else:
+            final_w = 0
+            
+        text_x = left_margin + final_w + 5
+        
+        # Draw vertical grey separator line
+        if final_w > 0:
+            pdf.set_draw_color(180, 180, 180)
+            pdf.set_line_width(0.5)
+            # The line spans the height of the text block
+            pdf.line(left_margin + final_w + 2.5, top_y + 3, left_margin + final_w + 2.5, top_y + 22)
 
-    pdf.set_draw_color(0, 0, 0)
-    pdf.set_line_width(0.65)
-    pdf.line(left_margin, top_y + 33, 195, top_y + 33)
-    pdf.set_text_color(0, 0, 0)
+        # AYU Text
+        pdf.set_xy(text_x, top_y + 3)
+        pdf.set_font("Helvetica", "B", 30)
+        pdf.set_text_color(30, 86, 122)
+        pdf.cell(100, 11, "AYU", ln=True)
+        
+        # POLYCLINIC Text
+        pdf.set_xy(text_x, top_y + 14)
+        pdf.set_font("Helvetica", "B", 14)
+        pdf.set_text_color(128, 128, 128)
+        pdf.cell(100, 8, "POLYCLINIC", ln=True)
+
+        # Bottom thick blue divider line
+        pdf.set_draw_color(30, 86, 122)
+        pdf.set_line_width(1.5)
+        line_y = top_y + max_h + 3
+        pdf.line(left_margin, line_y, 210 - left_margin, line_y)
+        pdf.set_text_color(0, 0, 0)
+        pdf.set_y(line_y + 2)
 
 
 def parse_markdown_line(line):
@@ -128,11 +177,14 @@ def generate_pdf(patient_name: str, doc_type: str, ocr_text: str, date_str: str 
         date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
 
     is_patient_document = (doc_type or "").strip().lower() not in _NON_PATIENT_DOC_TYPES
+    is_prescription = "prescription" in (doc_type or "").lower()
 
     class HospitalDocumentPDF(FPDF):
         def footer(self):
-            # Unified approved Ayu Polyclinic footer used by dashboard and exported reports.
-            self.set_draw_color(0, 0, 0)
+            if is_prescription:
+                self.set_draw_color(0, 0, 0)
+            else:
+                self.set_draw_color(30, 86, 122)
             self.set_line_width(0.45)
             self.line(15, 280.2, 95.5, 280.2)
             self.line(114.5, 280.2, 195.0, 280.2)
@@ -143,15 +195,17 @@ def generate_pdf(patient_name: str, doc_type: str, ocr_text: str, date_str: str 
                 except Exception:
                     pass
             self.set_y(-13.8)
-            self.set_font("Helvetica", "I", 7.5)
-            self.set_text_color(0, 0, 0)
+            self.set_font("Helvetica", "I", 8.5 if not is_prescription else 7.5)
+            if not is_prescription:
+                self.set_text_color(30, 86, 122)
+            else:
+                self.set_text_color(0, 0, 0)
             self.set_x(15)
-            self.cell(82, 5, _pdf_clean("Thank you for choosing Ayu Polyclinic."), align="L")
+            self.cell(82, 5, _pdf_clean("Thank you for choosing AYU POLYCLINIC."), align="L")
             self.set_x(113)
-            # "Valid for 7 days or 2 times" is prescription/report-refill language --
-            # meaningless on an administrative export like the dashboard, so it's
-            # skipped there rather than shown on every document regardless of type.
-            if is_patient_document:
+            if not is_prescription:
+                self.cell(82, 5, _pdf_clean(f"Page {self.page_no()} of {{nb}}"), align="R")
+            elif is_patient_document:
                 self.cell(82, 5, _pdf_clean("Valid for 7 days or 2 times."), align="R")
 
     def _title_for_doc(value: str) -> str:
@@ -190,11 +244,15 @@ def generate_pdf(patient_name: str, doc_type: str, ocr_text: str, date_str: str 
         pdf.set_text_color(0, 0, 0)
 
     def _draw_document_header():
-        draw_pdf_brand_header(pdf, left_margin, 8, title_width=92)
+        draw_pdf_brand_header(pdf, left_margin, 8, title_width=92, is_prescription=is_prescription)
         pdf.set_xy(left_margin, 45)
-        pdf.set_font("Helvetica", "B", 13)
-        pdf.set_text_color(0, 0, 0)
+        pdf.set_font("Helvetica", "B", 15)
+        if not is_prescription:
+            pdf.set_text_color(30, 86, 122)
+        else:
+            pdf.set_text_color(0, 0, 0)
         pdf.cell(105, 6, _pdf_clean(document_title), ln=True)
+        pdf.set_text_color(0, 0, 0)
         pdf.set_x(left_margin)
         pdf.set_font("Helvetica", "", 8.5)
         pdf.cell(105, 5, _pdf_clean("Ayu Polyclinic | Pharmacy | Diagnostic"))
@@ -222,11 +280,19 @@ def generate_pdf(patient_name: str, doc_type: str, ocr_text: str, date_str: str 
     def _section(title: str):
         _ensure_space(15)
         pdf.ln(2)
-        pdf.set_fill_color(231, 247, 250)
-        pdf.set_draw_color(190, 222, 233)
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.set_text_color(11, 95, 118)
-        pdf.cell(effective_width, 8, _pdf_clean(title), border=1, fill=True, ln=True)
+        if is_prescription:
+            pdf.set_fill_color(231, 247, 250)
+            pdf.set_draw_color(190, 222, 233)
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.set_text_color(11, 95, 118)
+            pdf.cell(effective_width, 8, _pdf_clean(title), border=1, fill=True, ln=True)
+        else:
+            pdf.set_fill_color(30, 86, 122)
+            pdf.set_draw_color(30, 86, 122)
+            pdf.set_font("Helvetica", "B", 11)
+            pdf.set_text_color(255, 255, 255)
+            # Add some padding manually for non-prescription
+            pdf.cell(effective_width, 8, "  " + _pdf_clean(title), border=1, fill=True, ln=True)
         pdf.set_text_color(0, 0, 0)
 
     def _paragraph(text: str):
@@ -386,7 +452,7 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
 
     class ReportPDF(FPDF):
         def footer(self):
-            self.set_draw_color(0, 0, 0)
+            self.set_draw_color(30, 86, 122)
             self.set_line_width(0.45)
             self.line(15, 280.2, 95.5, 280.2)
             self.line(114.5, 280.2, 195.0, 280.2)
@@ -397,10 +463,10 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
                 except Exception:
                     pass
             self.set_y(-13.8)
-            self.set_font("Helvetica", "I", 7.5)
-            self.set_text_color(0, 0, 0)
+            self.set_font("Helvetica", "I", 8.5)
+            self.set_text_color(30, 86, 122)
             self.set_x(15)
-            self.cell(82, 5, _clean("Thank you for choosing Ayu Polyclinic."), align="L")
+            self.cell(82, 5, _clean("Thank you for choosing AYU POLYCLINIC."), align="L")
             self.set_x(113)
             self.cell(82, 5, _clean(f"Page {self.page_no()} of {{nb}}"), align="R")
 
@@ -421,14 +487,66 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
             pdf.add_page()
             pdf.set_y(15)
 
+    def _draw_icon(pdf, icon_type, x, y, size=4):
+        pdf.set_fill_color(255, 255, 255)
+        pdf.set_draw_color(255, 255, 255)
+        pdf.set_line_width(0.3)
+        if "dashboard" in icon_type.lower():
+            # bar chart
+            pdf.rect(x, y + size*0.4, size*0.25, size*0.6, style="F")
+            pdf.rect(x + size*0.4, y + size*0.1, size*0.25, size*0.9, style="F")
+            pdf.rect(x + size*0.8, y - size*0.2, size*0.25, size*1.2, style="F")
+        elif "operation" in icon_type.lower():
+            # cog / gear
+            try:
+                pdf.ellipse(x, y, size, size, style="F")
+                pdf.set_fill_color(30, 86, 122)
+                pdf.ellipse(x + size*0.25, y + size*0.25, size*0.5, size*0.5, style="F")
+                pdf.set_fill_color(255, 255, 255)
+                # gear teeth approximation
+                pdf.rect(x + size*0.35, y - size*0.15, size*0.3, size*1.3, style="F")
+                pdf.rect(x - size*0.15, y + size*0.35, size*1.3, size*0.3, style="F")
+                pdf.set_fill_color(30, 86, 122)
+                pdf.ellipse(x + size*0.25, y + size*0.25, size*0.5, size*0.5, style="F")
+            except:
+                pdf.ellipse(x, y, size, size, style="F")
+        elif "revenue" in icon_type.lower():
+            # circle with rupee symbol approximation (R)
+            try:
+                pdf.ellipse(x, y, size, size, style="D")
+                pdf.set_font("Helvetica", "B", size * 1.5)
+                pdf.set_text_color(255, 255, 255)
+                pdf.set_xy(x + size*0.05, y)
+                pdf.cell(size, size*0.8, "R", align="C")
+            except:
+                pdf.ellipse(x, y, size, size, style="F")
+        elif "payment" in icon_type.lower():
+            # credit card
+            pdf.rect(x, y + size*0.1, size*1.2, size*0.8, style="F")
+            pdf.set_draw_color(30, 86, 122)
+            pdf.set_line_width(0.5)
+            pdf.line(x, y + size*0.35, x + size*1.2, y + size*0.35)
+        else:
+            # default circle
+            try:
+                pdf.ellipse(x + size*0.25, y + size*0.25, size*0.5, size*0.5, style="F")
+            except:
+                pdf.rect(x, y, size, size, style="F")
+
     def _section(title: str):
         _ensure_space(15)
-        pdf.ln(2)
-        pdf.set_fill_color(231, 247, 250)
-        pdf.set_draw_color(190, 222, 233)
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.set_text_color(11, 95, 118)
-        pdf.cell(effective_width, 8, _clean(title), border=1, fill=True, ln=True)
+        pdf.ln(3)
+        pdf.set_fill_color(30, 86, 122)
+        pdf.set_draw_color(30, 86, 122)
+        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_text_color(255, 255, 255)
+        
+        y_before = pdf.get_y()
+        pdf.cell(effective_width, 8, "        " + _clean(title), border=1, fill=True, ln=True)
+        
+        # draw icon manually
+        _draw_icon(pdf, title, left_margin + 3.5, y_before + 2.0, size=4)
+        
         pdf.set_text_color(0, 0, 0)
 
     def _cell_label_value(label: str, value: str, x: float, y: float, w: float, h: float = 12):
@@ -475,13 +593,15 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
         col_widths = [narrow_w if n else wide_w for n in narrow]
 
         _ensure_space(8)
-        pdf.set_font("Helvetica", "B", 8)
-        pdf.set_fill_color(241, 248, 252)
-        pdf.set_draw_color(215, 226, 236)
+        pdf.set_font("Helvetica", "B", 9)
+        pdf.set_fill_color(229, 239, 245)
+        pdf.set_draw_color(215, 230, 240)
+        pdf.set_text_color(30, 86, 122)
         for h, w in zip(headers, col_widths):
             pdf.cell(w, 7, _clean(h)[:30], border=1, fill=True)
+        pdf.set_text_color(0, 0, 0)
         pdf.ln(7)
-        pdf.set_font("Helvetica", "", 8)
+        pdf.set_font("Helvetica", "", 9)
         for row in rows:
             cell_texts = [_clean(row[i] if i < len(row) else "") for i in range(col_count)]
             line_counts = [max(1, len(pdf.multi_cell(col_widths[i], 4, text, border=0, dry_run=True, output="LINES"))) for i, text in enumerate(cell_texts)]
@@ -495,17 +615,23 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
                 x += col_widths[i]
             pdf.set_xy(left_margin, y + row_h)
 
-    draw_pdf_brand_header(pdf, left_margin, 8, title_width=92)
-    pdf.set_xy(left_margin, 45)
-    pdf.set_font("Helvetica", "B", 13)
-    pdf.cell(effective_width, 6, _clean(payload.get("title") or "Hospital Report"), ln=True)
+    draw_pdf_brand_header(pdf, left_margin, 8, title_width=92, is_prescription=False)
+    pdf.set_xy(left_margin, pdf.get_y() + 4)
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_text_color(30, 86, 122)
+    pdf.cell(effective_width, 7, _clean(payload.get("title") or "Hospital Report"), ln=True)
+    
     pdf.set_x(left_margin)
-    pdf.set_font("Helvetica", "", 8.5)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.set_text_color(50, 50, 50)
     pdf.cell(effective_width, 5, _clean(payload.get("subtitle") or ""), ln=True)
+    
     generated = datetime.now().strftime("%d/%m/%Y %I:%M %p")
     pdf.set_x(left_margin)
-    pdf.set_font("Helvetica", "", 7.8)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_text_color(50, 50, 50)
     pdf.cell(effective_width, 5, _clean(f"Generated: {generated}" + (f"  |  By: {payload.get('operator_name')}" if payload.get("operator_name") else "")), ln=True)
+    pdf.set_text_color(0, 0, 0)
     pdf.set_y(max(pdf.get_y() + 2, 64))
 
     invoice_meta = payload.get("invoice_meta") or {}

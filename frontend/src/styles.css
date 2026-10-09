@@ -147,10 +147,12 @@ textarea {
 input[type="number"]::-webkit-inner-spin-button,
 input[type="number"]::-webkit-outer-spin-button {
   -webkit-appearance: none !important;
+  appearance: none !important;
   margin: 0 !important;
 }
 input[type="number"] {
   -moz-appearance: textfield !important;
+  appearance: textfield !important;
 }
 
 .notice.success {
@@ -8999,7 +9001,8 @@ main {
   display: none !important;
 }
 
-.auth-card .brand {
+.auth-card .brand,
+.login-brand {
   display: block !important;
   width: 100% !important;
   margin-bottom: 2.5rem !important;
@@ -9007,7 +9010,9 @@ main {
   text-align: center !important;
 }
 .auth-card .brand .brand-logo-img,
-.auth-card .brand .brand-logo-fallback {
+.auth-card .brand .brand-logo-fallback,
+.login-brand .brand-logo-img,
+.login-brand .brand-logo-fallback {
   width: 100% !important;
   max-width: 360px !important;
   height: auto !important;
@@ -9025,7 +9030,9 @@ main {
   image-rendering: crisp-edges !important;
 }
 .auth-card .brand .brand-title,
-.auth-card .brand .brand-subtitle {
+.auth-card .brand .brand-subtitle,
+.login-brand .brand-title,
+.login-brand .brand-subtitle {
   display: none !important;
 }
 

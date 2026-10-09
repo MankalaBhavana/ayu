@@ -19,8 +19,15 @@ if not DATABASE_URL:
         "DATABASE_URL is required. Set it in your .env file, e.g. "
         "DATABASE_URL=postgresql://postgres:YOUR_PASSWORD@127.0.0.1:5432/hospai"
     )
+
+if DATABASE_URL.startswith("sqlite"):
+    raise RuntimeError("SQLite is strictly prohibited. The application must use PostgreSQL exclusively.")
+
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
+
+if not DATABASE_URL.startswith("postgresql://"):
+    raise RuntimeError("DATABASE_URL must be a PostgreSQL connection string (postgresql://...).")
 
 engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)

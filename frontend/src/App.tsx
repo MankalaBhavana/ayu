@@ -17,7 +17,6 @@ import EmployeesPage from "./pages/EmployeesPage";
 import BillingClaimsPage from "./pages/BillingClaimsPage";
 import BillingOverviewPage from "./pages/billing/BillingOverviewPage";
 import PatientBillsPaymentsPage from "./pages/billing/PatientBillsPaymentsPage";
-import IpDischargeBillingPage from "./pages/billing/IpDischargeBillingPage";
 import AdvancesRefundsPage from "./pages/billing/AdvancesRefundsPage";
 import DoctorPayoutsPage from "./pages/billing/DoctorPayoutsPage";
 import ReportsDayClosePage from "./pages/billing/ReportsDayClosePage";
@@ -53,6 +52,7 @@ import PatientJourneyPage from "./pages/PatientJourneyPage";
 import DoctorsHistoryPage from "./pages/DoctorsHistoryPage";
 import PatientWorkflowPage from "./pages/PatientWorkflowPage";
 import HospitalBrand from "./components/HospitalBrand";
+import BrandLogo from "./components/BrandLogo";
 import { API_BASE, EMPTY_PATIENT_FORM, EMPTY_STATS, LEGACY_MODULE_EXPANSIONS, NAV_ITEMS, PAGE_MODULE_MAP } from "./lib/constants";
 import { apiFetch, getHospitalCode, reportError, setHospitalCode } from "./lib/api";
 import { resolvePermissions } from "./lib/format";
@@ -1247,8 +1247,8 @@ function App() {
       )}
       {page.startsWith("pharmacy-") ? (
         <aside className={`sidebar pharmacy-sidebar-mode ${isSidebarOpen ? "open" : ""}`}>
-          <div className="pharmacy-brand-header">
-            <HospitalBrand variant="sidebar" />
+          <div className="brand">
+            <BrandLogo />
           </div>
           <div className="sidebar-scroll-region">
             <nav className="sidebar-nav">
@@ -1380,8 +1380,8 @@ function App() {
         </aside>
       ) : (
         <aside className={`sidebar ${isSidebarOpen ? "open" : ""}`}>
-          <div className="brand-header">
-            <HospitalBrand variant="sidebar" />
+          <div className="brand">
+            <BrandLogo />
           </div>
           <div className="sidebar-scroll-region">
             <nav>

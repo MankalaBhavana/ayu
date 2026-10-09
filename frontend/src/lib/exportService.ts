@@ -222,7 +222,7 @@ declare global {
 
 // --- PDF Header Configuration Constants ---
 const PDF_LOGO_WIDTH = "380px";
-const PDF_LOGO_HEIGHT = "auto";
+const PDF_LOGO_HEIGHT = "120px";
 const PDF_HEADER_SPACING = "20px";
 const PDF_IMAGE_PADDING = "20px";
 
