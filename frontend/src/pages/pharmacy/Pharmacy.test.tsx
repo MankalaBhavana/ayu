@@ -57,7 +57,7 @@ vi.mock("../../lib/api", () => ({
 }));
 
 describe("Pharmacy Module Architecture", () => {
-  it("renders PharmacyOverview with 6 KPI cards, quick actions, and no Prescription Queue", async () => {
+  it("renders PharmacyOverview with 5 KPI cards, quick actions, and no Prescription Queue", async () => {
     const setNotice = vi.fn();
     const onNavigate = vi.fn();
 
@@ -67,8 +67,8 @@ describe("Pharmacy Module Architecture", () => {
     expect(screen.getByText("Safe Medicines. Better Care.")).toBeDefined();
     expect(screen.getByText("Today's Sales")).toBeDefined();
     expect(screen.getByText("OP Sales")).toBeDefined();
-    expect(screen.getByText("IPD Pharmacy Charges")).toBeDefined();
-    expect(screen.getByText("Emergency Sales")).toBeDefined();
+    expect(screen.queryByText("IPD Pharmacy Charges")).toBeNull();
+    expect(screen.queryByText("Emergency Sales")).toBeNull();
     expect(screen.getByText("Stock Value")).toBeDefined();
     expect(screen.getByText("Near Expiry")).toBeDefined();
 

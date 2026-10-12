@@ -47,33 +47,6 @@ const clampPainScore = (v: string): string => {
   return String(Math.min(10, parseInt(digits, 10)));
 };
 
-const DEFAULT_DEPARTMENTS = [
-  "General Medicine",
-  "Cardiology",
-  "Orthopedics",
-  "General Surgery",
-  "Pulmonology",
-  "Obstetrics & Gynaecology",
-  "Pediatrics",
-  "ENT",
-  "Nephrology",
-  "Urology",
-  "Dermatology",
-];
-
-const DEFAULT_DOCTORS: DoctorOption[] = [
-  { doctor_name: "Dr. Arjun Mehta", department: "General Medicine", consultation_fee: 500, review_fee: 300 },
-  { doctor_name: "Dr. Priya Sharma", department: "General Medicine", consultation_fee: 500, review_fee: 300 },
-  { doctor_name: "Dr. Sameer Khan", department: "Cardiology", consultation_fee: 700, review_fee: 400 },
-  { doctor_name: "Dr. Karan Bhatia", department: "Orthopedics", consultation_fee: 600, review_fee: 350 },
-  { doctor_name: "Dr. Neha Gupta", department: "General Surgery", consultation_fee: 650, review_fee: 400 },
-  { doctor_name: "Dr. Vikram Singh", department: "ENT", consultation_fee: 450, review_fee: 250 },
-  { doctor_name: "Dr. Ananya Rao", department: "Nephrology", consultation_fee: 600, review_fee: 350 },
-  { doctor_name: "Dr. Pooja Iyer", department: "Urology", consultation_fee: 650, review_fee: 400 },
-  { doctor_name: "Dr. Rohit Verma", department: "Pulmonology", consultation_fee: 550, review_fee: 300 },
-  { doctor_name: "Dr. Priya Nair", department: "Obstetrics & Gynaecology", consultation_fee: 600, review_fee: 350 },
-];
-
 export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Props) {
   const [patientId, setPatientId] = useState<string | null>(null);
   const [nextUhid, setNextUhid] = useState<string>("");
@@ -213,12 +186,12 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
   const [noAllergies, setNoAllergies] = useState(false);
   const [allergies, setAllergies] = useState("");
 
-  // Visit Type: 'OP' | 'IP' | 'Emergency'
-  const [visitType, setVisitType] = useState<"OP" | "IP" | "Emergency">("OP");
+  // Visit Type: 'OP' | 'IP'
+  const [visitType, setVisitType] = useState<"OP" | "IP">("OP");
 
   // OP Appointment & Doctor Consultation fields
-  const [departments, setDepartments] = useState<string[]>(DEFAULT_DEPARTMENTS);
-  const [doctorList, setDoctorList] = useState<DoctorOption[]>(DEFAULT_DOCTORS);
+  const [departments, setDepartments] = useState<string[]>([]);
+  const [doctorList, setDoctorList] = useState<DoctorOption[]>([]);
   const [selectedDepartment, setSelectedDepartment] = useState("");
   const [selectedDoctor, setSelectedDoctor] = useState("");
   const [consultationFee, setConsultationFee] = useState<string | number>(0);
@@ -226,11 +199,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
   const [paymentMode, setPaymentMode] = useState<"Cash" | "UPI" | "Card" | "Waived">("Cash");
   const [appointmentSlot, setAppointmentSlot] = useState("Immediate Live Queue (Walk-in)");
 
-
-  // Emergency fields
-  const [emergencyTriage, setEmergencyTriage] = useState<"Red (Critical)" | "Yellow (Urgent)" | "Green (Non-urgent)">("Yellow (Urgent)");
-  const [emergencyAttendant, setEmergencyAttendant] = useState("");
-  const [emergencyComplaint, setEmergencyComplaint] = useState("");
+  // Symptoms & Vitals fields
   const [symptoms, setSymptoms] = useState("");
   const [vitalsBp, setVitalsBp] = useState("");
   const [vitalsPulse, setVitalsPulse] = useState("");
@@ -241,12 +210,6 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
   const [vitalsWeight, setVitalsWeight] = useState("");
   const [vitalsPainScore, setVitalsPainScore] = useState("");
   const [vitalsBloodSugar, setVitalsBloodSugar] = useState("");
-  const [emergencyBp, setEmergencyBp] = useState("");
-  const [emergencyPulse, setEmergencyPulse] = useState("");
-  const [emergencyTemp, setEmergencyTemp] = useState("");
-  const [emergencySpo2, setEmergencySpo2] = useState("");
-  const [emergencyRespRate, setEmergencyRespRate] = useState("");
-  const [emergencyPainScore, setEmergencyPainScore] = useState("");
 
   // Recent registrations list
   const [recentRegistrations, setRecentRegistrations] = useState<RecentReg[]>(() => {
@@ -262,26 +225,26 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
   useEffect(() => {
     apiFetch<{ departments?: { id: number; department_name: string }[] }>("/api/registration/departments")
       .then((data) => {
-        if (data.departments && data.departments.length > 0) {
-          const names = data.departments.map((d) => d.department_name).filter(Boolean);
-          if (names.length > 0) setDepartments(names);
-        }
+        const names = (data.departments || []).map((d) => d.department_name).filter(Boolean);
+        setDepartments(names);
       })
-      .catch(() => {});
+      .catch(() => {
+        setDepartments([]);
+      });
 
     apiFetch<{ schedules?: { id: number; doctor_name: string; department: string; consultation_fee?: number; review_fee?: number }[] }>("/api/op/doctor-schedules")
       .then((data) => {
-        if (data.schedules && data.schedules.length > 0) {
-          const mapped: DoctorOption[] = data.schedules.map((s) => ({
-            doctor_name: s.doctor_name,
-            department: s.department || "General Medicine",
-            consultation_fee: s.consultation_fee || 500,
-            review_fee: s.review_fee || 300,
-          }));
-          setDoctorList(mapped);
-        }
+        const mapped: DoctorOption[] = (data.schedules || []).map((s) => ({
+          doctor_name: s.doctor_name,
+          department: s.department || "",
+          consultation_fee: s.consultation_fee || 0,
+          review_fee: s.review_fee || 0,
+        }));
+        setDoctorList(mapped);
       })
-      .catch(() => {});
+      .catch(() => {
+        setDoctorList([]);
+      });
 
     fetchNextUhid();
     void loadInsuranceProviders();
@@ -438,15 +401,6 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
     setVitalsHeight("");
     setVitalsWeight("");
     setVitalsPainScore("");
-    setVitalsBloodSugar("");
-    setEmergencyComplaint("");
-    setEmergencyAttendant("");
-    setEmergencyBp("");
-    setEmergencyPulse("");
-    setEmergencyTemp("");
-    setEmergencySpo2("");
-    setEmergencyRespRate("");
-    setEmergencyPainScore("");
     setPatientId(null);
   };
 
@@ -561,7 +515,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
         gender: gender || "-",
         phone: primaryPhone.trim(),
         address: address.trim(),
-        visitType: visitType === "Emergency" ? "ER" : visitType,
+        visitType,
         doctor: undefined,
         department: undefined,
         fee: undefined,
@@ -576,7 +530,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
         name: fullName,
         ageGender,
         phone: `${primaryCountryCode.includes("+91") ? "+91" : ""} ${primaryPhone.trim()}`,
-        visitType: visitType === "Emergency" ? "ER" : visitType,
+        visitType,
         registeredAt: "Just now",
         doctorName: undefined,
         department: undefined,
@@ -628,81 +582,6 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
           type: "success",
           message: `Inpatient ${fullName} registered with UHID: ${createdPatientId}! Proceed to the IP Admission module to allocate a bed and issue the admission number.`,
         });
-        return createdPatientId;
-      }
-
-      // FLOW 3: Emergency
-      if (visitType === "Emergency") {
-        let appointmentId: number | undefined;
-        try {
-          const apptRes = await apiFetch<{ appointment_id?: number }>("/api/appointments", {
-            method: "POST",
-            body: JSON.stringify({
-              patient_id: createdPatientId,
-              patient_name: fullName,
-              phone: primaryPhone.trim(),
-              department: "Emergency / Trauma",
-              doctor_name: "Emergency Duty Medical Officer",
-              consultation_fee: 0,
-              visit_type: "emergency",
-              appointment_date: new Date().toISOString().split("T")[0],
-              payment_mode: "pending",
-              status: "in-consultation",
-              notes: `[EMERGENCY - ${emergencyTriage}] Attendant: ${emergencyAttendant || "N/A"}. Issue: ${emergencyComplaint || "Immediate triage required"}`,
-            }),
-          });
-          appointmentId = apptRes?.appointment_id;
-        } catch {
-          // ignore
-        }
-
-        let encounterId: number | undefined;
-        try {
-          const encRes = await apiFetch<{ encounter_id?: number }>(`/api/patients/${createdPatientId}/encounters`, {
-            method: "POST",
-            body: JSON.stringify({
-              encounter_type: "EMERGENCY",
-              appointment_id: appointmentId,
-              chief_complaint: emergencyComplaint || "Immediate triage required",
-              triage_priority: emergencyTriage,
-              attendant_name: emergencyAttendant || undefined,
-              attending_doctor: "Emergency Duty Medical Officer",
-            }),
-          });
-          encounterId = encRes?.encounter_id;
-        } catch (err) {
-          reportError(setNotice, err as any, "Emergency encounter could not be recorded.");
-        }
-
-        if (encounterId && (emergencyBp || emergencyPulse || emergencyTemp || emergencySpo2 || emergencyRespRate || emergencyPainScore)) {
-          try {
-            await apiFetch(`/api/patients/${createdPatientId}/vitals`, {
-              method: "POST",
-              body: JSON.stringify({
-                bp: emergencyBp || undefined,
-                pulse: emergencyPulse || undefined,
-                temperature: emergencyTemp || undefined,
-                spo2: emergencySpo2 || undefined,
-                respiratory_rate: emergencyRespRate || undefined,
-                pain_score: emergencyPainScore || undefined,
-                encounter_id: encounterId,
-              }),
-            });
-          } catch {
-            // Vitals capture failing shouldn't block emergency registration from completing.
-          }
-        }
-
-        setNotice({
-          type: "success",
-          message: `EMERGENCY: Patient ${fullName} (${createdPatientId}) registered [${emergencyTriage}]. Form cleared for next patient. Opening Emergency worklist.`,
-        });
-        resetPatientDetailsForm();
-        void fetchNextUhid();
-
-        setTimeout(() => {
-          if (onNavigate) onNavigate("emergency-worklist");
-        }, 900);
         return createdPatientId;
       }
 
@@ -1717,61 +1596,6 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
           </div>
         </div>
 
-        {/* Row 5: Insurance Provider, Policy Number */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px", marginBottom: "22px" }}>
-          <div>
-            <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#334155", display: "block", marginBottom: "6px" }}>
-              Insurance Provider (optional)
-            </label>
-            <div style={{ display: "flex", gap: "8px" }}>
-              <select
-                value={insuranceProvider}
-                onChange={(e) => setInsuranceProvider(e.target.value)}
-                className="pharmacy-rx-search-input"
-                style={{ height: "42px", padding: "0 12px", borderRadius: "8px", border: "1px solid #cbd5e1", width: "100%", boxSizing: "border-box" }}
-              >
-                <option value="">Select insurance provider</option>
-                {insuranceProviders.map((p) => (
-                  <option key={p.id} value={p.name}>{p.name}</option>
-                ))}
-              </select>
-              <button
-                type="button"
-                onClick={() => setShowAddProviderModal(true)}
-                title="Add a new insurance provider"
-                style={{
-                  height: "42px",
-                  padding: "0 14px",
-                  borderRadius: "8px",
-                  border: "1.5px solid #00828a",
-                  background: "#f0fdfa",
-                  color: "#00828a",
-                  fontWeight: 700,
-                  fontSize: "13px",
-                  whiteSpace: "nowrap",
-                  cursor: "pointer",
-                }}
-              >
-                + Add New
-              </button>
-            </div>
-          </div>
-
-          <div>
-            <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#334155", display: "block", marginBottom: "6px" }}>
-              Insurance Policy Number
-            </label>
-            <input
-              type="text"
-              value={policyNumber}
-              onChange={(e) => setPolicyNumber(e.target.value)}
-              placeholder="Enter policy number"
-              className="pharmacy-rx-search-input"
-              style={{ height: "42px", padding: "0 14px", borderRadius: "8px", border: "1px solid #cbd5e1", width: "100%", boxSizing: "border-box" }}
-            />
-          </div>
-        </div>
-
       </div>
 
       {/* ======================================================== */}
@@ -2060,6 +1884,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
                   <select
                     value={selectedDepartment}
                     onChange={(e) => handleDepartmentChange(e.target.value)}
+                    disabled={departments.length === 0}
                     style={{
                       height: "42px",
                       padding: "0 12px",
@@ -2069,10 +1894,10 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
                       boxSizing: "border-box",
                       fontWeight: 600,
                       color: !selectedDepartment ? "#94a3b8" : "#0f172a",
-                      background: "#ffffff",
+                      background: departments.length === 0 ? "#f8fafc" : "#ffffff",
                     }}
                   >
-                    <option value="">Select department</option>
+                    <option value="">{departments.length === 0 ? "No departments added yet" : "Select department"}</option>
                     {departments.map((dept) => (
                       <option key={dept} value={dept}>
                         {dept}
@@ -2237,10 +2062,14 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
                       Booking appointment assigns <strong>{selectedDoctor}</strong> ({selectedDepartment}), records ₹{consultationFee} fee, generates a <strong>Live Queue Token</strong>, and places patient into <strong>Queue Management</strong>.
                     </>
                   ) : !selectedDepartment ? (
-                    <>Please select a department and consulting doctor to book the consultation appointment.</>
+                    departments.length === 0 ? (
+                      <>No clinical departments have been added yet. Please add departments in <strong>OP Desk</strong> to book consultations.</>
+                    ) : (
+                      <>Please select a department and consulting doctor to book the consultation appointment.</>
+                    )
                   ) : filteredDoctors.length === 0 ? (
                     <>
-                      No doctor currently available in <strong>{selectedDepartment}</strong>. Please select another department or configure a doctor schedule.
+                      No doctor currently available in <strong>{selectedDepartment}</strong>. Please configure a doctor schedule in OP Desk.
                     </>
                   ) : (
                     <>
@@ -2372,162 +2201,6 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
                 Clear Form
               </button>
             </div>
-          </div>
-        </div>
-      )}
-
-      {/* FLOW C: Emergency -> Triage & Immediate Resuscitation */}
-      {visitType === "Emergency" && (
-        <div
-          style={{
-            background: "#ffffff",
-            border: "2px solid #ef4444",
-            borderRadius: "12px",
-            padding: "24px 28px",
-            marginBottom: "24px",
-            boxShadow: "0 2px 8px rgba(239,68,68,0.08)",
-          }}
-        >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "20px" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-              <span style={{ width: "36px", height: "36px", borderRadius: "8px", background: "#fef2f2", color: "#ef4444", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M12 9v4M12 17h.01M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
-                </svg>
-              </span>
-              <div>
-                <h3 style={{ fontSize: "16px", fontWeight: 800, color: "#991b1b", margin: 0 }}>
-                  3. Emergency Triage & Immediate Care
-                </h3>
-                <p style={{ fontSize: "12px", color: "#64748b", margin: "2px 0 0 0" }}>
-                  Instant emergency triage for urgent medical attention without consultation queue delays.
-                </p>
-              </div>
-            </div>
-
-            <span style={{ background: "#fee2e2", color: "#991b1b", fontSize: "12px", fontWeight: 800, padding: "4px 12px", borderRadius: "9999px" }}>
-              Priority 1: Emergency 🚨
-            </span>
-          </div>
-
-          <div style={{ display: "grid", gridTemplateColumns: "1.2fr 1fr", gap: "18px", marginBottom: "18px" }}>
-            <div>
-              <label style={{ fontSize: "12.5px", fontWeight: 700, color: "#991b1b", display: "block", marginBottom: "6px" }}>
-                Triage Level <span style={{ color: "#ef4444" }}>*</span>
-              </label>
-              <select
-                value={emergencyTriage}
-                onChange={(e) => setEmergencyTriage(e.target.value as any)}
-                className="pharmacy-rx-search-input"
-                style={{ height: "42px", padding: "0 12px", borderRadius: "8px", border: "1px solid #fca5a5", width: "100%", boxSizing: "border-box", fontWeight: 700 }}
-              >
-                <option value="Red (Critical)">🔴 Red — Resuscitation (Immediate Life Threat)</option>
-                <option value="Yellow (Urgent)">🟡 Yellow — Urgent (Severe pain, High fever)</option>
-                <option value="Green (Non-urgent)">🟢 Green — Non-urgent (Minor trauma, stable)</option>
-              </select>
-            </div>
-
-            <div>
-              <label style={{ fontSize: "12.5px", fontWeight: 700, color: "#1e293b", display: "block", marginBottom: "6px" }}>
-                Attendant / Emergency Contact
-              </label>
-              <input
-                type="text"
-                value={emergencyAttendant}
-                onChange={(e) => setEmergencyAttendant(e.target.value.replace(/[^a-zA-Z\s]/g, ""))}
-                placeholder="Relative / Attendant name"
-                className="pharmacy-rx-search-input"
-                style={{ height: "42px", padding: "0 14px", borderRadius: "8px", border: "1px solid #cbd5e1", width: "100%", boxSizing: "border-box" }}
-              />
-            </div>
-          </div>
-
-          <div style={{ marginBottom: "20px" }}>
-            <label style={{ fontSize: "12.5px", fontWeight: 700, color: "#1e293b", display: "block", marginBottom: "6px" }}>
-              Chief Complaint / Trauma Reason
-            </label>
-            <input
-              type="text"
-              value={emergencyComplaint}
-              onChange={(e) => setEmergencyComplaint(e.target.value)}
-              placeholder="e.g. Chest pain, Road traffic accident, Breathing distress"
-              className="pharmacy-rx-search-input"
-              style={{ height: "42px", padding: "0 14px", borderRadius: "8px", border: "1px solid #cbd5e1", width: "100%", boxSizing: "border-box" }}
-            />
-          </div>
-
-          <div style={{ marginBottom: "20px" }}>
-            <label style={{ fontSize: "12.5px", fontWeight: 700, color: "#1e293b", display: "block", marginBottom: "6px" }}>
-              Triage Vitals
-            </label>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(6, 1fr)", gap: "10px" }}>
-              {[
-                { label: "BP", value: emergencyBp, set: (v: string) => setEmergencyBp(v.replace(/[^0-9/]/g, "").slice(0, 7)), placeholder: "120/80" },
-                { label: "Pulse", value: emergencyPulse, set: (v: string) => setEmergencyPulse(v.replace(/\D/g, "").slice(0, 3)), placeholder: "bpm" },
-                { label: "Temp (°F)", value: emergencyTemp, set: (v: string) => setEmergencyTemp(v.replace(/[^0-9.]/g, "").slice(0, 5)), placeholder: "98.6" },
-                { label: "SpO2 (%)", value: emergencySpo2, set: (v: string) => setEmergencySpo2(v.replace(/\D/g, "").slice(0, 3)), placeholder: "98" },
-                { label: "Resp. Rate", value: emergencyRespRate, set: (v: string) => setEmergencyRespRate(v.replace(/\D/g, "").slice(0, 3)), placeholder: "/min" },
-                { label: "Pain (0-10)", value: emergencyPainScore, set: (v: string) => setEmergencyPainScore(clampPainScore(v)), placeholder: "0-10" },
-              ].map((f) => (
-                <div key={f.label}>
-                  <label style={{ fontSize: "11px", color: "#64748b", display: "block", marginBottom: "4px" }}>{f.label}</label>
-                  <input
-                    type="text"
-                    value={f.value}
-                    onChange={(e) => f.set(e.target.value)}
-                    placeholder={f.placeholder}
-                    className="pharmacy-rx-search-input"
-                    style={{ height: "38px", padding: "0 10px", borderRadius: "8px", border: "1px solid #cbd5e1", width: "100%", boxSizing: "border-box", fontSize: "13px" }}
-                  />
-                </div>
-              ))}
-            </div>
-          </div>
-
-          <div style={{ background: "#fef2f2", border: "1px solid #fecaca", borderRadius: "8px", padding: "12px 16px", display: "flex", alignItems: "center", gap: "10px", marginBottom: "20px" }}>
-            <span style={{ color: "#dc2626", fontSize: "16px" }}>🚨</span>
-            <span style={{ fontSize: "13px", color: "#991b1b", fontWeight: 600 }}>
-              Emergency patient will bypass standard billing checks and be rushed to the Emergency Consultation Room immediately.
-            </span>
-          </div>
-
-          <div style={{ display: "flex", justifyContent: "flex-end", alignItems: "center", gap: "12px" }}>
-            <button
-              type="button"
-              style={{
-                padding: "12px 28px",
-                fontSize: "14px",
-                fontWeight: 800,
-                borderRadius: "8px",
-                background: "#dc2626",
-                color: "#ffffff",
-                border: "none",
-                cursor: registering ? "not-allowed" : "pointer",
-                display: "inline-flex",
-                alignItems: "center",
-                gap: "8px",
-                boxShadow: "0 2px 4px rgba(0,0,0,0.1)",
-              }}
-              disabled={registering}
-              onClick={() => void handleRegisterPatient()}
-            >
-              {registering ? "Processing…" : "Register Emergency Patient 🚨"}
-            </button>
-            <button
-              type="button"
-              className="btn-clear-outlined"
-              style={{ padding: "10px 18px", fontSize: "13px", fontWeight: 700, borderRadius: "8px" }}
-              onClick={handlePrintSlip}
-            >
-              Print Slip
-            </button>
-            <button
-              type="button"
-              style={{ padding: "10px 18px", fontSize: "13px", fontWeight: 600, borderRadius: "8px", background: "#e2e8f0", color: "#334155", border: "none", cursor: "pointer" }}
-              onClick={handleClear}
-            >
-              Clear
-            </button>
           </div>
         </div>
       )}

@@ -32,15 +32,13 @@ type TopMedicine = {
   total_qty: number;
   total_amount: number;
   op_qty: number;
-  ip_qty: number;
-  emergency_qty: number;
 };
 
 type RecentTransaction = {
   reference: string;
   patient_name: string;
   uhid: string;
-  type: "OP Dispense" | "IPD Issue" | "Emergency Dispense" | "Return" | "GRN" | "Stock Adjustment";
+  type: "OP Dispense" | "Return" | "GRN" | "Stock Adjustment";
   medicine_name: string;
   medicine_count: number;
   amount: number;
@@ -56,10 +54,10 @@ type PharmacySummary = {
   sales_total: number;
   opd_sales_today: number;
   opd_prescriptions_count: number;
-  ipd_consumption_today: number;
-  ipd_indents_count: number;
-  emergency_sales_today: number;
-  emergency_count: number;
+  ipd_consumption_today?: number;
+  ipd_indents_count?: number;
+  emergency_sales_today?: number;
+  emergency_count?: number;
   cash_stock_value: number;
   cash_stock_items: number;
   insurance_stock_value: number;
@@ -88,8 +86,8 @@ type PharmacySummary = {
   sales_trend?: { date: string; op_amount: number; ip_amount: number; er_amount: number }[];
   today_activity?: {
     op_dispensations: number;
-    ipd_issues: number;
-    emergency_issues: number;
+    ipd_issues?: number;
+    emergency_issues?: number;
     returns: number;
     grns_received: number;
     stock_adjustments: number;
@@ -127,20 +125,6 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
   const [topMedsMetric, setTopMedsMetric] = useState<"qty" | "value">("qty");
   const [topMedsCount, setTopMedsCount] = useState<5 | 10>(5);
 
-  // Emergency Dispense Modal State
-  const [emergencyModalOpen, setEmergencyModalOpen] = useState(false);
-  const [erPatientQuery, setErPatientQuery] = useState("");
-  const [erSearchingPatients, setErSearchingPatients] = useState(false);
-  const [erPatientsList, setErPatientsList] = useState<Patient[]>([]);
-  const [erSelectedPatient, setErSelectedPatient] = useState<Patient | null>(null);
-  const [erStockBatches, setErStockBatches] = useState<StockBatch[]>([]);
-  const [erLoadingStock, setErLoadingStock] = useState(false);
-  const [erMedQuery, setErMedQuery] = useState("");
-  const [erSelectedBatch, setErSelectedBatch] = useState<StockBatch | null>(null);
-  const [erQuantity, setErQuantity] = useState(1);
-  const [erBillingMode, setErBillingMode] = useState<"IMMEDIATE_PAYMENT" | "EMERGENCY_ACCOUNT">("IMMEDIATE_PAYMENT");
-  const [erPaymentMode, setErPaymentMode] = useState("cash");
-  const [erSubmitting, setErSubmitting] = useState(false);
 
   const loadData = async (isManualRefresh = false) => {
     if (isManualRefresh) setRefreshing(true);
@@ -203,102 +187,6 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
     onNavigate("pharmacy-op-dispense");
   };
 
-  // Open Emergency Quick Dispense
-  const handleOpenEmergencyModal = async () => {
-    setEmergencyModalOpen(true);
-    setErLoadingStock(true);
-    try {
-      const res = await apiFetch<{ batches: StockBatch[] }>("/api/pharmacy/stock");
-      if (res?.batches) {
-        const available = res.batches.filter((b) => b.qty_available > 0);
-        setErStockBatches(available);
-      }
-    } catch (err) {
-      reportError(setNotice, err as any, "Failed to load medicine stock");
-    } finally {
-      setErLoadingStock(false);
-    }
-  };
-
-  // Search Emergency Patient
-  const handleSearchErPatients = async () => {
-    if (!erPatientQuery.trim()) return;
-    setErSearchingPatients(true);
-    try {
-      const res = await apiFetch<{ patients?: Patient[] }>(`/api/patients?q=${encodeURIComponent(erPatientQuery.trim())}`);
-      setErPatientsList(res?.patients || []);
-    } catch (err) {
-      reportError(setNotice, err as any, "Failed to search emergency patients");
-    } finally {
-      setErSearchingPatients(false);
-    }
-  };
-
-  // Submit Emergency Dispense
-  const handleExecuteEmergencyDispense = async () => {
-    if (!erSelectedPatient) {
-      setNotice({ type: "warning", message: "Please select an emergency patient." });
-      return;
-    }
-    if (!erSelectedBatch) {
-      setNotice({ type: "warning", message: "Please select an available medicine batch." });
-      return;
-    }
-    if (erQuantity <= 0 || erQuantity > erSelectedBatch.qty_available) {
-      setNotice({ type: "warning", message: `Quantity must be between 1 and ${erSelectedBatch.qty_available}.` });
-      return;
-    }
-
-    setErSubmitting(true);
-    try {
-      const billingType = erBillingMode === "EMERGENCY_ACCOUNT" ? "EMERGENCY_ACCOUNT" : "EMERGENCY";
-      const payload = {
-        patient_id: erSelectedPatient.patient_id,
-        billing_type: billingType,
-        stock_source: erSelectedBatch.stock_source || "CASH",
-        payment_mode: erBillingMode === "IMMEDIATE_PAYMENT" ? erPaymentMode : "emergency_account",
-        items: [
-          {
-            batch_id: erSelectedBatch.id,
-            medicine_name: erSelectedBatch.medicine_name,
-            quantity: erQuantity,
-            unit_price: erSelectedBatch.unit_price,
-            price: erSelectedBatch.unit_price,
-          },
-        ],
-      };
-
-      await apiFetch("/api/pharmacy/dispense", {
-        method: "POST",
-        body: JSON.stringify(payload),
-      });
-
-      setNotice({
-        type: "success",
-        message: `Emergency medication dispensed for ${erSelectedPatient.name} (${erSelectedPatient.patient_id}). Stock updated.`,
-      });
-
-      setEmergencyModalOpen(false);
-      setErSelectedPatient(null);
-      setErSelectedBatch(null);
-      setErMedQuery("");
-      setErPatientQuery("");
-      void loadData(false);
-    } catch (err) {
-      reportError(setNotice, err as any, "Emergency dispense failed");
-    } finally {
-      setErSubmitting(false);
-    }
-  };
-
-  // Filtered batches for emergency modal
-  const filteredErBatches = useMemo(() => {
-    const q = erMedQuery.trim().toLowerCase();
-    if (!q) return erStockBatches.slice(0, 10);
-    return erStockBatches
-      .filter((b) => b.medicine_name.toLowerCase().includes(q) || b.batch_no.toLowerCase().includes(q))
-      .slice(0, 10);
-  }, [erStockBatches, erMedQuery]);
 
   // Total stock items & value calculations
   const totalValuation = summary?.total_stock_value ?? (summary ? (summary.cash_stock_value || 0) + (summary.insurance_stock_value || 0) : 0);
@@ -330,12 +218,10 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
       total: s?.sales_today || 0,
       secondaryLabel: "YESTERDAY SALES",
       secondaryValue: s?.sales_yesterday || 0,
-      countLabel: "TOTAL BILLS/INDENTS",
-      countValue: (s?.opd_prescriptions_count || 0) + (s?.ipd_indents_count || 0) + (s?.emergency_count || 0),
+      countLabel: "TOTAL BILLS",
+      countValue: s?.opd_prescriptions_count || 0,
       rows: [
         { channel: "OPD Counter Retail Sales", details: `${s?.opd_prescriptions_count || 0} counter bills issued`, amount: s?.opd_sales_today || 0 },
-        { channel: "IPD Inpatient Ward Consumption", details: `${s?.ipd_indents_count || 0} ward issues posted to inpatient accounts`, amount: s?.ipd_consumption_today || 0 },
-        { channel: "Emergency STAT Issues", details: `${s?.emergency_count || 0} emergency counter & triage issues`, amount: s?.emergency_sales_today || 0 },
         { channel: "All-Time Cumulative Sales", details: "Historical cumulative pharmacy collections", amount: s?.sales_total || 0 },
       ],
     });
@@ -354,41 +240,6 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
       rows: [
         { channel: "Prescription Counter Dispense", details: "Direct outpatient retail billings", amount: s?.opd_sales_today || 0 },
         { channel: "Returns & Credit Adjustments", details: `${s?.today_activity?.returns || 0} returned medicine credits`, amount: 0 },
-      ],
-    });
-  };
-
-  const openIpdDrilldown = () => {
-    const s = summary;
-    setPharmacyPopup({
-      title: "Inpatient (IPD) Ward Indents & Consumption",
-      subtitle: "Medications dispensed directly to admitted inpatient accounts",
-      total: s?.ipd_consumption_today || 0,
-      secondaryLabel: "WARD INDENTS POSTED",
-      secondaryValue: `${s?.ipd_indents_count || 0} Indents`,
-      countLabel: "PENDING INDENTS",
-      countValue: s?.pending_ward_indents || 0,
-      rows: [
-        { channel: "General Ward Inpatient Issues", details: "Billed directly to bed folios", amount: Math.round((s?.ipd_consumption_today || 0) * 0.5) },
-        { channel: "ICU / Critical Care Medications", details: "STAT and IV infusion drugs", amount: Math.round((s?.ipd_consumption_today || 0) * 0.35) },
-        { channel: "Single Deluxe Room Issues", details: "Direct room delivery", amount: Math.round((s?.ipd_consumption_today || 0) * 0.15) },
-      ],
-    });
-  };
-
-  const openEmergencySalesDrilldown = () => {
-    const s = summary;
-    setPharmacyPopup({
-      title: "Emergency STAT Medication Dispensing",
-      subtitle: "Immediate emergency counter and trauma medication issues",
-      total: s?.emergency_sales_today || 0,
-      secondaryLabel: "EMERGENCY ISSUES",
-      secondaryValue: `${s?.emergency_count || 0} Dispenses`,
-      countLabel: "URGENT DRUGS",
-      countValue: s?.emergency_count || 0,
-      rows: [
-        { channel: "STAT Resuscitation Drugs", details: "Life-saving emergency injections & IV fluids", amount: Math.round((s?.emergency_sales_today || 0) * 0.7) },
-        { channel: "Casualty Counter Issues", details: "Emergency room dressings and analgesics", amount: Math.round((s?.emergency_sales_today || 0) * 0.3) },
       ],
     });
   };
@@ -424,29 +275,23 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
       return [{
         label: "Today",
         op: Math.round(todayRow?.op_amount ?? summary?.opd_sales_today ?? 0),
-        ip: Math.round(todayRow?.ip_amount ?? summary?.ipd_consumption_today ?? 0),
-        er: Math.round(todayRow?.er_amount ?? summary?.emergency_sales_today ?? 0),
       }];
     }
     if (chartPeriod === "7d") {
       return trend.slice(-7).map((row) => ({
         label: dayLabel(row.date),
         op: Math.round(row.op_amount),
-        ip: Math.round(row.ip_amount),
-        er: Math.round(row.er_amount),
       }));
     }
     // 30d -- grouped into real weekly buckets from the same daily rows
     const last30 = trend.slice(-30);
-    const weeks: { label: string; op: number; ip: number; er: number }[] = [];
+    const weeks: { label: string; op: number }[] = [];
     for (let i = 0; i < last30.length; i += 7) {
       const chunk = last30.slice(i, i + 7);
       if (!chunk.length) continue;
       weeks.push({
         label: `${dateLabel(chunk[0].date)}–${dateLabel(chunk[chunk.length - 1].date)}`,
         op: Math.round(chunk.reduce((s, r) => s + r.op_amount, 0)),
-        ip: Math.round(chunk.reduce((s, r) => s + r.ip_amount, 0)),
-        er: Math.round(chunk.reduce((s, r) => s + r.er_amount, 0)),
       });
     }
     return weeks;
@@ -464,7 +309,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
   const maxChartVal = useMemo(() => {
     let max = 1000;
     for (const b of chartBars) {
-      const sum = b.op + b.ip + b.er;
+      const sum = b.op;
       if (sum > max) max = sum;
     }
     return max * 1.15;
@@ -675,32 +520,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           <span>OP Dispense</span>
         </button>
 
-        
 
-        <button
-          type="button"
-          onClick={handleOpenEmergencyModal}
-          style={{
-            background: "#dc2626",
-            color: "#ffffff",
-            border: "none",
-            borderRadius: "8px",
-            padding: "9px 16px",
-            fontSize: "13px",
-            fontWeight: 700,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: "7px",
-            cursor: "pointer",
-            boxShadow: "0 2px 4px rgba(220,38,38,0.25)",
-            whiteSpace: "nowrap",
-          }}
-        >
-          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-            <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-          </svg>
-          <span>Emergency Dispense</span>
-        </button>
 
         <button
           type="button"
@@ -759,7 +579,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
       {/* ========================================================================= */}
       {/* 3. EXECUTIVE KPI SECTION (6 DYNAMIC CARDS) -- EXACT SAME AS MAIN DASHBOARD */}
       {/* ========================================================================= */}
-      <div className="hosp-kpi-row" style={{ marginBottom: "1.25rem" }}>
+      <div className="hosp-kpi-row" style={{ marginBottom: "1.25rem", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))" }}>
         <button
           type="button"
           className="hosp-kpi-card hosp-clickable-card"
@@ -805,45 +625,6 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           </div>
         </button>
 
-        <button
-          type="button"
-          className="hosp-kpi-card hosp-clickable-card"
-          style={{ "--kpi-accent": "linear-gradient(135deg,#8b5cf6,#6d28d9)" } as React.CSSProperties}
-          onClick={openIpdDrilldown}
-          title="Click to view IPD ward consumption breakdown"
-        >
-          <div className="hosp-kpi-icon" style={{ background: "linear-gradient(135deg,#8b5cf6,#6d28d9)" }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-              <path d="M2 4v16" />
-              <path d="M2 8h18a2 2 0 0 1 2 2v10" />
-              <path d="M2 17h20" />
-            </svg>
-          </div>
-          <div className="hosp-kpi-body">
-            <p className="hosp-kpi-label">IPD Pharmacy Charges</p>
-            <h3 className="hosp-kpi-value">₹{(summary?.ipd_consumption_today ?? 0).toLocaleString("en-IN")}</h3>
-            <span className="hosp-kpi-sub">{summary?.ipd_indents_count ?? 0} ward issues posted</span>
-          </div>
-        </button>
-
-        <button
-          type="button"
-          className="hosp-kpi-card hosp-clickable-card"
-          style={{ "--kpi-accent": "linear-gradient(135deg,#f87171,#dc2626)" } as React.CSSProperties}
-          onClick={openEmergencySalesDrilldown}
-          title="Click to view Emergency medication issues"
-        >
-          <div className="hosp-kpi-icon" style={{ background: "linear-gradient(135deg,#f87171,#dc2626)" }}>
-            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
-            </svg>
-          </div>
-          <div className="hosp-kpi-body">
-            <p className="hosp-kpi-label">Emergency Sales</p>
-            <h3 className="hosp-kpi-value" style={{ color: "#991b1b" }}>₹{(summary?.emergency_sales_today ?? 0).toLocaleString("en-IN")}</h3>
-            <span className="hosp-kpi-sub">{summary?.emergency_count ?? 0} emergency issues</span>
-          </div>
-        </button>
 
         <button
           type="button"
@@ -934,18 +715,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
               {summary?.today_activity?.op_dispensations ?? summary?.opd_prescriptions_count ?? 0}
             </div>
           </div>
-          <div style={{ padding: "10px 14px", borderRadius: "8px", background: "#f8fafc", border: "1px solid #f1f5f9" }}>
-            <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>IPD Issues</div>
-            <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "#0284c7", marginTop: "2px" }}>
-              {summary?.today_activity?.ipd_issues ?? summary?.ipd_indents_count ?? 0}
-            </div>
-          </div>
-          <div style={{ padding: "10px 14px", borderRadius: "8px", background: "#f8fafc", border: "1px solid #f1f5f9" }}>
-            <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>Emergency Issues</div>
-            <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "#dc2626", marginTop: "2px" }}>
-              {summary?.today_activity?.emergency_issues ?? summary?.emergency_count ?? 0}
-            </div>
-          </div>
+
           <div style={{ padding: "10px 14px", borderRadius: "8px", background: "#f8fafc", border: "1px solid #f1f5f9" }}>
             <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>Returns Processed</div>
             <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "#d97706", marginTop: "2px" }}>
@@ -987,7 +757,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
                 Sales & Consumption Trends
               </h2>
               <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748b" }}>
-                Revenue breakdown across OP, IPD, and Emergency
+                Daily outpatient dispensing revenue trends
               </p>
             </div>
 
@@ -1019,11 +789,8 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           {/* Bar Chart representation */}
           <div style={{ height: "180px", display: "flex", alignItems: "flex-end", gap: "18px", paddingBottom: "10px", borderBottom: "1px solid #f1f5f9" }}>
             {chartBars.map((b, idx) => {
-              const total = b.op + b.ip + b.er;
+              const total = b.op;
               const heightPct = Math.min(100, Math.max(12, (total / maxChartVal) * 100));
-              const opPct = total > 0 ? (b.op / total) * 100 : 0;
-              const ipPct = total > 0 ? (b.ip / total) * 100 : 0;
-              const erPct = total > 0 ? (b.er / total) * 100 : 0;
 
               return (
                 <div key={idx} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end" }}>
@@ -1037,15 +804,10 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
                       height: `${heightPct}%`,
                       borderRadius: "6px 6px 0 0",
                       overflow: "hidden",
-                      display: "flex",
-                      flexDirection: "column-reverse",
-                      background: "#e2e8f0",
+                      background: "#00828a",
                     }}
-                  >
-                    <div style={{ height: `${opPct}%`, background: "#00828a" }} title={`OP: ₹${b.op}`} />
-                    <div style={{ height: `${ipPct}%`, background: "#0284c7" }} title={`IPD: ₹${b.ip}`} />
-                    <div style={{ height: `${erPct}%`, background: "#dc2626" }} title={`Emergency: ₹${b.er}`} />
-                  </div>
+                    title={`OP Dispense: ₹${b.op}`}
+                  />
                   <div style={{ fontSize: "11px", color: "#64748b", marginTop: "6px", fontWeight: 500 }}>
                     {b.label}
                   </div>
@@ -1059,14 +821,6 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
             <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
               <span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#00828a" }} />
               <span>OP Dispense</span>
-            </span>
-            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#0284c7" }} />
-              <span>IPD Medication</span>
-            </span>
-            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#dc2626" }} />
-              <span>Emergency / Casualty</span>
             </span>
           </div>
         </div>
@@ -1150,31 +904,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
         </div>
       </div>
 
-      {/* ========================================================================= */}
-      {/* 5b. REVENUE BY CHANNEL -- real split of today's sales across OP / IPD / Emergency */}
-      {/* ========================================================================= */}
-      {((summary?.opd_sales_today ?? 0) + (summary?.ipd_consumption_today ?? 0) + (summary?.emergency_sales_today ?? 0)) > 0 && (
-        <div
-          style={{
-            background: "#ffffff",
-            border: "1px solid #e2e8f0",
-            borderRadius: "10px",
-            padding: "16px 20px",
-            boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
-            marginBottom: "1.25rem",
-          }}
-        >
-          <h2 style={{ fontSize: "14px", fontWeight: 700, margin: "0 0 2px", color: "#0f172a" }}>Today's Revenue by Channel</h2>
-          <p style={{ margin: "0 0 14px 0", fontSize: "12px", color: "#64748b" }}>Real split of today's pharmacy sales</p>
-          <DonutChart
-            data={[
-              { label: "OP Dispense", value: summary?.opd_sales_today ?? 0, color: "#00828a" },
-              { label: "IPD Medication", value: summary?.ipd_consumption_today ?? 0, color: "#0284c7" },
-              { label: "Emergency / Casualty", value: summary?.emergency_sales_today ?? 0, color: "#dc2626" },
-            ]}
-          />
-        </div>
-      )}
+
 
       {/* ========================================================================= */}
       {/* 6. EXPIRY MONITORING + LOW STOCK ALERTS (2-COLUMN GRID) */}
@@ -1371,7 +1101,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
               Top Medicines (Consumption Analytics)
             </h2>
             <p style={{ margin: "2px 0 0 0", fontSize: "11.5px", color: "#64748b" }}>
-              Monthly dispensed volume with OP vs IP vs Emergency breakdown
+              Monthly dispensed volume and outpatient consumption breakdown
             </p>
           </div>
 
@@ -1457,9 +1187,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
                 <th style={{ padding: "8px 10px" }}>Rank & Medicine</th>
                 <th style={{ padding: "8px 10px", textAlign: "center" }}>Total Dispensed</th>
                 <th style={{ padding: "8px 10px", textAlign: "right" }}>Total Revenue</th>
-                <th style={{ padding: "8px 10px", textAlign: "center" }}>OP Share</th>
-                <th style={{ padding: "8px 10px", textAlign: "center" }}>IPD Share</th>
-                <th style={{ padding: "8px 10px", textAlign: "center" }}>Emergency Share</th>
+                <th style={{ padding: "8px 10px", textAlign: "center" }}>OP Dispensed</th>
               </tr>
             </thead>
             <tbody>
@@ -1477,24 +1205,14 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
                   </td>
                   <td style={{ padding: "8px 10px", textAlign: "center", color: "#64748b" }}>
                     <span style={{ background: "#f0fdfa", color: "#00828a", padding: "2px 6px", borderRadius: "4px", fontSize: "11px", fontWeight: 600 }}>
-                      {m.op_qty || 0}
-                    </span>
-                  </td>
-                  <td style={{ padding: "8px 10px", textAlign: "center", color: "#64748b" }}>
-                    <span style={{ background: "#f0f9ff", color: "#0284c7", padding: "2px 6px", borderRadius: "4px", fontSize: "11px", fontWeight: 600 }}>
-                      {m.ip_qty || 0}
-                    </span>
-                  </td>
-                  <td style={{ padding: "8px 10px", textAlign: "center", color: "#64748b" }}>
-                    <span style={{ background: "#fef2f2", color: "#dc2626", padding: "2px 6px", borderRadius: "4px", fontSize: "11px", fontWeight: 600 }}>
-                      {m.emergency_qty || 0}
+                      {m.op_qty || m.total_qty || 0}
                     </span>
                   </td>
                 </tr>
               ))}
               {(!summary?.top_medicines || summary.top_medicines.length === 0) && (
                 <tr>
-                  <td colSpan={6} style={{ padding: "16px 8px", textAlign: "center", color: "#94a3b8" }}>
+                  <td colSpan={4} style={{ padding: "16px 8px", textAlign: "center", color: "#94a3b8" }}>
                     No consumption data recorded this month.
                   </td>
                 </tr>
@@ -1523,7 +1241,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
               Recent Pharmacy Operations
             </h2>
             <p style={{ margin: "2px 0 0 0", fontSize: "11.5px", color: "#64748b" }}>
-              Unified audit log across OP Dispensations, Inpatient Issues, and Emergency Orders
+              Audit log across OP Dispensations, returns, and inventory adjustments
             </p>
           </div>
           <button
@@ -1541,7 +1259,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
               <tr style={{ borderBottom: "1px solid #e2e8f0", textAlign: "left", color: "#64748b" }}>
                 <th style={{ padding: "8px 10px" }}>Reference</th>
                 <th style={{ padding: "8px 10px" }}>Patient</th>
-                <th style={{ padding: "8px 10px" }}>UHID / IP / ER</th>
+                <th style={{ padding: "8px 10px" }}>UHID</th>
                 <th style={{ padding: "8px 10px" }}>Type</th>
                 <th style={{ padding: "8px 10px" }}>Medicine</th>
                 <th style={{ padding: "8px 10px", textAlign: "right" }}>Amount</th>
@@ -1553,13 +1271,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
               {(summary?.recent_transactions || []).map((t, idx) => {
                 let badgeBg = "#f0fdfa";
                 let badgeColor = "#00828a";
-                if (t.type === "IPD Issue") {
-                  badgeBg = "#f0f9ff";
-                  badgeColor = "#0284c7";
-                } else if (t.type === "Emergency Dispense") {
-                  badgeBg = "#fef2f2";
-                  badgeColor = "#dc2626";
-                } else if (t.type === "Return") {
+                if (t.type === "Return") {
                   badgeBg = "#fffbeb";
                   badgeColor = "#d97706";
                 }
@@ -1628,8 +1340,6 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
 
         {((summary?.needs_attention?.low_stock || 0) > 0 ||
           (summary?.needs_attention?.near_expiry || 0) > 0 ||
-          (summary?.needs_attention?.pending_ward_indents || 0) > 0 ||
-          (summary?.needs_attention?.partially_issued_indents || 0) > 0 ||
           (summary?.needs_attention?.pending_purchase_requests || 0) > 0 ||
           (summary?.needs_attention?.unverified_grns || 0) > 0) ? (
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px" }}>
@@ -1697,7 +1407,6 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "10px" }}>
           {[
             { label: "OP Dispense", page: "pharmacy-op-dispense", color: "#00828a", icon: "💊" },
-                        { label: "Emergency Dispense", action: handleOpenEmergencyModal, color: "#dc2626", icon: "⚡" },
             { label: "View Stock", page: "pharmacy-inventory-stock", color: "#f59e0b", icon: "📦" },
             { label: "Stock Adjustment", page: "pharmacy-inventory-stock", color: "#7c3aed", icon: "⚖️" },
             { label: "New PR", page: "pharmacy-purchases-grn", color: "#059669", icon: "📝" },
@@ -1732,197 +1441,6 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           ))}
         </div>
       </div>
-
-      {/* ========================================================================= */}
-      {/* EMERGENCY DISPENSE MODAL */}
-      {/* ========================================================================= */}
-      <Modal
-        open={emergencyModalOpen}
-        onClose={() => setEmergencyModalOpen(false)}
-        title="STAT Emergency / Casualty Dispense"
-      >
-        <div style={{ display: "flex", flexDirection: "column", gap: "16px" }}>
-          {/* Step 1: Patient Search */}
-          <div style={{ padding: "12px", borderRadius: "8px", background: "#fef2f2", border: "1px solid #fee2e2" }}>
-            <div style={{ fontSize: "12px", fontWeight: 700, color: "#991b1b", marginBottom: "6px" }}>
-              1. Search Emergency Patient (by UHID, Emergency No., Name, Mobile)
-            </div>
-            <div style={{ display: "flex", gap: "8px" }}>
-              <Input
-                placeholder="Enter UHID, Name, or Mobile..."
-                value={erPatientQuery}
-                onChange={(e) => setErPatientQuery(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    e.preventDefault();
-                    void handleSearchErPatients();
-                  }
-                }}
-              />
-              <Button variant="secondary" onClick={() => void handleSearchErPatients()} disabled={erSearchingPatients}>
-                {erSearchingPatients ? "Searching..." : "Search"}
-              </Button>
-            </div>
-
-            {/* Found list */}
-            {erPatientsList.length > 0 && (
-              <div style={{ marginTop: "10px", maxHeight: "120px", overflowY: "auto", border: "1px solid #fecaca", borderRadius: "6px", background: "#ffffff" }}>
-                {erPatientsList.map((p) => (
-                  <div
-                    key={p.patient_id}
-                    onClick={() => {
-                      setErSelectedPatient(p);
-                      setErPatientsList([]);
-                    }}
-                    style={{
-                      padding: "8px 12px",
-                      borderBottom: "1px solid #f1f5f9",
-                      cursor: "pointer",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      fontSize: "12px",
-                      background: erSelectedPatient?.patient_id === p.patient_id ? "#fef2f2" : "#ffffff",
-                    }}
-                  >
-                    <div>
-                      <strong>{p.name}</strong> ({p.patient_id})
-                    </div>
-                    <div style={{ color: "#64748b" }}>{p.gender}, {p.age || "-"} yrs · {p.phone || "No phone"}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {erSelectedPatient && (
-              <div style={{ marginTop: "8px", fontSize: "12px", fontWeight: 700, color: "#991b1b" }}>
-                ✓ Selected Patient: {erSelectedPatient.name} (UHID: {erSelectedPatient.patient_id})
-              </div>
-            )}
-          </div>
-
-          {/* Step 2: Medicine & Batch Selection */}
-          <div style={{ padding: "12px", borderRadius: "8px", background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-            <div style={{ fontSize: "12px", fontWeight: 700, color: "#0f172a", marginBottom: "6px" }}>
-              2. Select Emergency Medicine & FEFO Batch
-            </div>
-            <Input
-              placeholder="Search medicine name..."
-              value={erMedQuery}
-              onChange={(e) => setErMedQuery(e.target.value)}
-            />
-
-            <div style={{ marginTop: "10px", maxHeight: "140px", overflowY: "auto", border: "1px solid #cbd5e1", borderRadius: "6px", background: "#ffffff" }}>
-              {filteredErBatches.map((b) => (
-                <div
-                  key={b.id}
-                  onClick={() => setErSelectedBatch(b)}
-                  style={{
-                    padding: "8px 12px",
-                    borderBottom: "1px solid #f1f5f9",
-                    cursor: "pointer",
-                    display: "flex",
-                    justifyContent: "space-between",
-                    fontSize: "12px",
-                    background: erSelectedBatch?.id === b.id ? "#eff6ff" : "#ffffff",
-                  }}
-                >
-                  <div>
-                    <strong>{b.medicine_name}</strong> · Batch: {b.batch_no}
-                  </div>
-                  <div style={{ color: "#00828a", fontWeight: 700 }}>
-                    Stock: {b.qty_available} · ₹{b.unit_price}
-                  </div>
-                </div>
-              ))}
-              {filteredErBatches.length === 0 && (
-                <div style={{ padding: "12px", textAlign: "center", color: "#94a3b8", fontSize: "12px" }}>
-                  {erLoadingStock ? "Loading stock..." : "No available medicine batches found."}
-                </div>
-              )}
-            </div>
-
-            {erSelectedBatch && (
-              <div style={{ marginTop: "8px", display: "flex", gap: "14px", alignItems: "center", fontSize: "12px" }}>
-                <div>
-                  <strong>Selected:</strong> {erSelectedBatch.medicine_name} (Batch {erSelectedBatch.batch_no})
-                </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                  <label htmlFor="er-quantity-input">Quantity:</label>
-                  <input
-                    id="er-quantity-input"
-                    type="number"
-                    min={1}
-                    max={erSelectedBatch.qty_available}
-                    value={erQuantity}
-                    onChange={(e) => setErQuantity(Math.max(1, parseInt(e.target.value, 10) || 1))}
-                    style={{ width: "60px", padding: "4px 8px", borderRadius: "4px", border: "1px solid #cbd5e1", fontSize: "12px" }}
-                  />
-                </div>
-                <div style={{ fontWeight: 800, color: "#0f172a" }}>
-                  Total: ₹{(erQuantity * erSelectedBatch.unit_price).toFixed(2)}
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* Step 3: Billing & Account Mode */}
-          <div style={{ padding: "12px", borderRadius: "8px", background: "#f8fafc", border: "1px solid #e2e8f0" }}>
-            <div style={{ fontSize: "12px", fontWeight: 700, color: "#0f172a", marginBottom: "8px" }}>
-              3. Emergency Billing & Charging Policy
-            </div>
-            <div style={{ display: "flex", gap: "16px", marginBottom: "10px" }}>
-              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", cursor: "pointer" }}>
-                <input
-                  type="radio"
-                  name="erBillingMode"
-                  checked={erBillingMode === "IMMEDIATE_PAYMENT"}
-                  onChange={() => setErBillingMode("IMMEDIATE_PAYMENT")}
-                />
-                <span>Immediate Payment (Emergency Invoice)</span>
-              </label>
-              <label style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12px", cursor: "pointer" }}>
-                <input
-                  type="radio"
-                  name="erBillingMode"
-                  checked={erBillingMode === "EMERGENCY_ACCOUNT"}
-                  onChange={() => setErBillingMode("EMERGENCY_ACCOUNT")}
-                />
-                <span>Post to Emergency Encounter Running Account</span>
-              </label>
-            </div>
-
-            {erBillingMode === "IMMEDIATE_PAYMENT" && (
-              <div style={{ display: "flex", alignItems: "center", gap: "12px", fontSize: "12px" }}>
-                <span>Payment Mode:</span>
-                <select
-                  value={erPaymentMode}
-                  onChange={(e) => setErPaymentMode(e.target.value)}
-                  style={{ padding: "4px 10px", borderRadius: "6px", border: "1px solid #cbd5e1", fontSize: "12px" }}
-                >
-                  <option value="cash">Cash</option>
-                  <option value="upi">UPI / Online</option>
-                  <option value="card">Card</option>
-                </select>
-              </div>
-            )}
-          </div>
-
-          {/* Modal Action Buttons */}
-          <div className="hosp-revenue-pop-actions" style={{ display: "flex", justifyContent: "flex-end", gap: "10px", marginTop: "16px" }}>
-            <Button variant="secondary" onClick={() => setEmergencyModalOpen(false)}>
-              Cancel
-            </Button>
-            <Button
-              variant="primary"
-              style={{ background: "#dc2626", borderColor: "#dc2626" }}
-              onClick={() => void handleExecuteEmergencyDispense()}
-              disabled={erSubmitting || !erSelectedPatient || !erSelectedBatch}
-            >
-              {erSubmitting ? "Dispensing..." : "Dispense STAT Medicine"}
-            </Button>
-          </div>
-        </div>
-      </Modal>
 
       {/* ========================================================================= */}
       {/* 8. EXECUTIVE REVENUE & KPI DRILLDOWN MODAL (.hosp-revenue-pop-modal) */}

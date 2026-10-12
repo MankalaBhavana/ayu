@@ -724,10 +724,10 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
       {activeTab === "transfers" && (
         <div style={{ background: "#ffffff", borderRadius: "10px", padding: "1.5rem", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
           <h3 style={{ margin: "0 0 0.5rem 0", fontSize: "1.1rem", fontWeight: 700, color: "#0f172a" }}>
-            Internal Stock Transfers (Store / Ward Racks)
+            Internal Stock Transfers (Store / Racks)
           </h3>
           <p style={{ margin: "0 0 1.5rem 0", fontSize: "0.85rem", color: "#64748b" }}>
-            Transfer verified stock between Main Central Pharmacy, Emergency Rack, OT Storage, and IPD Ward Cabinets.
+            Transfer verified stock between Main Central Pharmacy, Emergency Rack, and OT Storage.
           </p>
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "1rem", maxWidth: "800px", marginBottom: "1rem" }}>
@@ -743,12 +743,12 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
             </div>
             <div>
               <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
-                Destination Store / Ward:
+                Destination Store / Department:
               </label>
               <select className="ui-input" style={{ width: "100%", padding: "0.45rem", borderRadius: "6px", border: "1px solid #cbd5e1" }}>
-                <option>ICU Ward Cabinet</option>
-                <option>General Ward Rack</option>
                 <option>Emergency Room</option>
+                <option>OT Storage 1</option>
+                <option>OP Consultation Sub-store</option>
               </select>
             </div>
             <div>

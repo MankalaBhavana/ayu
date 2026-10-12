@@ -17,7 +17,7 @@ from typing import Optional, Union
 import bcrypt
 from sqlalchemy.orm import Session
 
-from models import Hospitals, Sessions, Users
+from models import DepartmentMaster, DoctorSchedules, Hospitals, Sessions, Users
 from database import DEFAULT_HOSPITAL_CODE
 
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "hospai_session")
@@ -576,6 +576,14 @@ def create_default_users(db: Session):
         )
         db.add(user)
     db.commit()
+
+
+def create_default_clinical_master(db: Session):
+    """Clinical departments and doctor schedules must only be populated when
+    explicitly added by clinic administrators in OP Management, rather than
+    pre-seeding unadded departments or placeholder doctors."""
+    pass
+
 
 
 # ------------------------------------------------------------------- auth --

@@ -1248,7 +1248,7 @@ function App() {
       {page.startsWith("pharmacy-") ? (
         <aside className={`sidebar pharmacy-sidebar-mode ${isSidebarOpen ? "open" : ""}`}>
           <div className="brand">
-            <BrandLogo />
+            <HospitalBrand variant="sidebar" />
           </div>
           <div className="sidebar-scroll-region">
             <nav className="sidebar-nav">
@@ -1381,7 +1381,7 @@ function App() {
       ) : (
         <aside className={`sidebar ${isSidebarOpen ? "open" : ""}`}>
           <div className="brand">
-            <BrandLogo />
+            <HospitalBrand variant="sidebar" />
           </div>
           <div className="sidebar-scroll-region">
             <nav>
@@ -1460,14 +1460,14 @@ function App() {
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <span className="mobile-top-bar-title">Sri Raksha Hospital</span>
+          <span className="mobile-top-bar-title">Ayu Polyclinic</span>
         </div>
         <Container size="full">
         {page !== "dashboard" && !page.startsWith("pharmacy-") && !isBillingRoute && page !== "doctor-prescription" && page !== "op-queue-management" && page !== "add" && page !== "patient-journey" && (
           <header className="topbar module-unified-topbar">
             <div className="module-topbar-breadcrumb-row">
               <div className="module-topbar-breadcrumb">
-                <span className="breadcrumb-root" onClick={() => window.history.back()}>Sri Raksha Hospital</span>
+                <span className="breadcrumb-root" onClick={() => window.history.back()}>Ayu Polyclinic</span>
                 <span className="breadcrumb-sep">/</span>
                 <span className="breadcrumb-active">{page === "admin" ? "Admin" : NAV_ITEMS.find((item) => item.id === page)?.label || "Dashboard"}</span>
               </div>

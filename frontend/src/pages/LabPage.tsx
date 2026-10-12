@@ -6,6 +6,7 @@ import { generatePDFBlob, exportPDF } from "../lib/exportService";
 import type { Notice, User } from "../types";
 import { fullPatientName, lookupPatientByUhid, normalizeUhidLookup } from "../lib/patientLookup";
 import { PRINT_BRAND_HEADER_DATA_URI, PRINT_MEDICAL_SYMBOL_DATA_URI, PRINT_WATERMARK_DATA_URI } from "../lib/printBrand";
+import { renderAyuPdfHeaderHtml, renderAyuPdfFooterHtml } from "../lib/pdfTemplate";
 import { printViaIframe } from "../lib/printViaIframe";
 
 type Props = {
@@ -924,17 +925,7 @@ export default function LabPage({ setNotice, user }: Props) {
           <main class="report" data-hospai-shared-print-shell>
             <img class="hospai-shared-watermark" src="${PRINT_WATERMARK_DATA_URI}" alt="Ayu Polyclinic Watermark" />
             
-            <header class="header-container">
-              <div>
-                <img class="brand-logo" src="${PRINT_BRAND_HEADER_DATA_URI}" alt="Ayu Polyclinic Logo" />
-              </div>
-              <div class="address">
-                H.NO.1-2-288/23/2<br>SBH COLONY, DOMALGUDA<br>HYDERABAD, TELANGANA 500029<br>9949237676, 7032774699
-              </div>
-              <div class="title-block"></div>
-            </header>
-            
-            <div class="thick-line"></div>
+            ${renderAyuPdfHeaderHtml()}
 
             <div class="section">
               <div class="section-heading">1. PATIENT INFORMATION</div>
@@ -987,16 +978,7 @@ export default function LabPage({ setNotice, user }: Props) {
               <p style="margin: 0; font-weight: bold; letter-spacing: 2px;">........................................</p>
             </div>
             
-            <footer class="footer">
-              <div class="footer-dash"></div>
-              <div class="footer-content">
-                <div>Thank you for choosing Ayu Polyclinic.</div>
-                <div class="medical-symbol-wrap">
-                  <img class="medical-symbol" src="${PRINT_MEDICAL_SYMBOL_DATA_URI}" alt="Medical symbol" />
-                </div>
-                <div>Valid for 7 days or 2 times.</div>
-              </div>
-            </footer>
+            ${renderAyuPdfFooterHtml("Page 1 of 1")}
           </main>
         </body>
       </html>`;
@@ -1211,17 +1193,7 @@ export default function LabPage({ setNotice, user }: Props) {
         <main class="report" data-hospai-shared-print-shell style="${pageBreakStyle}">
           <img class="hospai-shared-watermark" src="${PRINT_WATERMARK_DATA_URI}" alt="Ayu Polyclinic Watermark" />
           
-          <header class="header-container">
-            <div>
-              <img class="brand-logo" src="${PRINT_BRAND_HEADER_DATA_URI}" alt="Ayu Polyclinic Logo" />
-            </div>
-            <div class="address">
-              H.NO.1-2-288/23/2<br>SBH COLONY, DOMALGUDA<br>HYDERABAD, TELANGANA 500029<br>9949237676, 7032774699
-            </div>
-            <div class="title-block"></div>
-          </header>
-          
-          <div class="thick-line"></div>
+          ${renderAyuPdfHeaderHtml()}
 
           <div class="section">
             <div class="section-heading">1. PATIENT INFORMATION</div>
@@ -1274,16 +1246,7 @@ export default function LabPage({ setNotice, user }: Props) {
             <p style="margin: 0; font-weight: bold; letter-spacing: 2px;">........................................</p>
           </div>
           
-          <footer class="footer">
-            <div class="footer-dash"></div>
-            <div class="footer-content">
-              <div>Thank you for choosing Ayu Polyclinic.</div>
-              <div class="medical-symbol-wrap">
-                <img class="medical-symbol" src="${PRINT_MEDICAL_SYMBOL_DATA_URI}" alt="Medical symbol" />
-              </div>
-              <div>Valid for 7 days or 2 times.</div>
-            </div>
-          </footer>
+          ${renderAyuPdfFooterHtml("Page 1 of 1")}
         </main>
       `;
     }).join("");
@@ -1501,17 +1464,7 @@ export default function LabPage({ setNotice, user }: Props) {
           <main class="report" data-hospai-shared-print-shell>
             <img class="hospai-shared-watermark" src="${PRINT_WATERMARK_DATA_URI}" alt="Ayu Polyclinic Watermark" />
             
-            <header class="header-container">
-              <div>
-                <img class="brand-logo" src="${PRINT_BRAND_HEADER_DATA_URI}" alt="Ayu Polyclinic Logo" />
-              </div>
-              <div class="address">
-                H.NO.1-2-288/23/2<br>SBH COLONY, DOMALGUDA<br>HYDERABAD, TELANGANA 500029<br>9949237676, 7032774699
-              </div>
-              <div class="title-block"></div>
-            </header>
-            
-            <div class="thick-line"></div>
+            ${renderAyuPdfHeaderHtml()}
 
             <div class="section">
               <div class="section-heading">1. PATIENT INFORMATION</div>
@@ -1564,16 +1517,7 @@ export default function LabPage({ setNotice, user }: Props) {
               <p style="margin: 0; font-weight: bold; letter-spacing: 2px;">........................................</p>
             </div>
             
-            <footer class="footer">
-              <div class="footer-dash"></div>
-              <div class="footer-content">
-                <div>Thank you for choosing Ayu Polyclinic.</div>
-                <div class="medical-symbol-wrap">
-                  <img class="medical-symbol" src="${PRINT_MEDICAL_SYMBOL_DATA_URI}" alt="Medical symbol" />
-                </div>
-                <div>Valid for 7 days or 2 times.</div>
-              </div>
-            </footer>
+            ${renderAyuPdfFooterHtml("Page 1 of 1")}
           </main>
         </body>
       </html>`;

@@ -11,7 +11,7 @@ import { apiFetch, getHospitalCode, reportError } from "../lib/api";
 import { downloadExportBlob } from "../lib/exportShare";
 import { filterInteger, filterDecimal } from "../lib/format";
 import { printViaIframe } from "../lib/printViaIframe";
-import { PRINT_BRAND_HEADER_DATA_URI, PRINT_WATERMARK_DATA_URI, PRINT_RX_SYMBOL_DATA_URI, PRINT_EMBLEM_DATA_URI } from "../lib/printBrand";
+import { PRINT_BRAND_HEADER_DATA_URI, PRINT_WATERMARK_DATA_URI, PRINT_RX_SYMBOL_DATA_URI, PRINT_EMBLEM_DATA_URI, PRINT_CADUCEUS_DATA_URI, PRINT_AMBULANCE_DATA_URI, PRINT_FOOTER_IMAGE_DATA_URI } from "../lib/printBrand";
 
 type Props = { setNotice: Dispatch<SetStateAction<Notice | null>>; view: "prescription" | "ip-admission" | "nurse-station" | "discharge-summary" };
 
@@ -407,15 +407,64 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
     return Object.entries(form).map(([key, value]) => `${key.replace(/_/g, " ")}: ${value || "-"}`).join("\n");
   };
 
-  const downloadPdf = async () => {
+    const downloadPdf = async () => {
     if (view === "discharge-summary" && (!form.admission_id || !admissionData || admissionData.admission_id !== form.admission_id)) {
-      setNotice({ type: "warning", message: "Enter a valid IP Admission Number and click \"Auto-Fill History\" before printing -- it's required so billing, ward, and clinical history are drawn from the real admission record." });
+      setNotice({ type: "warning", message: 'Enter a valid IP Admission Number and click "Auto-Fill History" before printing -- it\'s required so billing, ward, and clinical history are drawn from the real admission record.' });
       return;
     }
     if (!form.patient_name.trim()) {
       setNotice({ type: "warning", message: "Patient name is required before PDF download." });
       return;
     }
+    
+    if (view === "prescription") {
+      try {
+        const { jsPDF } = await import("jspdf");
+        const html2canvas = (await import("html2canvas")).default;
+        
+        const tempDiv = document.createElement("div");
+        const wrapHtml = getPrescriptionHtml().split('<body')[1].split('</body>')[0].replace(/.*?>/, '');
+        tempDiv.innerHTML = wrapHtml;
+        const frame = tempDiv.querySelector('.rx-print-wrap') as HTMLElement;
+        if (frame) {
+          frame.style.width = "794px";
+          frame.style.minHeight = "1123px";
+          frame.style.position = "absolute";
+          frame.style.top = "-9999px";
+          frame.style.left = "-9999px";
+          document.body.appendChild(frame);
+          
+          const canvas = await html2canvas(frame, { scale: 2, useCORS: true });
+          const imgData = canvas.toDataURL("image/jpeg", 0.95);
+          
+          const pdf = new jsPDF("p", "mm", "a4");
+          const imgHeight = (canvas.height * 210) / canvas.width;
+          let heightLeft = imgHeight;
+          let position = 0;
+
+          pdf.addImage(imgData, "JPEG", 0, position, 210, imgHeight);
+          heightLeft -= 297;
+
+          while (heightLeft > 0) {
+            position = heightLeft - imgHeight;
+            pdf.addPage();
+            pdf.addImage(imgData, "JPEG", 0, position, 210, imgHeight);
+            heightLeft -= 297;
+          }
+
+          pdf.save(`${form.patient_id || "prescription"}-prescription.pdf`);
+          
+          document.body.removeChild(frame);
+          setNotice({ type: "success", message: `Doctor Prescription PDF downloaded.` });
+        }
+        return;
+      } catch (e) {
+        console.error(e);
+        setNotice({ type: "error", message: "Unable to generate PDF download." });
+        return;
+      }
+    }
+
     try {
       const response = await fetch(`${API_BASE}/api/export/pdf`, {
         method: "POST",
@@ -436,184 +485,444 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
     }
   };
 
-  const getPrescriptionHtml = () => {
-    const pid = form.patient_id || "-";
-    const patientName = form.patient_name || "-";
-    const printDate = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
-    const doctorName = form.doctor_name || "-";
-    
-    const medsRows = medicines.map((m, i) => {
-      const drugNameHtml = m.dosage
-        ? `<b>${m.medicine_name || "-"}</b><br/><i style="font-weight:normal;">(${m.dosage})</i>`
-        : `<b>${m.medicine_name || "-"}</b>`;
-      const durationVal = m.duration ? `(${m.duration})` : "-";
+  const buildPrescriptionHtml = (data: {
+    patientName: string;
+    patientAddress: string;
+    ageGender: string;
+    diagnosis: string;
+    printDate: string;
+    doctorName?: string;
+    medsHtml: string;
+    advice?: string;
+    followUpDate?: string;
+  }) => {
+    const docName = data.doctorName && data.doctorName.trim() && data.doctorName !== "-" ? data.doctorName : "Dr. Sushanth. B";
+    const locationIcon = `<svg viewBox="0 0 24 24" width="15" height="15" fill="#1d4289" style="flex-shrink:0; margin-top:1px;"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`;
+    const phoneIcon = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1d4289" stroke-width="1.8" style="vertical-align:-2px; margin-right:5px;"><circle cx="12" cy="12" r="9.5" fill="none"/><path d="M8.2 7.8c.25 0 .5.16.6.4l.5 1.5c.08.25 0 .55-.24.72l-.65.5c.56 1.13 1.47 2.04 2.6 2.6l.5-.65c.17-.23.47-.32.72-.24l1.5.5c.24.1.4.35.4.6v1.2c0 .33-.27.6-.6.6C9.4 15.5 7 13.1 7 8.4c0-.33.27-.6.6-.6h.6z" fill="#1d4289" stroke="none"/></svg>`;
+    const emailIcon = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1d4289" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:5px;"><rect x="2" y="5" width="20" height="14" rx="1.5"/><path d="M2 6.5l10 7 10-7"/></svg>`;
 
-      if (m.is_custom) {
-        return `
-        <tr>
-          <td style="text-align:center; font-weight:bold;">${i+1})</td>
-          <td>${drugNameHtml}</td>
-          <td colspan="3" style="text-align:center;">${m.freq_custom || "-"}</td>
-          <td>${m.instructions || "-"}</td>
-          <td style="text-align:center;">${durationVal}</td>
-        </tr>`;
-      }
-
-      const parts = (m.frequency || "").split("-").map(p => p.trim());
-      const mor = parts[0] || "";
-      const aft = parts[1] || "";
-      const ngt = parts[2] || "";
-      return `
-      <tr>
-        <td style="text-align:center; font-weight:bold;">${i+1})</td>
-        <td>${drugNameHtml}</td>
-        <td style="text-align:center;">${mor}</td>
-        <td style="text-align:center;">${aft}</td>
-        <td style="text-align:center;">${ngt}</td>
-        <td>${m.instructions || ""}</td>
-        <td style="text-align:center;">${durationVal}</td>
-      </tr>
-    `}).join("");
-
-
-
-    const html = `<!DOCTYPE html>
+    return `<!DOCTYPE html>
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>Prescription Preview</title>
+  <title>AYU POLYCLINIC - Doctor Prescription</title>
 </head>
-<body style="margin: 0; padding: 0; display: flex; flex-direction: column;">
-      <div class="rx-print-wrap" data-hospai-shared-print-shell>
-        <style>
-          @page { margin: 0; }
-          .rx-print-wrap { font-family: Arial, sans-serif; color: #111; position: relative; padding: 15mm 15mm 35mm 15mm; box-sizing: border-box; background: #fff; }
-          
-          /* Header */
-          .rx-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-bottom: 15px; }
-          .rx-header-left { color: #274384; }
-          .rx-header-left h1 { margin: 0; font-size: 26px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase; }
-          .rx-header-left .doc-name { font-weight: 800; font-size: 15px; margin-top: 5px; color: #1e3a8a; }
-          .rx-header-left .doc-qual { font-size: 12px; margin-top: 2px; }
-          .rx-logo { width: 90px; object-fit: contain; }
+<body style="margin: 0; padding: 0; display: flex; flex-direction: column; background: #ffffff;">
+  <div class="rx-print-wrap" data-hospai-shared-print-shell>
+    <style>
+      @page {
+        size: A4 portrait;
+        margin: 0;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      .rx-print-wrap {
+        width: 794px;
+        min-height: 1123px;
+        position: relative;
+        background: #ffffff;
+        padding: 16mm 18mm 32mm 18mm;
+        box-sizing: border-box;
+        font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+        color: #1e293b;
+      }
 
-          /* Patient Info */
-          .rx-patient-info { font-size: 13px; line-height: 2; margin-bottom: 10px; }
-          .rx-pi-row { display: flex; justify-content: flex-end; margin-bottom: 6px; }
-          .rx-pi-row.full { justify-content: space-between; }
-          .rx-line-fill { border-bottom: 1px solid #777; display: inline-block; padding-left: 5px; }
-          
-          .rx-symbol { height: 50px; width: 65px; margin: 15px 0 25px 0; display: block; object-fit: contain; }
+      /* Header */
+      .rx-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 6px;
+      }
+      .rx-clinic-title {
+        margin: 0;
+        font-size: 26px;
+        font-weight: 900;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+        color: #1d4289;
+        line-height: 1.15;
+        border-bottom: 2px solid #1d4289;
+        display: inline-block;
+        padding-bottom: 2px;
+      }
+      .rx-doctor-name {
+        font-size: 15.5px;
+        font-weight: 800;
+        color: #1d4289;
+        margin-top: 5px;
+      }
+      .rx-doctor-qual {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #1d4289;
+        margin-top: 2px;
+        line-height: 1.3;
+      }
+      .rx-logo-img {
+        width: 86px;
+        height: 76px;
+        object-fit: contain;
+      }
 
-          
-          /* Table */
-          .rx-content-area { position: relative; z-index: 1; }
-            .rx-watermark { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); opacity: 0.10; width: 55%; z-index: 0; pointer-events: none; }
-          .rx-table { width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 13px; }
-          .rx-table th, .rx-table td { padding: 8px 5px; border-bottom: 1px dashed #ccc; text-align: left; vertical-align: middle; }
-          .rx-table th { font-weight: bold; border-bottom: 2px solid #aaa; }
-          .rx-table th.center, .rx-table td.center { text-align: center; }
-          
-          .rx-advice { font-size: 13px; margin-bottom: 25px; line-height: 1.8; }
-          .rx-advice h4 { font-size: 14px; font-weight: bold; margin: 0 0 8px 0; }
-          .rx-advice p { margin: 4px 0 4px 10px; }
-          
-          .rx-bottom-container { position: absolute; bottom: 35mm; left: 15mm; right: 15mm; display: flex; justify-content: flex-end; }
-          .rx-sig-block { text-align: right; padding-right: 15px; font-size: 13px; font-weight: bold; width: 280px; border-top: 1px solid #111; padding-top: 5px; color: #274384; }
-          
-          /* Footer */
-          .rx-footer { position: fixed; left: 0; right: 0; bottom: 0; height: 30mm; background: #fff; padding: 5mm 15mm; display: flex; justify-content: space-between; align-items: flex-end; color: #274384; font-size: 11px; z-index: 9999; }
-          .rx-footer-left { display: flex; align-items: center; gap: 15px; }
-          .rx-footer-list { list-style: disc; margin: 0; padding-left: 20px; line-height: 1.6; font-weight: 600; }
-          .rx-footer-icon { font-size: 36px; color: #274384; display: flex; align-items: center; justify-content: center; background: #e0e7ff; border-radius: 8px; padding: 8px; }
-          .rx-footer-right { border-left: 2px solid #274384; padding-left: 15px; line-height: 1.5; font-weight: 600; max-width: 55%; }
-          .rx-footer-right .contact-row { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
-        </style>
-        
+      /* Patient Info Section */
+      .rx-patient-section {
+        margin-top: 10px;
+        font-size: 13px;
+        color: #64748b;
+      }
+      .rx-row {
+        display: flex;
+        align-items: flex-end;
+        margin-bottom: 7px;
+      }
+      .rx-row-right {
+        justify-content: flex-end;
+        margin-bottom: 5px;
+      }
+      .rx-field-label {
+        font-size: 12.5px;
+        color: #556987;
+        font-weight: 600;
+        white-space: nowrap;
+        margin-right: 6px;
+      }
+      .rx-line-wrap {
+        flex: 1;
+        display: flex;
+        align-items: flex-end;
+        border-bottom: 1px solid #cbd5e1;
+        min-height: 22px;
+        padding-left: 6px;
+        padding-bottom: 1px;
+      }
+      .rx-line-val {
+        color: #0f172a;
+        font-weight: 700;
+        font-size: 13.5px;
+      }
 
-        
-        <div class="rx-header">
-          <div class="rx-header-left">
-            <h1>AYU POLYCLINIC</h1>
-            <div class="doc-name">Dr. Sushanth. B</div>
-            <div class="doc-qual">MBBS (Gandhi), (FCCM)</div>
-            <div class="doc-qual">TSMC/FM/27444</div>
-          </div>
-          <img src="${PRINT_EMBLEM_DATA_URI}" class="rx-logo" />
-          </div>
-          
-          <div class="rx-content-area">
-            <img src="${PRINT_WATERMARK_DATA_URI}" class="rx-watermark" />
-          <div class="rx-patient-info">
-            <div class="rx-pi-row">
-              <div style="width: 250px; display:flex;">Date:&nbsp;<span class="rx-line-fill" style="flex:1;">${printDate}</span></div>
-            </div>
-            <div class="rx-pi-row full">
-              <div style="flex: 1; display:flex; padding-right: 30px;">Patient Name:&nbsp;<span class="rx-line-fill" style="flex:1;">${patientName}</span></div>
-            </div>
-            <div class="rx-pi-row full">
-              <div style="flex: 1; display:flex; padding-right: 30px;">Address:&nbsp;<span class="rx-line-fill" style="flex:1;"></span></div>
-              <div style="width: 150px; display:flex;">Age:&nbsp;<span class="rx-line-fill" style="flex:1;">${form.age_gender || "-"}</span></div>
-            </div>
-            <div class="rx-pi-row full">
-              <div style="flex: 1; display:flex;">Diagnosis:&nbsp;<span class="rx-line-fill" style="flex:1;">${form.diagnosis || ""}</span></div>
-            </div>
-          </div>
-          
-          <img class="rx-symbol" src="${PRINT_RX_SYMBOL_DATA_URI}" alt="Rx" />
-          
-          ${medicines.length > 0 || (false) ? `
-          <table class="rx-table">
-            <thead>
-              <tr>
-                <th style="width: 5%;" class="center">#</th>
-                <th style="width: 35%;">Medicine</th>
-                <th style="width: 15%;" class="center">Frequency</th>
-                <th style="width: 30%;">Instructions</th>
-                <th style="width: 15%;" class="center">Duration</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${medsRows}
-            </tbody>
-          </table>
-          ` : ""}
-          
-          <div class="rx-advice">
-            ${(form.advice) ? `<h4>Advice :</h4>${(form.advice).split('\n').filter(Boolean).map(line => `<p>${line}</p>`).join('')}` : ""}
-            ${(form.follow_up_date) ? `<h4>Next Review:</h4><p>${form.follow_up_date}</p>` : ""}
-          </div>
-        </div>
-        
-        <div class="rx-bottom-container">
-          <div class="rx-sig-block">SIGNATURE</div>
-        </div>
-        
-        <footer class="rx-footer">
-          <div class="rx-footer-left">
-            <ul class="rx-footer-list">
-              <li>24/7 Emergency</li>
-              <li>Ambulance Service</li>
-              <li>Home Care Service Available</li>
-            </ul>
-            <div class="rx-footer-icon">🚑</div>
-          </div>
-          <div class="rx-footer-right">
-            <div class="contact-row">
-              <span style="font-size: 14px;">📍</span> 
-              <span>GGF2+2F8, Old Alwal Road, Jonnabanda, Chetana Housing Colony, Brundavan Colony, Bolaram - 500010, Hyderabad.</span>
-            </div>
-            <div class="contact-row">
-              <span style="font-size: 14px;">📞</span> <span>+91 6303346810</span> &nbsp;&nbsp;&nbsp; 
-              <span style="font-size: 14px;">✉️</span> <span>dr.sushanth108@gmail.com</span>
-            </div>
-          </div>
-        </footer>
+      /* Rx Body & Watermark */
+      .rx-body-area {
+        position: relative;
+        margin-top: 12px;
+        min-height: 560px;
+        z-index: 1;
+      }
+      .rx-watermark-img {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 330px;
+        opacity: 0.07;
+        z-index: 0;
+        pointer-events: none;
+        user-select: none;
+      }
+      .rx-symbol-img {
+        width: 44px;
+        height: 52px;
+        object-fit: contain;
+        margin-bottom: 14px;
+        display: block;
+      }
+      .rx-meds-list {
+        position: relative;
+        z-index: 2;
+        font-size: 14px;
+        line-height: 1.8;
+        color: #0f172a;
+      }
+      .rx-med-item {
+        margin-bottom: 10px;
+        padding-left: 4px;
+      }
+      .rx-med-name {
+        font-weight: 800;
+        color: #0f172a;
+      }
+      .rx-med-dosage {
+        font-weight: normal;
+        color: #334155;
+        font-style: italic;
+      }
+      .rx-med-meta {
+        color: #334155;
+        font-weight: 600;
+      }
+
+      .rx-advice-block {
+        position: relative;
+        z-index: 2;
+        margin-top: 25px;
+        font-size: 13px;
+        color: #1e293b;
+      }
+      .rx-advice-heading {
+        font-weight: 800;
+        font-size: 13.5px;
+        color: #1d4289;
+        margin-bottom: 4px;
+      }
+
+      /* Doctor Signature */
+      .rx-sig-section {
+        position: absolute;
+        bottom: 30mm;
+        right: 18mm;
+        width: 210px;
+        text-align: center;
+        z-index: 10;
+      }
+      .rx-sig-line {
+        border-top: 1px solid #94a3b8;
+        width: 100%;
+        margin-bottom: 5px;
+      }
+      .rx-sig-label {
+        font-size: 11px;
+        font-weight: 800;
+        color: #1d4289;
+        letter-spacing: 1.2px;
+      }
+
+      /* Footer - Exact Reference Pad Reproduction */
+      .rx-footer {
+        position: absolute;
+        bottom: 8mm;
+        left: 18mm;
+        right: 18mm;
+        box-sizing: border-box;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        z-index: 10;
+        background: #ffffff;
+        color: #1d4289;
+        font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+      }
+      .rx-footer-left {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        flex-shrink: 0;
+      }
+      .rx-footer-services {
+        display: flex;
+        flex-direction: column;
+        gap: 4px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #1d4289;
+        line-height: 1.35;
+        white-space: nowrap;
+      }
+      .rx-service-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .rx-service-bullet {
+        width: 5px;
+        height: 5px;
+        background-color: #1d4289;
+        border-radius: 50%;
+        display: inline-block;
+        flex-shrink: 0;
+      }
+      .rx-ambulance-img {
+        width: 55px;
+        height: 44px;
+        object-fit: contain;
+        display: block;
+      }
+      .rx-footer-divider {
+        width: 3px;
+        height: 48px;
+        background-color: #1d4289;
+        margin: 0 16px;
+        flex-shrink: 0;
+      }
+      .rx-footer-right {
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        flex: 1;
+        min-width: 0;
+      }
+      .rx-address-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 8px;
+        margin-bottom: 5px;
+      }
+      .rx-address-text {
+        font-size: 11.5px;
+        font-weight: 700;
+        color: #1d4289;
+        line-height: 1.35;
+      }
+      .rx-contact-row {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+      }
+      .rx-contact-item {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        font-size: 12px;
+        font-weight: 700;
+        color: #1d4289;
+        white-space: nowrap;
+      }
+    </style>
+
+    <!-- Header -->
+    <div class="rx-header">
+      <div class="rx-header-left">
+        <h1 class="rx-clinic-title">AYU POLYCLINIC</h1>
+        <div class="rx-doctor-name">${docName}</div>
+        <div class="rx-doctor-qual">MBBS (Gandhi), (FCCM)</div>
+        <div class="rx-doctor-qual">TSMC/FM/27444</div>
       </div>
+      <img src="${PRINT_CADUCEUS_DATA_URI}" class="rx-logo-img" alt="Caduceus" />
+    </div>
+
+    <!-- Patient Details -->
+    <div class="rx-patient-section">
+      <div class="rx-row rx-row-right">
+        <span class="rx-field-label">Date:</span>
+        <div class="rx-line-wrap" style="flex:0 0 160px;">
+          ${data.printDate ? `<span class="rx-line-val">${data.printDate}</span>` : ""}
+        </div>
+      </div>
+
+      <div class="rx-row">
+        <span class="rx-field-label">Patient Name:</span>
+        <div class="rx-line-wrap">
+          ${data.patientName ? `<span class="rx-line-val">${data.patientName}</span>` : ""}
+        </div>
+      </div>
+
+      <div class="rx-row">
+        <span class="rx-field-label">Address:</span>
+        <div class="rx-line-wrap" style="flex: 1; margin-right: 20px;">
+          ${data.patientAddress ? `<span class="rx-line-val">${data.patientAddress}</span>` : ""}
+        </div>
+        <span class="rx-field-label">Age:</span>
+        <div class="rx-line-wrap" style="flex: 0 0 120px;">
+          ${data.ageGender ? `<span class="rx-line-val">${data.ageGender}</span>` : ""}
+        </div>
+      </div>
+
+      <div class="rx-row">
+        <span class="rx-field-label">Diagnosis:</span>
+        <div class="rx-line-wrap">
+          ${data.diagnosis ? `<span class="rx-line-val">${data.diagnosis}</span>` : ""}
+        </div>
+      </div>
+    </div>
+
+    <!-- Prescription Area -->
+    <div class="rx-body-area">
+      <!-- Faint Medical Watermark in Center -->
+      <img src="${PRINT_WATERMARK_DATA_URI}" class="rx-watermark-img" alt="Watermark" />
+
+      <!-- Rx Symbol -->
+      <img src="${PRINT_RX_SYMBOL_DATA_URI}" class="rx-symbol-img" alt="Rx" />
+
+      <!-- Prescribed Medicines -->
+      ${data.medsHtml ? `<div class="rx-meds-list">${data.medsHtml}</div>` : ""}
+
+      <!-- Advice -->
+      ${(data.advice || data.followUpDate) ? `
+      <div class="rx-advice-block">
+        ${data.advice ? `<div class="rx-advice-heading">Advice:</div>${data.advice.split(/\r?\n/).filter(Boolean).map(line => `<div>• ${line}</div>`).join('')}` : ""}
+        ${data.followUpDate ? `<div style="margin-top: 10px;"><span class="rx-advice-heading">Next Review:</span> ${data.followUpDate}</div>` : ""}
+      </div>` : ""}
+    </div>
+
+    <!-- Doctor Signature -->
+    <div class="rx-sig-section">
+      <div class="rx-sig-line"></div>
+      <div class="rx-sig-label">SIGNATURE</div>
+    </div>
+
+    <!-- 3-Part Footer (Exact Reference Pad Matching) -->
+    <footer class="rx-footer">
+      <div class="rx-footer-left">
+        <div class="rx-footer-services">
+          <div class="rx-service-item"><span class="rx-service-bullet"></span>24/7 Emergency</div>
+          <div class="rx-service-item"><span class="rx-service-bullet"></span>Ambulance Service</div>
+          <div class="rx-service-item"><span class="rx-service-bullet"></span>Home Care Service Available</div>
+        </div>
+        <img src="${PRINT_AMBULANCE_DATA_URI}" class="rx-ambulance-img" alt="Ambulance" />
+      </div>
+
+      <div class="rx-footer-divider"></div>
+
+      <div class="rx-footer-right">
+        <div class="rx-address-row">
+          <svg viewBox="0 0 24 32" width="15" height="20" fill="none" style="flex-shrink:0; margin-top:1px;">
+            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 0C5.373 0 0 5.373 0 12c0 8.8 12 20 12 20s12-11.2 12-20c0-6.627-5.373-12-12-12zm0 6a6 6 0 1 0 0 12 6 6 0 0 0 0-12z" fill="#1d4289"/>
+          </svg>
+          <div class="rx-address-text">
+            <div>GGF2+2F8, Old Alwal Road, Jonnabanda,</div>
+            <div>Chetana Housing Colony, Brundavan Colony,</div>
+            <div>Bollaram - 500010, Hyderabad.</div>
+          </div>
+        </div>
+        <div class="rx-contact-row">
+          <div class="rx-contact-item">
+            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" style="flex-shrink:0;">
+              <circle cx="12" cy="12" r="10" stroke="#1d4289" stroke-width="2"/>
+              <path d="M8.2 7.8c.25 0 .5.16.6.4l.5 1.5c.08.25 0 .55-.24.72l-.65.5c.56 1.13 1.47 2.04 2.6 2.6l.5-.65c.17-.23.47-.32.72-.24l1.5.5c.24.1.4.35.4.6v1.2c0 .33-.27.6-.6.6C9.4 15.5 7 13.1 7 8.4c0-.33.27-.6.6-.6h.6z" fill="#1d4289"/>
+            </svg>
+            <span>+91 6303346810</span>
+          </div>
+          <div class="rx-contact-item">
+            <svg viewBox="0 0 24 18" width="17" height="13" fill="none" style="flex-shrink:0;">
+              <rect x="1.5" y="1.5" width="21" height="15" rx="1.5" stroke="#1d4289" stroke-width="1.8"/>
+              <polyline points="2.5,2.5 12,10.5 21.5,2.5" stroke="#1d4289" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+            <span>dr.sushanth108@gmail.com</span>
+          </div>
+        </div>
+      </div>
+    </footer>
+  </div>
 </body>
-</html>
-    `;
-    return html;
+</html>`;
+  };
+
+  const getPrescriptionHtml = () => {
+    const printDate = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const patientAddress = bannerPatient ? [bannerPatient.address, bannerPatient.city].filter(Boolean).join(", ") : "";
+
+    const medsHtml = medicines.map((m, i) => {
+      if (!m.medicine_name) return "";
+      const freq = m.is_custom ? m.freq_custom : (m.frequency ? m.frequency.split('-').join(' - ') : "");
+      let parts = [];
+      if (freq) parts.push(freq);
+      if (m.instructions) parts.push(m.instructions);
+      if (m.duration) parts.push('for ' + m.duration);
+      return `<div class="rx-med-item"><b>${i + 1}.</b> <span class="rx-med-name">${m.medicine_name}</span>${m.dosage ? ` <span class="rx-med-dosage">(${m.dosage})</span>` : ''}${parts.length > 0 ? ` &mdash; <span class="rx-med-meta">${parts.join(' &mdash; ')}</span>` : ''}</div>`;
+    }).join("");
+
+    return buildPrescriptionHtml({
+      patientName: form.patient_name || "",
+      patientAddress,
+      ageGender: form.age_gender || "",
+      diagnosis: form.diagnosis || "",
+      printDate,
+      doctorName: form.doctor_name || "Dr. Sushanth. B",
+      medsHtml,
+      advice: form.advice || "",
+      followUpDate: form.follow_up_date || ""
+    });
   };
 
   const handlePrintPrescription = () => {
@@ -621,190 +930,82 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
   };
 
   const getHistoryPrescriptionHtml = (rx: any) => {
-    const pid = rx.patient_id || form.patient_id || "-";
-    const patientName = form.patient_name || "-";
     const printDate = rx.created_at
       ? new Date(rx.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" })
-      : "-";
-    const doctorName = rx.doctor_name || "-";
+      : "";
     const rxMeds = rx.medicines || [];
+    const patientAddress = bannerPatient ? [bannerPatient.address, bannerPatient.city].filter(Boolean).join(", ") : "";
 
-    const medsRows = rxMeds.map((m: any, i: number) => {
-      const drugNameHtml = m.dosage
-        ? `<b>${m.medicine_name || "-"}</b><br/><i style="font-weight:normal;">(${m.dosage})</i>`
-        : `<b>${m.medicine_name || "-"}</b>`;
-      const durationVal = m.duration ? `(${m.duration})` : "-";
-      if (m.is_custom) {
-        return `
-        <tr>
-          <td style="text-align:center; font-weight:bold;">${i+1})</td>
-          <td>${drugNameHtml}</td>
-          <td colspan="3" style="text-align:center;">${m.freq_custom || "-"}</td>
-          <td>${m.instructions || "-"}</td>
-          <td style="text-align:center;">${durationVal}</td>
-        </tr>`;
-      }
-      
-      const parts = (m.frequency || "").split("-").map((p: string) => p.trim());
-      const mor = parts[0] || "";
-      const aft = parts[1] || "";
-      const ngt = parts[2] || "";
-      return `
-      <tr>
-        <td style="text-align:center; font-weight:bold;">${i+1})</td>
-        <td>${drugNameHtml}</td>
-        <td style="text-align:center;">${mor}</td>
-        <td style="text-align:center;">${aft}</td>
-        <td style="text-align:center;">${ngt}</td>
-        <td>${m.instructions || ""}</td>
-        <td style="text-align:center;">${durationVal}</td>
-      </tr>
-      `;
+    const medsHtml = rxMeds.map((m: any, i: number) => {
+      if (!m.medicine_name) return "";
+      const freq = m.is_custom ? m.freq_custom : (m.frequency ? m.frequency.split('-').join(' - ') : "");
+      let parts = [];
+      if (freq) parts.push(freq);
+      if (m.instructions) parts.push(m.instructions);
+      if (m.duration) parts.push('for ' + m.duration);
+      return `<div class="rx-med-item"><b>${i + 1}.</b> <span class="rx-med-name">${m.medicine_name}</span>${m.dosage ? ` <span class="rx-med-dosage">(${m.dosage})</span>` : ''}${parts.length > 0 ? ` &mdash; <span class="rx-med-meta">${parts.join(' &mdash; ')}</span>` : ''}</div>`;
     }).join("");
 
-
-
-    const html = `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>Prescription Preview</title>
-</head>
-<body style="margin: 0; padding: 0; display: flex; flex-direction: column;">
-      <div class="rx-print-wrap" data-hospai-shared-print-shell>
-        <style>
-          @page { margin: 0; }
-          .rx-print-wrap { font-family: Arial, sans-serif; color: #111; position: relative; padding: 15mm 15mm 35mm 15mm; box-sizing: border-box; background: #fff; }
-          
-          /* Header */
-          .rx-header { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-bottom: 15px; }
-          .rx-header-left { color: #274384; }
-          .rx-header-left h1 { margin: 0; font-size: 26px; font-weight: 900; letter-spacing: 0.5px; text-transform: uppercase; }
-          .rx-header-left .doc-name { font-weight: 800; font-size: 15px; margin-top: 5px; color: #1e3a8a; }
-          .rx-header-left .doc-qual { font-size: 12px; margin-top: 2px; }
-          .rx-logo { width: 90px; object-fit: contain; }
-
-          /* Patient Info */
-          .rx-patient-info { font-size: 13px; line-height: 2; margin-bottom: 10px; }
-          .rx-pi-row { display: flex; justify-content: flex-end; margin-bottom: 6px; }
-          .rx-pi-row.full { justify-content: space-between; }
-          .rx-line-fill { border-bottom: 1px solid #777; display: inline-block; padding-left: 5px; }
-          
-          .rx-symbol { height: 50px; width: 65px; margin: 15px 0 25px 0; display: block; object-fit: contain; }
-
-          
-          /* Table */
-          .rx-content-area { position: relative; z-index: 1; }
-            .rx-watermark { position: absolute; top: 45%; left: 50%; transform: translate(-50%, -50%); opacity: 0.10; width: 55%; z-index: 0; pointer-events: none; }
-          .rx-table { width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 13px; }
-          .rx-table th, .rx-table td { padding: 8px 5px; border-bottom: 1px dashed #ccc; text-align: left; vertical-align: middle; }
-          .rx-table th { font-weight: bold; border-bottom: 2px solid #aaa; }
-          .rx-table th.center, .rx-table td.center { text-align: center; }
-          
-          .rx-advice { font-size: 13px; margin-bottom: 25px; line-height: 1.8; }
-          .rx-advice h4 { font-size: 14px; font-weight: bold; margin: 0 0 8px 0; }
-          .rx-advice p { margin: 4px 0 4px 10px; }
-          
-          .rx-bottom-container { position: absolute; bottom: 35mm; left: 15mm; right: 15mm; display: flex; justify-content: flex-end; }
-          .rx-sig-block { text-align: right; padding-right: 15px; font-size: 13px; font-weight: bold; width: 280px; border-top: 1px solid #111; padding-top: 5px; color: #274384; }
-          
-          /* Footer */
-          .rx-footer { position: fixed; left: 0; right: 0; bottom: 0; height: 30mm; background: #fff; padding: 5mm 15mm; display: flex; justify-content: space-between; align-items: flex-end; color: #274384; font-size: 11px; z-index: 9999; }
-          .rx-footer-left { display: flex; align-items: center; gap: 15px; }
-          .rx-footer-list { list-style: disc; margin: 0; padding-left: 20px; line-height: 1.6; font-weight: 600; }
-          .rx-footer-icon { font-size: 36px; color: #274384; display: flex; align-items: center; justify-content: center; background: #e0e7ff; border-radius: 8px; padding: 8px; }
-          .rx-footer-right { border-left: 2px solid #274384; padding-left: 15px; line-height: 1.5; font-weight: 600; max-width: 55%; }
-          .rx-footer-right .contact-row { display: flex; align-items: flex-start; gap: 8px; margin-bottom: 4px; }
-        </style>
-        
-
-        
-        <div class="rx-header">
-          <div class="rx-header-left">
-            <h1>AYU POLYCLINIC</h1>
-            <div class="doc-name">Dr. Sushanth. B</div>
-            <div class="doc-qual">MBBS (Gandhi), (FCCM)</div>
-            <div class="doc-qual">TSMC/FM/27444</div>
-          </div>
-          <img src="${PRINT_EMBLEM_DATA_URI}" class="rx-logo" />
-          </div>
-          
-          <div class="rx-content-area">
-            <img src="${PRINT_WATERMARK_DATA_URI}" class="rx-watermark" />
-          <div class="rx-patient-info">
-            <div class="rx-pi-row">
-              <div style="width: 250px; display:flex;">Date:&nbsp;<span class="rx-line-fill" style="flex:1;">${printDate}</span></div>
-            </div>
-            <div class="rx-pi-row full">
-              <div style="flex: 1; display:flex; padding-right: 30px;">Patient Name:&nbsp;<span class="rx-line-fill" style="flex:1;">${patientName}</span></div>
-            </div>
-            <div class="rx-pi-row full">
-              <div style="flex: 1; display:flex; padding-right: 30px;">Address:&nbsp;<span class="rx-line-fill" style="flex:1;"></span></div>
-              <div style="width: 150px; display:flex;">Age:&nbsp;<span class="rx-line-fill" style="flex:1;">${rx.age_gender || rx.age_gender || "-"}</span></div>
-            </div>
-            <div class="rx-pi-row full">
-              <div style="flex: 1; display:flex;">Diagnosis:&nbsp;<span class="rx-line-fill" style="flex:1;">${rx.diagnosis || rx.diagnosis || ""}</span></div>
-            </div>
-          </div>
-          
-          <img class="rx-symbol" src="${PRINT_RX_SYMBOL_DATA_URI}" alt="Rx" />
-          
-          ${(rx.medicines && rx.medicines.length > 0) ? `
-          <table class="rx-table">
-            <thead>
-              <tr>
-                <th style="width: 5%;" class="center">#</th>
-                <th style="width: 35%;">Medicine</th>
-                <th style="width: 15%;" class="center">Frequency</th>
-                <th style="width: 30%;">Instructions</th>
-                <th style="width: 15%;" class="center">Duration</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${medsRows}
-            </tbody>
-          </table>
-          ` : ""}
-          
-          <div class="rx-advice">
-            ${(rx.advice || rx.advice) ? `<h4>Advice :</h4>${(rx.advice || rx.advice).split('\n').filter(Boolean).map((line: string) => `<p>${line}</p>`).join('')}` : ""}
-            ${(rx.follow_up_date || rx.follow_up_date) ? `<h4>Next Review:</h4><p>${rx.follow_up_date || rx.follow_up_date}</p>` : ""}
-          </div>
-        </div>
-        
-        <div class="rx-bottom-container">
-          <div class="rx-sig-block">SIGNATURE</div>
-        </div>
-        
-        <footer class="rx-footer">
-          <div class="rx-footer-left">
-            <ul class="rx-footer-list">
-              <li>24/7 Emergency</li>
-              <li>Ambulance Service</li>
-              <li>Home Care Service Available</li>
-            </ul>
-            <div class="rx-footer-icon">🚑</div>
-          </div>
-          <div class="rx-footer-right">
-            <div class="contact-row">
-              <span style="font-size: 14px;">📍</span> 
-              <span>GGF2+2F8, Old Alwal Road, Jonnabanda, Chetana Housing Colony, Brundavan Colony, Bolaram - 500010, Hyderabad.</span>
-            </div>
-            <div class="contact-row">
-              <span style="font-size: 14px;">📞</span> <span>+91 6303346810</span> &nbsp;&nbsp;&nbsp; 
-              <span style="font-size: 14px;">✉️</span> <span>dr.sushanth108@gmail.com</span>
-            </div>
-          </div>
-        </footer>
-      </div>
-</body>
-</html>
-    `;
-    return html;
+    return buildPrescriptionHtml({
+      patientName: form.patient_name || rx.patient_name || "",
+      patientAddress,
+      ageGender: rx.age_gender || form.age_gender || "",
+      diagnosis: rx.diagnosis || "",
+      printDate,
+      doctorName: rx.doctor_name || form.doctor_name || "Dr. Sushanth. B",
+      medsHtml,
+      advice: rx.advice || "",
+      followUpDate: rx.follow_up_date || ""
+    });
   };
 
   const handlePrintHistoryPrescription = (rx: any) => {
     printViaIframe(getHistoryPrescriptionHtml(rx), `Doctor_Prescription_${rx.patient_id || "-"}_${rx.id}`);
+  };
+
+  const downloadHistoryPdf = async (rx: any) => {
+    try {
+      const { jsPDF } = await import("jspdf");
+      const html2canvas = (await import("html2canvas")).default;
+
+      const tempDiv = document.createElement("div");
+      const wrapHtml = getHistoryPrescriptionHtml(rx).split('<body')[1].split('</body>')[0].replace(/.*?>/, '');
+      tempDiv.innerHTML = wrapHtml;
+      const frame = tempDiv.querySelector('.rx-print-wrap') as HTMLElement;
+      if (frame) {
+        frame.style.width = "794px";
+        frame.style.minHeight = "1123px";
+        frame.style.position = "absolute";
+        frame.style.top = "-9999px";
+        frame.style.left = "-9999px";
+        document.body.appendChild(frame);
+
+        const canvas = await html2canvas(frame, { scale: 2, useCORS: true });
+        const imgData = canvas.toDataURL("image/jpeg", 0.95);
+
+        const pdf = new jsPDF("p", "mm", "a4");
+        const imgHeight = (canvas.height * 210) / canvas.width;
+        let heightLeft = imgHeight;
+        let position = 0;
+
+        pdf.addImage(imgData, "JPEG", 0, position, 210, imgHeight);
+        heightLeft -= 297;
+
+        while (heightLeft > 0) {
+          position = heightLeft - imgHeight;
+          pdf.addPage();
+          pdf.addImage(imgData, "JPEG", 0, position, 210, imgHeight);
+          heightLeft -= 297;
+        }
+
+        pdf.save(`${rx.patient_id || form.patient_id || "prescription"}-prescription-${rx.id || "rx"}.pdf`);
+        document.body.removeChild(frame);
+        setNotice({ type: "success", message: `Doctor Prescription PDF downloaded.` });
+      }
+    } catch (e) {
+      console.error(e);
+      setNotice({ type: "error", message: "Unable to generate PDF download." });
+    }
   };
 
   return (
@@ -1115,6 +1316,9 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
             <Button type="button" variant="primary" onClick={() => { handlePrintPrescription(); }} style={{ background: "#e8612d", borderColor: "#e8612d" }}>
               🖨 Print Prescription
             </Button>
+            <Button type="button" variant="secondary" onClick={() => { void downloadPdf(); }}>
+              📥 Download PDF
+            </Button>
             <Button type="button" variant="secondary" onClick={save} disabled={saving}>{saving ? "Saving\u2026" : "Save Prescription"}</Button>
             <Button type="button" variant="primary" onClick={() => savePrescription(true)} disabled={saving}>{saving ? "Saving\u2026" : "Complete Consultation"}</Button>
             <Button type="button" variant="ghost" onClick={() => { setForm({ ...DEFAULTS.prescription }); setMedicines([{ medicine_name: "", dosage: "", frequency: "", freq_options: [], duration: "", instructions: "" }]); setSaveToken(generateToken()); }}>New Prescription</Button>
@@ -1138,9 +1342,14 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
         <div className="panel prescription-preview-panel" style={{ flex: "1 1 450px", minWidth: "400px", display: "flex", flexDirection: "column" }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
             <h3 style={{ margin: 0, fontSize: "1.1rem" }}>Prescription Preview</h3>
-            <Button type="button" variant="primary" onClick={handlePrintPrescription}>
-              🖨 Print Preview
-            </Button>
+            <div style={{ display: "flex", gap: "8px" }}>
+              <Button type="button" variant="secondary" onClick={() => void downloadPdf()}>
+                📥 Download PDF
+              </Button>
+              <Button type="button" variant="primary" onClick={handlePrintPrescription}>
+                🖨 Print Preview
+              </Button>
+            </div>
           </div>
           <div style={{ flex: 1, display: "flex", flexDirection: "column", border: "1px solid var(--border)", borderRadius: "8px", overflow: "hidden", background: "#fff", minHeight: "800px" }}>
             <iframe
@@ -1252,7 +1461,10 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
 
 
 
-                        <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid var(--border)" }}>
+                        <div style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "0.75rem", paddingTop: "0.75rem", borderTop: "1px solid var(--border)" }}>
+                          <Button type="button" variant="secondary" onClick={() => void downloadHistoryPdf(rx)} style={{ fontSize: "0.85rem", padding: "6px 14px" }}>
+                            📥 Download PDF
+                          </Button>
                           <Button type="button" variant="primary" onClick={() => handlePrintHistoryPrescription(rx)} style={{ background: "#e8612d", borderColor: "#e8612d", fontSize: "0.85rem", padding: "6px 16px" }}>
                             🖨 Print Prescription
                           </Button>

@@ -49,6 +49,7 @@ def on_startup():
     restored Postgres dump / SQLAlchemy models, not created here)."""
     with db_session() as db:
         security.create_default_users(db)
+        security.create_default_clinical_master(db)
 
 
 # ------------------------------------------------------------ error handling --

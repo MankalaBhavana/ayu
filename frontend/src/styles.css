@@ -362,10 +362,10 @@ a.link.danger {
 .brand img {
   width: auto;
   height: 42px;
-  border-radius: 10px;
-  border: 1px solid rgba(10, 130, 136, 0.16);
-  background: white;
-  box-shadow: 0 6px 12px rgba(10, 80, 90, 0.12);
+  border-radius: 0;
+  border: none;
+  background: transparent;
+  box-shadow: none;
 }
 
 .brand-title {
@@ -700,12 +700,12 @@ a.link.danger {
   padding: 0.22rem 0 0.5rem;
 }
 
-.sidebar .brand img {
-  width: auto;
-  height: 42px;
-  border-radius: 8px;
-  border: 0;
-  box-shadow: none;
+.sidebar .brand img,
+.hospital-brand-container img {
+  border-radius: 0;
+  border: none !important;
+  background: transparent !important;
+  box-shadow: none !important;
 }
 
 .sidebar .brand-title {
@@ -8795,12 +8795,7 @@ main {
   display: block;
 }
 
-.sidebar .brand-logo-img,
-.sidebar .brand-logo-fallback {
-  width: 220px !important;
-  height: auto !important;
-  max-height: 75px !important;
-}
+/* Sidebar brand icon styling handled by HospitalBrand component */
 
 /* OP Management PDF alignment: dashboard registration popup and patient detail cards */
 .hosp-patient-pop-modal,
@@ -8970,35 +8965,15 @@ main {
 
 /* Uploaded HospAI full logo display: sidebar/auth only; keeps app behavior unchanged. */
 .sidebar .brand {
-  display: block !important;
-  width: calc(100% + 1.8rem) !important;
-  margin: -1.05rem -0.9rem 0.5rem -0.9rem !important;
-  padding: 1.25rem 0.5rem !important;
-  background: #ffffff !important;
-  border-bottom: 1px solid rgba(24, 57, 83, 0.08);
-  text-align: center !important;
-  box-sizing: border-box !important;
-}
-.sidebar .brand .brand-logo-img,
-.sidebar .brand .brand-logo-fallback {
-  width: 95% !important;
-  margin: 0 auto !important;
-  max-width: 228px !important;
-  height: auto !important;
-  max-height: 95px !important;
-  min-width: 0 !important;
-  min-height: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  width: 100% !important;
+  margin: 0 0 0.8rem 0 !important;
+  padding: 0.6rem 0.6rem 0.9rem !important;
   background: transparent !important;
-  border: none !important;
-  box-shadow: none !important;
-  border-radius: 0 !important;
-  object-fit: contain !important;
-  display: block !important;
-  image-rendering: -webkit-optimize-contrast !important;
-  image-rendering: crisp-edges !important;
-}
-.sidebar .brand .brand-title {
-  display: none !important;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  text-align: left !important;
+  box-sizing: border-box !important;
 }
 
 .auth-card .brand,

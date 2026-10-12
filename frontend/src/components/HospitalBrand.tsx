@@ -16,7 +16,7 @@ export type HospitalBrandProps = {
 export const HOSPITAL_BRAND_CONFIG = {
   name: "Ayu",
   sub: "POLYCLINIC",
-  emblemSrc: "/logo_emblem.png?v=20261008-2",
+  emblemSrc: "/logo_emblem.png?v=20261012-v5",
   colors: {
     sidebarText: "#ffffff",
     sidebarHospital: "#e11d48", // Highly readable crimson red on navy sidebar
@@ -26,11 +26,11 @@ export const HOSPITAL_BRAND_CONFIG = {
 };
 
 const EMBLEM_SIZE_BY_VARIANT: Record<HospitalBrandVariant, number> = {
-  sidebar: 56,
-  collapsed: 48,
-  print: 48,
-  screen: 44,
-  header: 44,
+  sidebar: 58,
+  collapsed: 44,
+  print: 52,
+  screen: 48,
+  header: 48,
 };
 
 const VISUALLY_HIDDEN_STYLE: CSSProperties = {
@@ -44,15 +44,40 @@ const VISUALLY_HIDDEN_STYLE: CSSProperties = {
   border: 0,
 };
 
-function BrandEmblem({ size }: { size: number }) {
+function BrandEmblem({ size, isSidebar }: { size: number; isSidebar?: boolean }) {
   return (
-    <img
-      src={HOSPITAL_BRAND_CONFIG.emblemSrc}
-      alt="Ayu Polyclinic emblem"
-      style={{ width: size, height: size, objectFit: "contain", flexShrink: 0, display: "block" }}
-      loading="eager"
-      decoding="sync"
-    />
+    <div
+      style={{
+        width: size,
+        height: size,
+        backgroundColor: "transparent",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        flexShrink: 0,
+        boxSizing: "border-box",
+      }}
+    >
+      <img
+        src={HOSPITAL_BRAND_CONFIG.emblemSrc}
+        alt="Ayu Polyclinic emblem"
+        style={{
+          width: "100%",
+          height: "100%",
+          objectFit: "contain",
+          display: "block",
+          backgroundColor: "transparent",
+          background: "transparent",
+          border: "none",
+          boxShadow: "none",
+          filter: isSidebar
+            ? "drop-shadow(0 0 1px rgba(255, 255, 255, 0.45)) drop-shadow(0 2px 4px rgba(0, 0, 0, 0.5))"
+            : undefined,
+        }}
+        loading="eager"
+        decoding="sync"
+      />
+    </div>
   );
 }
 
@@ -79,7 +104,7 @@ export default function HospitalBrand({
         title="Ayu Polyclinic"
         aria-label="Ayu Polyclinic"
       >
-        <BrandEmblem size={size} />
+        <BrandEmblem size={size} isSidebar={true} />
         <span style={VISUALLY_HIDDEN_STYLE}>Ayu Polyclinic</span>
       </div>
     );
@@ -91,19 +116,19 @@ export default function HospitalBrand({
   return (
     <div
       className={`hospital-brand-container hospital-brand-${variant} ${className}`}
-      style={{ display: "flex", alignItems: "center", gap: "12px", minWidth: 0, ...style }}
+      style={{ display: "flex", alignItems: "center", gap: "14px", minWidth: 0, ...style }}
       onClick={onClick}
     >
-      <BrandEmblem size={size} />
-      <div className="hospital-brand-titles" style={{ display: "flex", flexDirection: "column", justifyContent: "center", minWidth: 0, lineHeight: 1.15 }}>
+      <BrandEmblem size={size} isSidebar={isSidebar} />
+      <div className="hospital-brand-titles" style={{ display: "flex", flexDirection: "column", justifyContent: "center", minWidth: 0, lineHeight: 1.12 }}>
         <span
           className="hospital-brand-name"
           style={{
-            fontSize: isSidebar ? "22px" : isPrint ? "20px" : "18px",
-            fontWeight: 700,
+            fontSize: isSidebar ? "26px" : isPrint ? "22px" : "20px",
+            fontWeight: 800,
             color: resolvedTextColor,
             fontFamily: "inherit",
-            letterSpacing: "-0.015em",
+            letterSpacing: "-0.02em",
             whiteSpace: "nowrap",
             margin: 0,
             padding: 0,
@@ -115,13 +140,13 @@ export default function HospitalBrand({
           <span
             className="hospital-brand-sub"
             style={{
-              fontSize: isSidebar ? "11.5px" : isPrint ? "10.5px" : "10px",
+              fontSize: isSidebar ? "12px" : isPrint ? "11px" : "10px",
               fontWeight: 800,
               color: resolvedHospitalColor,
-              letterSpacing: "0.18em",
+              letterSpacing: "0.22em",
               textTransform: "uppercase",
               whiteSpace: "nowrap",
-              margin: "2px 0 0",
+              margin: "3px 0 0",
               padding: 0,
             }}
           >

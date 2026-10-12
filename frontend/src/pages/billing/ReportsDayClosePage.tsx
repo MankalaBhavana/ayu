@@ -413,8 +413,7 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
               >
                 <option>Main Billing</option>
                 <option>Counter 1 - Main OPD</option>
-                <option>Counter 2 - Emergency</option>
-                <option>Counter 3 - IP Desk</option>
+                <option>Counter 2 - Pharmacy & Diagnostics</option>
               </select>
             </div>
           </div>

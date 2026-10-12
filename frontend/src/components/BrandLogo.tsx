@@ -1,7 +1,7 @@
 import { useState } from "react";
 
 const LOGO_BASE = import.meta.env.BASE_URL || "./";
-const LOGO_QUERY = "?v=hospai-uploaded-logo-20261008-2";
+const LOGO_QUERY = "?v=hospai-clean-transparent-20261012";
 const LOGO_PATHS = [
   `${LOGO_BASE}logo.png${LOGO_QUERY}`,
   `${LOGO_BASE}logo.jpg${LOGO_QUERY}`,

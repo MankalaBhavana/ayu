@@ -34,7 +34,7 @@ type StockBatch = {
 };
 
 export default function PharmacyReports({ setNotice, onNavigate }: Props) {
-  const [reportCategory, setReportCategory] = useState<"sales" | "inventory" | "ipd" | "returns">("sales");
+  const [reportCategory, setReportCategory] = useState<"sales" | "inventory" | "returns">("sales");
   const [sales, setSales] = useState<SaleRow[]>([]);
   const [stock, setStock] = useState<StockBatch[]>([]);
   const [returns, setReturns] = useState<any[]>([]);
@@ -107,18 +107,13 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
   const salesMetrics = useMemo(() => {
     let totalRevenue = 0;
     let opRevenue = 0;
-    let ipdRevenue = 0;
     let cashRevenue = 0;
     let insuranceRevenue = 0;
 
     for (const s of filteredSales) {
       const amount = s.amount || 0;
       totalRevenue += amount;
-      if (s.admission_id) {
-        ipdRevenue += amount;
-      } else {
-        opRevenue += amount;
-      }
+      opRevenue += amount;
 
       if (s.stock_source === "INSURANCE") {
         insuranceRevenue += amount;
@@ -135,11 +130,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
       const refund = (r.quantity || 0) * (sale.unit_price || 0);
       totalRevenue -= refund;
       totalReturned += refund;
-      if (sale.admission_id) {
-        ipdRevenue -= refund;
-      } else {
-        opRevenue -= refund;
-      }
+      opRevenue -= refund;
       if (sale.stock_source === "INSURANCE") {
         insuranceRevenue -= refund;
       } else {
@@ -147,7 +138,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
       }
     }
 
-    return { totalRevenue, opRevenue, ipdRevenue, cashRevenue, insuranceRevenue, totalReturned };
+    return { totalRevenue, opRevenue, cashRevenue, insuranceRevenue, totalReturned };
   }, [filteredSales, filteredReturns, sales]);
 
   // Inventory Valuation Metrics
@@ -182,7 +173,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
             s.unit_price,
             (s.amount || 0).toFixed(2),
             s.stock_source || "CASH",
-            s.admission_id ? "IPD Issue" : "OP Dispense",
+            "OP Dispense",
             s.sold_at || "",
           ].join(",")
         )
@@ -222,7 +213,6 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
   const CATEGORY_TITLES: Record<typeof reportCategory, string> = {
     sales: "Pharmacy Sales & Revenue Report",
     inventory: "Pharmacy Inventory Valuation Report",
-    ipd: "IPD Ward Medication Consumption Report",
     returns: "Pharmacy Returns & Reversals Report",
   };
 
@@ -241,7 +231,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
       rows = filteredSales.map((s) => {
         const amount = s.amount || 0;
         grandTotal += amount;
-        return [s.medicine_name, s.quantity, `₹${(s.unit_price || 0).toFixed(2)}`, `₹${amount.toFixed(2)}`, s.stock_source || "CASH", s.admission_id ? "IPD Issue" : "OP Dispense", s.sold_at ? new Date(s.sold_at).toLocaleDateString("en-IN") : "-"];
+        return [s.medicine_name, s.quantity, `₹${(s.unit_price || 0).toFixed(2)}`, `₹${amount.toFixed(2)}`, s.stock_source || "CASH", "OP Dispense", s.sold_at ? new Date(s.sold_at).toLocaleDateString("en-IN") : "-"];
       });
       grandTotalLabel = "Total Revenue"; grandTotalValue = `₹${grandTotal.toFixed(2)}`;
     } else if (reportCategory === "inventory") {
@@ -253,15 +243,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
         return [b.medicine_name, b.qty_available, `₹${(b.unit_price || 0).toFixed(2)}`, `₹${(b.mrp || b.unit_price || 0).toFixed(2)}`, `₹${value.toFixed(2)}`, b.expiry_date || "-"];
       });
       grandTotalLabel = "Total Stock Value"; grandTotalValue = `₹${grandTotal.toFixed(2)}`;
-    } else if (reportCategory === "ipd") {
-      columns = ["Medicine", "Qty Issued", "Charge Rate", "Total Posted", "Patient UHID", "Admission #"];
-      let grandTotal = 0;
-      rows = sales.filter((s) => s.admission_id).map((s) => {
-        const amount = s.amount || 0;
-        grandTotal += amount;
-        return [s.medicine_name, s.quantity, `₹${(s.unit_price || 0).toFixed(2)}`, `₹${amount.toFixed(2)}`, s.patient_id || "-", `ADM-${s.admission_id}`];
-      });
-      grandTotalLabel = "Total Posted to Admissions"; grandTotalValue = `₹${grandTotal.toFixed(2)}`;
+
     } else {
       columns = ["Return ID", "Original Sale", "Qty", "Reason", "Status", "Date"];
       rows = returns.map((r) => [r.id, r.original_sale_id, r.quantity, r.reason || "-", r.status, r.created_at || "-"]);
@@ -318,7 +300,6 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
         {[
           { id: "sales", label: "Sales & Revenue" },
           { id: "inventory", label: "Inventory Valuation" },
-          { id: "ipd", label: "IPD Ward Consumption" },
           { id: "returns", label: `Returns & Reversals (${returns.length})` },
         ].map((tab) => (
           <button
@@ -392,18 +373,6 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
                 ₹{salesMetrics.opRevenue.toFixed(2)}
               </div>
             </div>
-            <div style={{ background: "#ffffff", padding: "1.25rem", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
-              <div style={{ fontSize: "0.8rem", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>IPD Admission Charges</div>
-              <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#0284c7", marginTop: "4px" }}>
-                ₹{salesMetrics.ipdRevenue.toFixed(2)}
-              </div>
-            </div>
-            <div style={{ background: "#ffffff", padding: "1.25rem", borderRadius: "10px", border: "1px solid #e2e8f0" }}>
-              <div style={{ fontSize: "0.8rem", color: "#64748b", fontWeight: 700, textTransform: "uppercase" }}>Insurance / Scheme Revenue</div>
-              <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#7c3aed", marginTop: "4px" }}>
-                ₹{salesMetrics.insuranceRevenue.toFixed(2)}
-              </div>
-            </div>
             <div style={{ background: "#fff7ed", padding: "1.25rem", borderRadius: "10px", border: "1px solid #fed7aa" }}>
               <div style={{ fontSize: "0.8rem", color: "#9a3412", fontWeight: 700, textTransform: "uppercase" }}>Returned / Refunded</div>
               <div style={{ fontSize: "1.6rem", fontWeight: 800, color: "#c2410c", marginTop: "4px" }}>
@@ -441,7 +410,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
                       </td>
                       <td style={{ padding: "0.5rem 0.75rem" }}>
                         <span style={{ fontSize: "0.72rem", padding: "2px 8px", borderRadius: "10px", fontWeight: 600, background: s.admission_id ? "#e0f2fe" : "#f0fdf4", color: s.admission_id ? "#0369a1" : "#166534" }}>
-                          {s.admission_id ? "IPD Issue" : "OP Dispense"}
+                          "OP Dispense"
                         </span>
                       </td>
                       <td style={{ padding: "0.5rem 0.75rem", color: "#64748b" }}>{s.patient_id || "-"}</td>
@@ -519,44 +488,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
         </div>
       )}
 
-      {/* 3. IPD WARD CONSUMPTION */}
-      {reportCategory === "ipd" && (
-        <div style={{ background: "#ffffff", borderRadius: "10px", padding: "1.25rem", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <h3 style={{ margin: "0 0 1rem 0", fontSize: "1.05rem", fontWeight: 700, color: "#0f172a" }}>
-            Inpatient Medication Consumption by Admission
-          </h3>
-          <p style={{ fontSize: "0.85rem", color: "#64748b", margin: "0 0 1rem 0" }}>
-            All running pharmacy charges posted to IPD patient accounts during hospital stay:
-          </p>
 
-          <table className="pharmacy-data-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
-            <thead>
-              <tr style={{ borderBottom: "2px solid #e2e8f0", textAlign: "left", color: "#64748b" }}>
-                <th style={{ padding: "0.5rem" }}>Medicine</th>
-                <th style={{ padding: "0.5rem", textAlign: "center" }}>Qty Issued</th>
-                <th style={{ padding: "0.5rem", textAlign: "right" }}>Charge Rate</th>
-                <th style={{ padding: "0.5rem", textAlign: "right" }}>Total Posted</th>
-                <th style={{ padding: "0.5rem" }}>Patient UHID</th>
-                <th style={{ padding: "0.5rem" }}>Admission #</th>
-              </tr>
-            </thead>
-            <tbody>
-              {sales.filter((s) => s.admission_id).map((s) => (
-                <tr key={s.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                  <td style={{ padding: "0.5rem", fontWeight: 600 }}>{s.medicine_name}</td>
-                  <td style={{ padding: "0.5rem", textAlign: "center", fontWeight: 700 }}>{s.quantity}</td>
-                  <td style={{ padding: "0.5rem", textAlign: "right" }}>₹{(s.unit_price || 0).toFixed(2)}</td>
-                  <td style={{ padding: "0.5rem", textAlign: "right", fontWeight: 700, color: "#0284c7" }}>
-                    ₹{(s.amount || 0).toFixed(2)}
-                  </td>
-                  <td style={{ padding: "0.5rem", color: "#64748b" }}>{s.patient_id}</td>
-                  <td style={{ padding: "0.5rem", fontWeight: 600 }}>ADM-{s.admission_id}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
 
       {/* 4. RETURNS & REVERSALS */}
       {reportCategory === "returns" && (

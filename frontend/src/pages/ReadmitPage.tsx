@@ -8,6 +8,7 @@ import { API_BASE, DOC_TYPES, SUPPORTED_DOCUMENT_ACCEPT, SUPPORTED_DOCUMENT_EXTE
 import { apiFetch, reportError } from "../lib/api";
 import { formatDateTimeIST, getISTDateTimeKey, getTimestamp, stripUploadTimestampPrefix, filterInteger, filterDecimal } from "../lib/format";
 import { printViaIframe } from "../lib/printViaIframe";
+import { renderAyuPdfHeaderHtml, renderAyuPdfFooterHtml } from "../lib/pdfTemplate";
 import { PRINT_BRAND_HEADER_DATA_URI, PRINT_MEDICAL_SYMBOL_DATA_URI, PRINT_WATERMARK_DATA_URI } from "../lib/printBrand";
 import type { DocumentItem, Notice, Patient } from "../types";
 
@@ -521,17 +522,7 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
           <main class="report" data-hospai-shared-print-shell>
             <img class="hospai-shared-watermark" src="${PRINT_WATERMARK_DATA_URI}" alt="Ayu Polyclinic Watermark" />
             
-            <header>
-              <div class="header-container">
-                <div class="brand-wrap">
-                  <img class="brand-logo" src="${PRINT_BRAND_HEADER_DATA_URI}" alt="Ayu Polyclinic Logo" />
-                </div>
-                <div class="address">
-                  H.NO.1-2-288/23/2<br>SBH COLONY, DOMALGUDA<br>HYDERABAD, TELANGANA 500029<br>9949237676, 7032774699
-                </div>
-              </div>
-              <div class="thick-line"></div>
-            </header>
+            ${renderAyuPdfHeaderHtml()}
 
             <table class="info-table">
               <tr>
@@ -590,15 +581,7 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
               <p style="margin: 0; font-weight: bold; letter-spacing: 2px;">........................................</p>
             </div>
             
-            <footer class="hospai-shared-print-footer" data-hospai-shared-print-footer>
-              <span class="hospai-shared-footer-rule left"></span>
-              <img class="hospai-shared-footer-symbol" src="${PRINT_MEDICAL_SYMBOL_DATA_URI}" alt="Medical symbol" />
-              <span class="hospai-shared-footer-rule right"></span>
-              <div class="hospai-shared-footer-copy">
-                <span>Thank you for choosing Ayu Polyclinic.</span>
-                <span>Valid for 7 days or 2 times.</span>
-              </div>
-            </footer>
+            ${renderAyuPdfFooterHtml("Page 1 of 1")}
           </main>
         </body>
       </html>`;
@@ -663,7 +646,7 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
         `Review Fee: ${reviewFee}`,
         paymentMode ? `Payment Mode: ${paymentMode}` : ""
       ].filter(Boolean).join(" | ");
-      const finalNotes = [additionalNotes, notes ? `[Admission Notes]\n${notes}` : ""].filter(Boolean).join("\n\n");
+      const finalNotes = [additionalNotes, notes ? `[Re-visit Notes]\n${notes}` : ""].filter(Boolean).join("\n\n");
 
       const data = await apiFetch<{ admission_id: string }>(`/api/patients/${activePatient.patient_id}/admissions`, {
         method: "POST",
@@ -766,7 +749,7 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
                       variant={expanded ? "ghost" : "primary"}
                       size="sm"
                     >
-                      {expanded ? "Hide" : "Readmit"}
+                      {expanded ? "Hide" : "Re-visit"}
                     </Button>
                   </TableCell>
                 </TableRow>
@@ -776,31 +759,9 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
                       <h4>
                         Re-visiting: {activePatient.name} {activePatient.last_name} ({activePatient.patient_id})
                       </h4>
-                      {onNavigate && (
-                        <div style={{ background: "#eff6ff", border: "1.5px solid #93c5fd", borderRadius: "8px", padding: "10px 14px", marginBottom: "14px", display: "flex", justifyContent: "space-between", alignItems: "center", flexWrap: "wrap", gap: "10px" }}>
-                          <div>
-                            <strong style={{ color: "#1e40af", fontSize: "13px" }}>Admitting as Inpatient (IP)?</strong>
-                            <p style={{ margin: "2px 0 0 0", color: "#3b82f6", fontSize: "12px" }}>
-                              If {activePatient.name} requires bed allocation and inpatient admission, proceed directly to IP Admission.
-                            </p>
-                          </div>
-                          <Button
-                            type="button"
-                            variant="primary"
-                            size="sm"
-                            style={{ background: "#2563eb", borderColor: "#2563eb", fontWeight: 700 }}
-                            onClick={() => {
-                              localStorage.setItem("selected_admission_patient", activePatient.patient_id);
-                              onNavigate("ip-admission");
-                            }}
-                          >
-                            Proceed to IP Admission & Bed Allotment ➔
-                          </Button>
-                        </div>
-                      )}
                       <Label>
-                        Admission Notes
-                        <Textarea className="readmit-notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} />
+                        Re-visit / Follow-up Notes
+                        <Textarea className="readmit-notes" value={notes} onChange={(event) => setNotes(event.target.value)} rows={3} placeholder="Enter clinical notes / reason for re-visit..." />
                       </Label>
                       <h5>Update Patient Details</h5>
                       <div className="readmit-profile-grid">
@@ -978,7 +939,7 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
                           Print Confirmation
                         </Button>
                         <Button variant="primary" onClick={() => void handleReadmit()} disabled={submitting || Boolean(getActiveReadmitEntry(activePatient.patient_id))}>
-                          {submitting ? "Submitting..." : "Confirm Re-admission"}
+                          {submitting ? "Submitting..." : "Confirm Re-visit"}
                         </Button>
                       </div>
                     </div>

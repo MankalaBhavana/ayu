@@ -303,7 +303,7 @@ export default function PharmacySettings({ setNotice, onNavigate }: Props) {
               { name: "Main Central Pharmacy", code: "PHARM-MAIN", desc: "Ground floor outpatient & central dispensing" },
               { name: "Emergency Fast-Rack", code: "RACK-EMERGENCY", desc: "Crash cart & acute emergency drugs" },
               { name: "Cold Chain Storage (2°C - 8°C)", code: "COLD-STORAGE", desc: "Insulins, vaccines, and sera" },
-              { name: "IPD Floor 2 Storage Cabinet", code: "CAB-IPD-2", desc: "Inpatient routine ward stock" },
+              { name: "Day Care / Procedure Rack", code: "RACK-DAYCARE", desc: "Day care & observation procedures" },
             ].map((loc) => (
               <div key={loc.code} style={{ background: "#f8fafc", padding: "1rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
                 <div style={{ fontWeight: 700, color: "#0f172a" }}>{loc.name}</div>
@@ -382,7 +382,7 @@ export default function PharmacySettings({ setNotice, onNavigate }: Props) {
               {editingMed ? `Edit Medicine: ${editingMed.name}` : "Register Medicine in Master Catalog"}
             </h3>
             <p style={{ margin: "0 0 1rem 0", fontSize: "0.85rem", color: "#64748b" }}>
-              Configured master record used across OP Dispensing, IPD Medication Orders, and GRN verification.
+              Configured master record used across OP Dispensing, Emergency Orders, and GRN verification.
             </p>
 
             <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>

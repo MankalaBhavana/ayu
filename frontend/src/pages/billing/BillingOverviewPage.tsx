@@ -23,7 +23,7 @@ export default function BillingOverviewPage({ setNotice, onNavigate }: Props) {
   const [department, setDepartment] = useState("All departments");
   const [visitType, setVisitType] = useState("All visit types");
   const [searchQuery, setSearchQuery] = useState("");
-  const [worklistTab, setWorklistTab] = useState<"pending" | "discharge" | "receipts">("pending");
+  const [worklistTab, setWorklistTab] = useState<"pending" | "receipts">("pending");
 
   // Independent Loading States
   const [statsLoading, setStatsLoading] = useState(true);
@@ -421,7 +421,6 @@ return (
                 >
                   <option value="All departments">All departments</option>
                   <option value="OP">Outpatient (OP)</option>
-                  <option value="IP">Inpatient (IP)</option>
                   <option value="Pharmacy">Pharmacy</option>
                   <option value="Laboratory">Laboratory</option>
                   <option value="Imaging">Imaging / Radiology</option>
@@ -434,8 +433,6 @@ return (
                 >
                   <option value="All visit types">All visit types</option>
                   <option value="OP">OP Visits</option>
-                  <option value="IP">IP Admissions</option>
-                  <option value="Emergency">Emergency</option>
                 </select>
               </div>
             </div>
@@ -450,17 +447,6 @@ return (
                 Pending payments
                 <span className="billing-tab-badge">
                   {worklist.pending_payments.length}
-                </span>
-              </button>
-
-              <button
-                type="button"
-                className={`billing-tab-btn ${worklistTab === "discharge" ? "active" : ""}`}
-                onClick={() => setWorklistTab("discharge")}
-              >
-                Discharge review
-                <span className="billing-tab-badge">
-                  {worklist.discharge_review.length}
                 </span>
               </button>
 
@@ -527,39 +513,6 @@ return (
                             >
                               Collect
                             </button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                )
-              ) : worklistTab === "discharge" ? (
-                worklist.discharge_review.length === 0 ? (
-                  <div className="billing-state-box">
-                    <p style={{ margin: 0 }}>No active inpatient discharge clearances pending.</p>
-                  </div>
-                ) : (
-                  <table className="billing-table">
-                    <thead>
-                      <tr>
-                        <th>Patient</th>
-                        <th>Admission ID</th>
-                        <th>Ward / Room</th>
-                        <th>Admitted Date</th>
-                        <th style={{ textAlign: "right" }}>Action</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {worklist.discharge_review.map((adm) => (
-                        <tr key={adm.raw_id}>
-                          <td>
-                            <div style={{ fontWeight: 600 }}>{adm.patient_name}</div>
-                            <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{adm.patient_id}</div>
-                          </td>
-                          <td style={{ fontWeight: 600 }}>{adm.admission_id}</td>
-                          <td>{adm.ward} · {adm.bed_no}</td>
-                          <td style={{ color: "#64748b" }}>{adm.admission_date || "Active"}</td>
-                          <td style={{ textAlign: "right" }}>
                           </td>
                         </tr>
                       ))}
@@ -673,50 +626,8 @@ return (
           </div>
         </div>
 
-        {/* Right Column: Discharge Review Card & Cashier Session Card */}
+        {/* Right Column: Cashier Session Card */}
         <div className="billing-right-col">
-          {/* Card: Discharge Review [Count] */}
-          <div className="billing-card">
-            <div className="billing-card-header">
-              <h2 className="billing-card-title">
-                Discharge review
-                <span className="billing-tab-badge">
-                  {worklist.discharge_review.length}
-                </span>
-              </h2>
-            </div>
-
-            <div className="billing-card-body" style={{ padding: "0.75rem 1.25rem" }}>
-              {worklist.discharge_review.length === 0 ? (
-                <div style={{ padding: "1rem 0", textAlign: "center", color: "#94a3b8", fontSize: "0.875rem" }}>
-                  No patients awaiting review.
-                </div>
-              ) : (
-                worklist.discharge_review.slice(0, 4).map((adm, i) => (
-                  <div
-                    key={adm.raw_id}
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      padding: "10px 0",
-                      borderBottom: i < Math.min(worklist.discharge_review.length, 4) - 1 ? "1px solid #f1f5f9" : "none",
-                    }}
-                  >
-                    <div>
-                      <div style={{ fontWeight: 600, color: "#0f172a", fontSize: "0.9rem" }}>{adm.patient_name}</div>
-                      <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
-                        {adm.patient_id} · {adm.admission_id}
-                      </div>
-                      <div style={{ fontSize: "0.75rem", color: "#94a3b8" }}>
-                        {adm.ward}
-                      </div>
-                    </div>
-                  </div>
-                ))
-              )}
-            </div>
-          </div>
 
           {/* Card: Cashier Session */}
           <div className="billing-card">

@@ -9,6 +9,7 @@ import { apiFetch, reportError } from "../lib/api";
 import { calculateAgeFromDob, formatDate, formatDateTimeIST, getISTDateTimeKey, getTimestamp, stripUploadTimestampPrefix } from "../lib/format";
 import { printViaIframe } from "../lib/printViaIframe";
 import { exportPDF, downloadPDF } from "../lib/exportService";
+import { renderAyuPdfHeaderHtml, renderAyuPdfFooterHtml } from "../lib/pdfTemplate";
 import { PRINT_BRAND_HEADER_DATA_URI, PRINT_WATERMARK_DATA_URI, PRINT_MEDICAL_SYMBOL_DATA_URI } from "../lib/printBrand";
 import type { Admission, BedAllocation, Certificate, DocumentItem, Encounter, MedicationSchedule, Notice, ObservationNote, Patient, PatientMovement, PatientVital } from "../types";
 
@@ -200,16 +201,7 @@ export default function PatientsPage({
   <div class="receipt-wrap" data-hospai-shared-print-shell>
     <img class="hospai-shared-watermark" src="\${PRINT_WATERMARK_DATA_URI}" alt="Ayu Polyclinic Watermark" />
     
-    <header class="header-container">
-      <div>
-        <img class="brand-logo" src="\${PRINT_BRAND_HEADER_DATA_URI}" alt="Ayu Polyclinic Logo" />
-      </div>
-      <div class="address">
-        H.NO.1-2-288/23/2<br>SBH COLONY, DOMALGUDA<br>HYDERABAD, TELANGANA 500029<br>9949237676, 7032774699
-      </div>
-    </header>
-    
-    <div class="thick-line"></div>
+    \${renderAyuPdfHeaderHtml()}
     
     <div class="cert-header">
       <div class="cert-title-area">
@@ -239,16 +231,7 @@ export default function PatientsPage({
       <div class="cert-body-text">\${safeText(certificate.body)}</div>
     </div>
     
-    <footer class="footer">
-      <div class="footer-dash"></div>
-      <div class="footer-content">
-        <div>Thank you for choosing Ayu Polyclinic.</div>
-        <div class="medical-symbol-wrap">
-          <img class="medical-symbol" src="\${PRINT_MEDICAL_SYMBOL_DATA_URI}" alt="Medical symbol" />
-        </div>
-        <div>Valid for 7 days or 2 times.</div>
-      </div>
-    </footer>
+    \${renderAyuPdfFooterHtml("Page 1 of 1")}
   </div>
 </body>
 </html>`;
