@@ -11,13 +11,40 @@ import { apiFetch, getHospitalCode, reportError } from "../lib/api";
 import { downloadExportBlob } from "../lib/exportShare";
 import { filterInteger, filterDecimal } from "../lib/format";
 import { printViaIframe } from "../lib/printViaIframe";
-import { PRINT_BRAND_HEADER_DATA_URI, PRINT_WATERMARK_DATA_URI, PRINT_RX_SYMBOL_DATA_URI, PRINT_EMBLEM_DATA_URI, PRINT_CADUCEUS_DATA_URI, PRINT_AMBULANCE_DATA_URI, PRINT_FOOTER_IMAGE_DATA_URI } from "../lib/printBrand";
+import { PRINT_WATERMARK_DATA_URI, PRINT_RX_SYMBOL_DATA_URI, PRINT_CADUCEUS_DATA_URI, PRINT_FOOTER_IMAGE_DATA_URI } from "../lib/printBrand";
 
 type Props = { setNotice: Dispatch<SetStateAction<Notice | null>>; view: "prescription" | "ip-admission" | "nurse-station" | "discharge-summary" };
 
 type Row = Record<string, string> & { id: string };
 
 type Medicine = { medicine_name: string; dosage: string; frequency: string; duration: string; instructions: string; freq_options?: string[]; freq_custom?: string; is_custom?: boolean; };
+type PrescriptionMedicine = Pick<Medicine, "medicine_name" | "dosage" | "frequency" | "duration" | "instructions" | "freq_custom" | "is_custom">;
+
+const escapePrescriptionHtml = (value: unknown) => String(value ?? "").replace(/[&<>\"]/g, (character) => ({
+  "&": "&amp;",
+  "<": "&lt;",
+  ">": "&gt;",
+  "\"": "&quot;",
+}[character] || character));
+
+const buildPrescriptionMedicineTable = (medicines: PrescriptionMedicine[]) => {
+  const rows = medicines
+    .filter((medicine) => medicine.medicine_name.trim())
+    .map((medicine, index) => {
+      const rawFrequency = medicine.is_custom ? (medicine.freq_custom || "").trim() : (medicine.frequency || "").trim();
+      const frequency = medicine.is_custom
+        ? rawFrequency || "-"
+        : rawFrequency.replace(/-/g, "").trim()
+          ? rawFrequency.split("-").map((slot) => slot.trim() || "0").join(" - ")
+          : "-";
+      const dosage = medicine.dosage.trim();
+      return `<tr><td class="rx-meds-number">${index + 1}</td><td>${escapePrescriptionHtml(medicine.medicine_name)}${dosage ? ` <span class="rx-med-dosage">(${escapePrescriptionHtml(dosage)})</span>` : ""}</td><td class="rx-meds-frequency">${escapePrescriptionHtml(frequency)}</td><td>${escapePrescriptionHtml(medicine.instructions.trim() || "-")}</td><td class="rx-meds-duration">${escapePrescriptionHtml(medicine.duration.trim() || "-")}</td></tr>`;
+    })
+    .join("");
+
+  if (!rows) return "";
+  return `<table class="rx-meds-table"><thead><tr><th class="rx-meds-number">Sl.<br />No.</th><th>Drug Name</th><th>Frequency (Mor-Aft-Ngt)</th><th>Comments</th><th class="rx-meds-duration">Duration</th></tr></thead><tbody>${rows}</tbody></table>`;
+};
 
 const FREQ_OPTIONS = [
   { id: "OD", label: "OD", sub: "Once a day" },
@@ -66,8 +93,6 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
   const amount = useMemo(() => Number(form.deposit_amount || 0), [form.deposit_amount]);
   const [lookingUpPatient, setLookingUpPatient] = useState(false);
   const [bannerPatient, setBannerPatient] = useState<Patient | null>(null);
-  // Defaults to false: a completed consultation with zero electronic
-  // prescription is a fully valid outcome, never forced.
   const [sendToPharmacy, setSendToPharmacy] = useState(false);
   const [scanFile, setScanFile] = useState<File | null>(null);
   const [uploadingScan, setUploadingScan] = useState(false);
@@ -131,20 +156,27 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
 
   useEffect(() => {
     if (view === "prescription") {
-      fetch(`${API_BASE}/api/appointments?status=in_consultation`, {
+      const queueDate = new Date().toLocaleDateString("en-CA");
+      fetch(`${API_BASE}/api/appointments?date=${encodeURIComponent(queueDate)}`, {
         credentials: "include",
         headers: { "X-Hospital-Code": getHospitalCode() }
       })
       .then(res => res.json())
       .then(data => {
-        const apiQueue = (data.appointments || []).map((app: any) => {
-          let ag = "";
-          if (app.age || app.gender) {
-            ag = `${app.age || ""} / ${app.gender || ""}`.trim();
-            if (ag === "/") ag = "";
-          }
-          return { ...app, age_gender: ag };
-        });
+        const apiQueue = (data.appointments || [])
+          .filter((app: any) => !["emergency", "ip"].includes(String(app.visit_type || "").trim().toLowerCase()))
+          .map((app: any) => {
+            let ag = "";
+            if (app.age || app.gender) {
+              ag = `${app.age || ""} / ${app.gender || ""}`.trim();
+              if (ag === "/") ag = "";
+            }
+            return {
+              ...app,
+              patient_name: app.patient_name || app.registered_patient_name || app.patient_id || "Patient",
+              age_gender: ag,
+            };
+          });
         const localQueueStr = localStorage.getItem("hospai_op_queue");
         const readmitQueue = localQueueStr ? JSON.parse(localQueueStr) : [];
         const readmitEntries = (Array.isArray(readmitQueue) ? readmitQueue : [])
@@ -275,6 +307,10 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
 
   const savePrescription = async (complete_consultation = false) => {
     if (!form.patient_id) { setNotice({ type: "warning", message: "Patient is required." }); return; }
+    if (complete_consultation && !form.appointment_id) {
+      setNotice({ type: "warning", message: "Select a patient from the OP Queue before completing consultation." });
+      return;
+    }
     if (saving) return;
     setSaving(true);
     try {
@@ -290,8 +326,11 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
           send_to_pharmacy: sendToPharmacy,
         }),
       });
-      if (!res.ok) throw new Error("Failed to save prescription");
-      setNotice({ type: "success", message: `Prescription saved${complete_consultation ? " and consultation completed" : ""}.` });
+      if (!res.ok) {
+        const payload = await res.json().catch(() => ({}));
+        throw new Error(payload.detail || payload.error || "Failed to save prescription");
+      }
+      setNotice({ type: "success", message: complete_consultation ? "Prescription saved and patient marked Completed in OP Queue." : "Prescription saved." });
       // Refresh prescription history after saving
       if (form.patient_id) void fetchPrescriptionHistory(form.patient_id);
       // Only rotate save_token when completing the consultation (a new visit).
@@ -631,26 +670,49 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
       .rx-meds-list {
         position: relative;
         z-index: 2;
-        font-size: 14px;
-        line-height: 1.8;
         color: #0f172a;
       }
-      .rx-med-item {
-        margin-bottom: 10px;
-        padding-left: 4px;
+      .rx-meds-table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+        border: 1px solid #8fb4dc;
+        font-size: 10px;
+        line-height: 1.25;
       }
-      .rx-med-name {
+      .rx-meds-table th,
+      .rx-meds-table td {
+        border: 1px solid #8fb4dc;
+        padding: 5px 6px;
+        vertical-align: middle;
+        overflow-wrap: anywhere;
+      }
+      .rx-meds-table th {
+        background: #dcecff;
+        color: #153d70;
+        font-size: 9px;
         font-weight: 800;
-        color: #0f172a;
+        text-align: left;
+      }
+      .rx-meds-table th:nth-child(1),
+      .rx-meds-table td:nth-child(1) {
+        width: 9%;
+        text-align: center;
+      }
+      .rx-meds-table th:nth-child(2) { width: 24%; }
+      .rx-meds-table th:nth-child(3) { width: 25%; }
+      .rx-meds-table th:nth-child(4) { width: 27%; }
+      .rx-meds-table th:nth-child(5),
+      .rx-meds-table td:nth-child(5) {
+        width: 15%;
+        text-align: center;
+      }
+      .rx-meds-frequency {
+        white-space: nowrap;
+        text-align: center;
       }
       .rx-med-dosage {
-        font-weight: normal;
         color: #334155;
-        font-style: italic;
-      }
-      .rx-med-meta {
-        color: #334155;
-        font-weight: 600;
       }
 
       .rx-advice-block {
@@ -667,28 +729,28 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
         margin-bottom: 4px;
       }
 
-      /* Doctor Signature */
-      .rx-sig-section {
+      /* Footer */
+      .rx-signature-section {
         position: absolute;
-        bottom: 30mm;
         right: 18mm;
-        width: 210px;
+        bottom: 48mm;
+        width: 58mm;
         text-align: center;
         z-index: 10;
-      }
-      .rx-sig-line {
-        border-top: 1px solid #94a3b8;
-        width: 100%;
-        margin-bottom: 5px;
-      }
-      .rx-sig-label {
-        font-size: 11px;
-        font-weight: 800;
         color: #1d4289;
-        letter-spacing: 1.2px;
+        font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+      }
+      .rx-signature-line {
+        width: 100%;
+        border-top: 1px solid #1d4289;
+        margin-bottom: 3px;
+      }
+      .rx-signature-label {
+        font-size: 8px;
+        font-weight: 800;
+        letter-spacing: 0.6px;
       }
 
-      /* Footer - Exact Reference Pad Reproduction */
       .rx-footer {
         position: absolute;
         bottom: 8mm;
@@ -698,85 +760,18 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
         display: flex;
         align-items: center;
         justify-content: space-between;
+        gap: 12px;
         z-index: 10;
         background: #ffffff;
         color: #1d4289;
         font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
       }
-      .rx-footer-left {
-        display: flex;
-        align-items: center;
-        gap: 12px;
-        flex-shrink: 0;
-      }
-      .rx-footer-services {
-        display: flex;
-        flex-direction: column;
-        gap: 4px;
-        font-size: 12px;
-        font-weight: 700;
-        color: #1d4289;
-        line-height: 1.35;
-        white-space: nowrap;
-      }
-      .rx-service-item {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-      }
-      .rx-service-bullet {
-        width: 5px;
-        height: 5px;
-        background-color: #1d4289;
-        border-radius: 50%;
-        display: inline-block;
-        flex-shrink: 0;
-      }
-      .rx-ambulance-img {
-        width: 55px;
-        height: 44px;
-        object-fit: contain;
+      .rx-footer-brand {
         display: block;
-      }
-      .rx-footer-divider {
-        width: 3px;
-        height: 48px;
-        background-color: #1d4289;
-        margin: 0 16px;
-        flex-shrink: 0;
-      }
-      .rx-footer-right {
-        display: flex;
-        flex-direction: column;
-        justify-content: center;
-        flex: 1;
-        min-width: 0;
-      }
-      .rx-address-row {
-        display: flex;
-        align-items: flex-start;
-        gap: 8px;
-        margin-bottom: 5px;
-      }
-      .rx-address-text {
-        font-size: 11.5px;
-        font-weight: 700;
-        color: #1d4289;
-        line-height: 1.35;
-      }
-      .rx-contact-row {
-        display: flex;
-        align-items: center;
-        gap: 24px;
-      }
-      .rx-contact-item {
-        display: flex;
-        align-items: center;
-        gap: 6px;
-        font-size: 12px;
-        font-weight: 700;
-        color: #1d4289;
-        white-space: nowrap;
+        width: 100%;
+        height: auto;
+        object-fit: contain;
+        object-position: left center;
       }
     </style>
 
@@ -845,53 +840,14 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
       </div>` : ""}
     </div>
 
-    <!-- Doctor Signature -->
-    <div class="rx-sig-section">
-      <div class="rx-sig-line"></div>
-      <div class="rx-sig-label">SIGNATURE</div>
+    <div class="rx-signature-section">
+      <div class="rx-signature-line"></div>
+      <div class="rx-signature-label">SIGNATURE</div>
     </div>
 
-    <!-- 3-Part Footer (Exact Reference Pad Matching) -->
+    <!-- Prescription Footer -->
     <footer class="rx-footer">
-      <div class="rx-footer-left">
-        <div class="rx-footer-services">
-          <div class="rx-service-item"><span class="rx-service-bullet"></span>24/7 Emergency</div>
-          <div class="rx-service-item"><span class="rx-service-bullet"></span>Ambulance Service</div>
-          <div class="rx-service-item"><span class="rx-service-bullet"></span>Home Care Service Available</div>
-        </div>
-        <img src="${PRINT_AMBULANCE_DATA_URI}" class="rx-ambulance-img" alt="Ambulance" />
-      </div>
-
-      <div class="rx-footer-divider"></div>
-
-      <div class="rx-footer-right">
-        <div class="rx-address-row">
-          <svg viewBox="0 0 24 32" width="15" height="20" fill="none" style="flex-shrink:0; margin-top:1px;">
-            <path fill-rule="evenodd" clip-rule="evenodd" d="M12 0C5.373 0 0 5.373 0 12c0 8.8 12 20 12 20s12-11.2 12-20c0-6.627-5.373-12-12-12zm0 6a6 6 0 1 0 0 12 6 6 0 0 0 0-12z" fill="#1d4289"/>
-          </svg>
-          <div class="rx-address-text">
-            <div>GGF2+2F8, Old Alwal Road, Jonnabanda,</div>
-            <div>Chetana Housing Colony, Brundavan Colony,</div>
-            <div>Bollaram - 500010, Hyderabad.</div>
-          </div>
-        </div>
-        <div class="rx-contact-row">
-          <div class="rx-contact-item">
-            <svg viewBox="0 0 24 24" width="16" height="16" fill="none" style="flex-shrink:0;">
-              <circle cx="12" cy="12" r="10" stroke="#1d4289" stroke-width="2"/>
-              <path d="M8.2 7.8c.25 0 .5.16.6.4l.5 1.5c.08.25 0 .55-.24.72l-.65.5c.56 1.13 1.47 2.04 2.6 2.6l.5-.65c.17-.23.47-.32.72-.24l1.5.5c.24.1.4.35.4.6v1.2c0 .33-.27.6-.6.6C9.4 15.5 7 13.1 7 8.4c0-.33.27-.6.6-.6h.6z" fill="#1d4289"/>
-            </svg>
-            <span>+91 6303346810</span>
-          </div>
-          <div class="rx-contact-item">
-            <svg viewBox="0 0 24 18" width="17" height="13" fill="none" style="flex-shrink:0;">
-              <rect x="1.5" y="1.5" width="21" height="15" rx="1.5" stroke="#1d4289" stroke-width="1.8"/>
-              <polyline points="2.5,2.5 12,10.5 21.5,2.5" stroke="#1d4289" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <span>dr.sushanth108@gmail.com</span>
-          </div>
-        </div>
-      </div>
+      <img src="${PRINT_FOOTER_IMAGE_DATA_URI}" class="rx-footer-brand" alt="Ayu Polyclinic emergency services, address, phone and email" />
     </footer>
   </div>
 </body>
@@ -902,15 +858,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
     const printDate = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
     const patientAddress = bannerPatient ? [bannerPatient.address, bannerPatient.city].filter(Boolean).join(", ") : "";
 
-    const medsHtml = medicines.map((m, i) => {
-      if (!m.medicine_name) return "";
-      const freq = m.is_custom ? m.freq_custom : (m.frequency ? m.frequency.split('-').join(' - ') : "");
-      let parts = [];
-      if (freq) parts.push(freq);
-      if (m.instructions) parts.push(m.instructions);
-      if (m.duration) parts.push('for ' + m.duration);
-      return `<div class="rx-med-item"><b>${i + 1}.</b> <span class="rx-med-name">${m.medicine_name}</span>${m.dosage ? ` <span class="rx-med-dosage">(${m.dosage})</span>` : ''}${parts.length > 0 ? ` &mdash; <span class="rx-med-meta">${parts.join(' &mdash; ')}</span>` : ''}</div>`;
-    }).join("");
+    const medsHtml = buildPrescriptionMedicineTable(medicines);
 
     return buildPrescriptionHtml({
       patientName: form.patient_name || "",
@@ -936,15 +884,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
     const rxMeds = rx.medicines || [];
     const patientAddress = bannerPatient ? [bannerPatient.address, bannerPatient.city].filter(Boolean).join(", ") : "";
 
-    const medsHtml = rxMeds.map((m: any, i: number) => {
-      if (!m.medicine_name) return "";
-      const freq = m.is_custom ? m.freq_custom : (m.frequency ? m.frequency.split('-').join(' - ') : "");
-      let parts = [];
-      if (freq) parts.push(freq);
-      if (m.instructions) parts.push(m.instructions);
-      if (m.duration) parts.push('for ' + m.duration);
-      return `<div class="rx-med-item"><b>${i + 1}.</b> <span class="rx-med-name">${m.medicine_name}</span>${m.dosage ? ` <span class="rx-med-dosage">(${m.dosage})</span>` : ''}${parts.length > 0 ? ` &mdash; <span class="rx-med-meta">${parts.join(' &mdash; ')}</span>` : ''}</div>`;
-    }).join("");
+    const medsHtml = buildPrescriptionMedicineTable(rxMeds);
 
     return buildPrescriptionHtml({
       patientName: form.patient_name || rx.patient_name || "",
@@ -1051,7 +991,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
 
           {/* Row 1: Patient Identity details */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", alignItems: "end", marginBottom: "1rem", borderBottom: "1px solid var(--border)", paddingBottom: "1rem" }}>
-            <Label style={{ margin: 0 }}>Patient in Consultation ({queue.length})
+            <Label style={{ margin: 0 }}>Patient in OP Queue ({queue.length})
               <Select style={{ width: "100%" }} value={form.appointment_id || ""} onChange={handleQueueSelect}>
                 <option value="">Select patient...</option>
                 {queue.map(q => <option key={q.id} value={q.id}>{q.patient_id} - {q.patient_name} | {q.age_gender || "-"}</option>)}

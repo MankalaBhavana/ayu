@@ -1,4 +1,3 @@
-import { PRINT_BRAND_HEADER_DATA_URI, PRINT_MEDICAL_SYMBOL_DATA_URI } from "./printBrand";
 import { renderAyuPdfHeaderHtml, renderAyuPdfFooterHtml } from "./pdfTemplate";
 
 /**
@@ -69,7 +68,7 @@ function applySharedHospaiPrintFrame(html: string): string {
 
   const sharedCss = `
     <style data-hospai-shared-print-style>
-      @page { size: A4 portrait; margin: 9mm 10mm 21mm; }
+      @page { size: A4 portrait; margin: 10mm 18mm 14mm; }
       * { box-sizing: border-box; }
       html { background: #fff !important; }
       body { margin: 0 !important; color: #000 !important; background: transparent !important; position: relative; z-index: 0; }
@@ -146,15 +145,10 @@ function applySharedHospaiPrintFrame(html: string): string {
       .report-header,
       .pdf > .print-header { display: none !important; }
       .hospai-shared-print-footer {
-        /* Deliberately in normal document flow, not position:fixed. A fixed
-           footer re-anchors to every physical page in a multi-page print,
-           and on whichever page the table's last row lands exactly at the
-           bottom margin, the two overlap and interleave illegibly. Flowing
-           at the true end of the content means it only ever appears once,
-           after the last row, and can never collide with it. */
         position: relative;
-        margin: 8mm 10mm 0;
-        height: 17mm;
+        min-height: 56mm;
+        height: auto;
+        margin: 0;
         font-family: Arial, Helvetica, sans-serif;
         color: #000;
         background: #fff;

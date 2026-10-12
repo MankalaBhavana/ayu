@@ -39,6 +39,19 @@ def _footer_symbol_path():
     return next((path for path in candidates if path and os.path.exists(path)), None)
 
 
+@lru_cache(maxsize=2)
+def _clinic_pdf_asset_path(filename: str):
+    root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    meipass = getattr(__import__("sys"), "_MEIPASS", "")
+    candidates = [
+        os.path.join(root, "backend", "assets", filename),
+        os.path.join(root, "assets", filename),
+        os.path.join(meipass, "assets", filename) if meipass else "",
+        os.path.join(root, "frontend", "public", filename),
+    ]
+    return next((path for path in candidates if path and os.path.exists(path)), None)
+
+
 def draw_pdf_brand_header(pdf, left_margin: float, top_y: float, title_width: float = 120, is_prescription: bool = False):
     """Draw the approved Ayu Polyclinic logo/address header used by every PDF export."""
     logo_path = _frontend_logo_path()
@@ -72,49 +85,31 @@ def draw_pdf_brand_header(pdf, left_margin: float, top_y: float, title_width: fl
         # No bottom line under the header for prescription
 
     else:
-        max_h = 24
-        # For standard reports, we draw the logo icon, then text AYU POLYCLINIC next to it
-        if logo_path:
+        pdf.set_text_color(29, 66, 137)
+        pdf.set_xy(left_margin, top_y)
+        pdf.set_font("Helvetica", "B", 20)
+        pdf.cell(145, 8, "AYU POLYCLINIC", ln=True)
+        pdf.set_draw_color(29, 66, 137)
+        pdf.set_line_width(0.45)
+        pdf.line(left_margin, top_y + 9, left_margin + 76, top_y + 9)
+
+        pdf.set_xy(left_margin, top_y + 11)
+        pdf.set_font("Helvetica", "B", 12.5)
+        pdf.cell(125, 6, "Dr. Sushanth. B", ln=True)
+        pdf.set_x(left_margin)
+        pdf.set_font("Helvetica", "", 9)
+        pdf.cell(125, 4.5, "MBBS (Gandhi), (FCCM)", ln=True)
+        pdf.set_x(left_margin)
+        pdf.cell(125, 4.5, "TSMC/FM/27444", ln=True)
+
+        caduceus_path = _clinic_pdf_asset_path("ayu_caduceus.png")
+        if caduceus_path:
             try:
-                from PIL import Image
-                with Image.open(logo_path) as img:
-                    img_w, img_h = img.size
-                ratio = max_h / img_h
-                final_w = img_w * ratio
-                pdf.image(logo_path, x=left_margin, y=top_y, w=final_w, h=max_h)
+                pdf.image(caduceus_path, x=170, y=top_y, w=25)
             except Exception:
-                final_w = 0
-        else:
-            final_w = 0
-            
-        text_x = left_margin + final_w + 5
-        
-        # Draw vertical grey separator line
-        if final_w > 0:
-            pdf.set_draw_color(180, 180, 180)
-            pdf.set_line_width(0.5)
-            # The line spans the height of the text block
-            pdf.line(left_margin + final_w + 2.5, top_y + 3, left_margin + final_w + 2.5, top_y + 22)
-
-        # AYU Text
-        pdf.set_xy(text_x, top_y + 3)
-        pdf.set_font("Helvetica", "B", 30)
-        pdf.set_text_color(30, 86, 122)
-        pdf.cell(100, 11, "AYU", ln=True)
-        
-        # POLYCLINIC Text
-        pdf.set_xy(text_x, top_y + 14)
-        pdf.set_font("Helvetica", "B", 14)
-        pdf.set_text_color(128, 128, 128)
-        pdf.cell(100, 8, "POLYCLINIC", ln=True)
-
-        # Bottom thick blue divider line
-        pdf.set_draw_color(30, 86, 122)
-        pdf.set_line_width(1.5)
-        line_y = top_y + max_h + 3
-        pdf.line(left_margin, line_y, 210 - left_margin, line_y)
+                pass
         pdf.set_text_color(0, 0, 0)
-        pdf.set_y(line_y + 2)
+        pdf.set_y(top_y + 31)
 
 
 def draw_pdf_brand_footer(pdf, is_prescription: bool = False, left_margin: float = 15, right_margin: float = 15):
@@ -196,30 +191,36 @@ def draw_pdf_brand_footer(pdf, is_prescription: bool = False, left_margin: float
         
         pdf.set_text_color(0, 0, 0)
     else:
-        pdf.set_draw_color(30, 86, 122)
-        pdf.set_line_width(0.45)
+        footer_path = _clinic_pdf_asset_path("ayu_pdf_footer.png")
+        if not footer_path:
+            pdf.set_text_color(29, 66, 137)
+            pdf.set_y(-13.8)
+            pdf.set_font("Helvetica", "I", 8.5)
+            pdf.set_x(left_margin)
+            pdf.cell(pdf.w - left_margin - right_margin, 5, _clean("AYU POLYCLINIC | +91 6303346810 | dr.sushanth108@gmail.com"))
+            pdf.set_text_color(0, 0, 0)
+            return
+
+        from PIL import Image
+        with Image.open(footer_path) as image:
+            image_width, image_height = image.size
         page_w = getattr(pdf, "w", 210.0)
-        mid_x = page_w / 2.0
-        symbol_w = 13.0
-        gap = symbol_w / 2.0 + 3.0
-        line_y = 280.2
-        pdf.line(left_margin, line_y, mid_x - gap, line_y)
-        pdf.line(mid_x + gap, line_y, page_w - right_margin, line_y)
-        symbol_path = _footer_symbol_path()
-        if symbol_path:
-            try:
-                pdf.image(symbol_path, x=mid_x - symbol_w / 2.0, y=274.0, w=symbol_w)
-            except Exception:
-                pass
-        pdf.set_y(-13.8)
-        pdf.set_font("Helvetica", "I", 8.5)
-        pdf.set_text_color(30, 86, 122)
-        pdf.set_x(left_margin)
-        content_w = page_w - left_margin - right_margin
-        half_w = (content_w - 4) / 2.0
-        pdf.cell(half_w, 5, _clean("Thank you for choosing AYU POLYCLINIC."), align="L")
-        pdf.set_x(mid_x + 2)
-        pdf.cell(half_w, 5, _clean(f"Page {pdf.page_no()} of {{nb}}"), align="R")
+        content_width = page_w - left_margin - right_margin
+        footer_height = content_width * image_height / image_width
+        footer_y = pdf.h - 7 - footer_height
+        pdf.image(footer_path, x=left_margin, y=footer_y, w=content_width)
+
+        signature_width = 58.0
+        signature_x = page_w - right_margin - signature_width
+        signature_y = footer_y - 10
+        pdf.set_draw_color(29, 66, 137)
+        pdf.set_line_width(0.35)
+        pdf.line(signature_x, signature_y, signature_x + signature_width, signature_y)
+        pdf.set_xy(signature_x, signature_y + 1.5)
+        pdf.set_font("Helvetica", "B", 7.5)
+        pdf.set_text_color(29, 66, 137)
+        pdf.cell(signature_width, 4, _clean("SIGNATURE"), align="C")
+        pdf.set_text_color(0, 0, 0)
 
 
 def parse_markdown_line(line):
@@ -300,7 +301,8 @@ def generate_pdf(patient_name: str, doc_type: str, ocr_text: str, date_str: str 
         return text.encode("latin-1", errors="replace").decode("latin-1")
 
     def _ensure_space(height: float):
-        if pdf.get_y() + height > 276:
+        footer_limit = 276 if is_prescription else 238
+        if pdf.get_y() + height > footer_limit:
             pdf.add_page()
             _draw_document_header()
 
@@ -479,7 +481,7 @@ def generate_pdf(patient_name: str, doc_type: str, ocr_text: str, date_str: str 
     document_title = _title_for_doc(doc_type)
     pdf.set_left_margin(left_margin)
     pdf.set_right_margin(right_margin)
-    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.set_auto_page_break(auto=True, margin=20 if is_prescription else 58)
     pdf.alias_nb_pages()
     pdf.add_page()
 
@@ -598,6 +600,9 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
         return text.encode("latin-1", errors="replace").decode("latin-1")
 
     class ReportPDF(FPDF):
+        def header(self):
+            draw_pdf_brand_header(self, left_margin, 8, title_width=92, is_prescription=False)
+
         def footer(self):
             draw_pdf_brand_footer(self, is_prescription=False, left_margin=left_margin, right_margin=right_margin)
 
@@ -606,7 +611,7 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
     right_margin = 15
     pdf.set_left_margin(left_margin)
     pdf.set_right_margin(right_margin)
-    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.set_auto_page_break(auto=True, margin=58)
     pdf.alias_nb_pages()
     pdf.add_page()
 
@@ -614,9 +619,8 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
     effective_width = page_width - left_margin - right_margin
 
     def _ensure_space(height: float):
-        if pdf.get_y() + height > 276:
+        if pdf.get_y() + height > 238:
             pdf.add_page()
-            pdf.set_y(15)
 
     def _draw_icon(pdf, icon_type, x, y, size=4):
         pdf.set_fill_color(255, 255, 255)
@@ -746,7 +750,6 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
                 x += col_widths[i]
             pdf.set_xy(left_margin, y + row_h)
 
-    draw_pdf_brand_header(pdf, left_margin, 8, title_width=92, is_prescription=False)
     pdf.set_xy(left_margin, pdf.get_y() + 4)
     pdf.set_font("Helvetica", "B", 16)
     pdf.set_text_color(30, 86, 122)

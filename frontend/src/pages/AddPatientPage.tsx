@@ -660,7 +660,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
         doctor_name: selectedDoctor,
         consultation_fee: Number(consultationFee) || 500,
         visit_type: visitType === "IP" ? "ip" : "op",
-        appointment_date: new Date().toISOString().split("T")[0],
+        appointment_date: getTodayIso(),
         payment_mode: paymentMode.toLowerCase(),
         status: "waiting",
         notes: visitType === "IP"

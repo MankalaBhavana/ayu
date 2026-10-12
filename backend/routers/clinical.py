@@ -358,11 +358,18 @@ def prescriptions_create(payload: dict = Body(...), db: Session = Depends(get_db
                      med.get("instructions"), 1 if med.get("is_custom") else 0, med.get("freq_custom") or None),
                 )
 
-            if payload.get("complete_consultation") and appointment_id:
+            if payload.get("complete_consultation"):
+                if not appointment_id:
+                    raise HTTPException(status_code=400, detail="appointment_id is required to complete consultation")
                 cursor.execute("UPDATE appointments SET status = 'completed' WHERE id = ?", (appointment_id,))
+                if cursor.rowcount != 1:
+                    raise HTTPException(status_code=404, detail="Appointment not found")
 
             conn.commit()
             return {"success": True}
+        except HTTPException:
+            conn.rollback()
+            raise
         except Exception as e:
             conn.rollback()
             raise HTTPException(status_code=500, detail=f"Failed to save prescription: {e}")

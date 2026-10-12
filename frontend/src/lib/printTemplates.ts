@@ -5,9 +5,8 @@ const escapeHtml = (value: unknown) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
-// printViaIframe() already injects the full Sri Raksha Hospital letterhead
-// (logo, address, title pulled from <title>/<h1>, print date/time) and the
-// closing footer around whatever HTML is passed to it -- these templates
+// printViaIframe() injects the shared Ayu Polyclinic clinic/doctor header and
+// services/contact footer around whatever HTML is passed to it -- these templates
 // supply only the body content, never a second header/footer of their own.
 const BASE_STYLE = `
   @page { size: A4 portrait; margin: 14mm; }
