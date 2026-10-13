@@ -140,4 +140,51 @@ describe("OpQueuePage", () => {
     });
     container.remove();
   });
+
+  test("shows active same-day re-visits when no appointment is returned by the API", async () => {
+    localStorage.setItem("hospai_op_queue", JSON.stringify([
+      {
+        token: "RA-123456",
+        uhid: "PT-003",
+        name: "Mira Patel",
+        ageGender: "42 / F",
+        visitType: "Re-visit",
+        arrivedAt: "10:15 AM",
+        status: "In Queue",
+        mobile: "9876543210",
+        createdAt: `${new Date().toLocaleDateString("en-CA")}T10:15:00.000Z`,
+        doctor: "Dr. Rao",
+        department: "Cardiology",
+      },
+    ]));
+    global.fetch = vi.fn((url: string) => {
+      const requestUrl = String(url);
+      if (requestUrl.includes("/api/appointments")) return jsonResponse({ appointments: [] });
+      if (requestUrl.includes("/api/registration/departments")) return jsonResponse({ departments: [] });
+      if (requestUrl.includes("/api/op/doctor-schedules")) return jsonResponse({ schedules: [] });
+      if (requestUrl.includes("/api/op/summary")) return jsonResponse({});
+      return jsonResponse({});
+    }) as any;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<OpQueuePage setNotice={vi.fn()} />);
+      await flush();
+      await flush();
+      await flush();
+    });
+
+    expect(container.textContent).toContain("Mira Patel");
+    expect(container.textContent).toContain("RA-123456");
+    expect(container.textContent).toContain("Re-visit");
+
+    act(() => {
+      root.unmount();
+    });
+    container.remove();
+    localStorage.removeItem("hospai_op_queue");
+  });
 });

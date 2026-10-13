@@ -23,7 +23,7 @@ type OrderItemDraft = {
   service_id: number; code: string; name: string; service_type: string; department?: string;
   quantity: number; rate: number; discount: number; duplicate_reason?: string;
 };
-type EncounterOption = { kind: "OP" | "EMERGENCY" | "IP"; id: number; label: string; doctor_name?: string };
+type EncounterOption = { kind: "OP" | "EMERGENCY"; id: number; label: string; doctor_name?: string };
 
 type DiagOrderItem = {
   id: number; service_id: number; service_name: string; department_type: string; quantity: number;
@@ -140,10 +140,7 @@ export default function LabDiagnosticsOrdersPage({ setNotice, onNavigate }: Prop
     setEncounterKey("");
     setBasket([]);
     try {
-      const [appts, admissions] = await Promise.all([
-        apiFetch<{ appointments: any[] }>(`/api/appointments?patient_id=${encodeURIComponent(p.patient_id)}`).catch(() => ({ appointments: [] })),
-        apiFetch<{ admissions: any[] }>(`/api/patients/${encodeURIComponent(p.patient_id)}/admissions`).catch(() => ({ admissions: [] })),
-      ]);
+      const appts = await apiFetch<{ appointments: any[] }>(`/api/appointments?patient_id=${encodeURIComponent(p.patient_id)}`).catch(() => ({ appointments: [] }));
       const opts: EncounterOption[] = [];
       (appts.appointments || []).forEach((a) => {
         const kind = (a.visit_type || "").toLowerCase() === "emergency" ? "EMERGENCY" : "OP";
@@ -153,22 +150,9 @@ export default function LabDiagnosticsOrdersPage({ setNotice, onNavigate }: Prop
           doctor_name: a.doctor_name,
         });
       });
-      (admissions.admissions || []).filter((a) => !a.discharge_date).forEach((a) => {
-        opts.push({ kind: "IP", id: a.id, label: `Inpatient admission · ADM-${a.id} · since ${new Date(a.admission_date).toLocaleDateString()}` });
-      });
       setEncounters(opts);
 
-      // A currently-admitted patient is, by default, an inpatient order --
-      // don't make staff manually re-select what the system already knows.
-      // An active IP admission always wins over any OP/Emergency visit on
-      // record, since that's this patient's current real status; if there's
-      // no admission but exactly one other visit, that one is unambiguous
-      // too. Multiple candidates of the same kind stay unselected so staff
-      // picks the right one instead of the system guessing.
-      const ipOpts = opts.filter((o) => o.kind === "IP");
-      if (ipOpts.length === 1) {
-        setEncounterKey(`${ipOpts[0].kind}-${ipOpts[0].id}`);
-      } else if (ipOpts.length === 0 && opts.length === 1) {
+      if (opts.length === 1) {
         setEncounterKey(`${opts[0].kind}-${opts[0].id}`);
       }
     } catch {
@@ -209,8 +193,7 @@ export default function LabDiagnosticsOrdersPage({ setNotice, onNavigate }: Prop
     if (!patient || nextBasket.length === 0) { setDuplicateIds([]); return; }
     const params = new URLSearchParams({ patient_id: patient.patient_id });
     nextBasket.forEach((b) => params.append("service_id", String(b.service_id)));
-    if (selectedEncounter?.kind === "IP") params.set("admission_id", String(selectedEncounter.id));
-    else if (selectedEncounter) params.set("appointment_id", String(selectedEncounter.id));
+    if (selectedEncounter) params.set("appointment_id", String(selectedEncounter.id));
     try {
       const data = await apiFetch<{ duplicate_service_ids: number[] }>(`/api/diag/orders/check-duplicates?${params.toString()}`);
       setDuplicateIds(data.duplicate_service_ids || []);
@@ -283,8 +266,7 @@ export default function LabDiagnosticsOrdersPage({ setNotice, onNavigate }: Prop
     return {
       patient_id: patient.patient_id,
       encounter_type: selectedEncounter ? selectedEncounter.kind : "EXTERNAL",
-      appointment_id: selectedEncounter && selectedEncounter.kind !== "IP" ? selectedEncounter.id : undefined,
-      admission_id: selectedEncounter?.kind === "IP" ? selectedEncounter.id : undefined,
+      appointment_id: selectedEncounter?.id,
       external_source: !selectedEncounter ? externalSource.trim() : undefined,
       referring_clinician: referringClinician,
       priority, clinical_indication: clinicalIndication,
@@ -596,9 +578,7 @@ export default function LabDiagnosticsOrdersPage({ setNotice, onNavigate }: Prop
             <hr style={{ margin: "0.6rem 0" }} />
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 18, fontWeight: 800 }}><span>Total</span><span>{money(basketTotal)}</span></div>
             <div className="diag-note-box">
-              {selectedEncounter?.kind === "IP"
-                ? "For inpatient orders, charges are added to the selected admission's running bill -- no separate invoice is created until discharge."
-                : "Confirming this order posts one invoice for the services above."}
+              Confirming this order posts one invoice for the services above.
             </div>
             <div className="diag-form-actions" style={{ flexDirection: "column", alignItems: "stretch" }}>
               <Button variant="secondary" disabled={savingOrder} onClick={() => void saveDraft()}>Save draft</Button>

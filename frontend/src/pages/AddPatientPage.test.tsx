@@ -2,6 +2,10 @@ import { act } from "react";
 import { fireEvent, screen, waitFor } from "@testing-library/react";
 import { createRoot } from "react-dom/client";
 import AddPatientPage from "./AddPatientPage";
+import { printViaIframe } from "../lib/printViaIframe";
+import { PRINT_BRAND_HEADER_DATA_URI } from "../lib/printBrand";
+
+vi.mock("../lib/printViaIframe", () => ({ printViaIframe: vi.fn() }));
 
 function flush() {
   return new Promise((resolve) => setTimeout(resolve, 0));
@@ -138,6 +142,22 @@ describe("AddPatientPage", () => {
       expect.any(Function),
       expect.any(Function),
       expect.any(Function)
+    );
+
+    const printSlipButton = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.includes("Print Slip"));
+    expect(printSlipButton).toBeDefined();
+    await act(async () => {
+      fireEvent.click(printSlipButton as HTMLButtonElement);
+      await flush();
+    });
+    const printHtml = vi.mocked(printViaIframe).mock.calls[vi.mocked(printViaIframe).mock.calls.length - 1]?.[0] || "";
+    const parsedPrintHtml = new DOMParser().parseFromString(printHtml, "text/html");
+    expect(parsedPrintHtml.querySelector(".registration-slip-header img")?.getAttribute("src")).toBe(PRINT_BRAND_HEADER_DATA_URI);
+    expect(parsedPrintHtml.querySelector(".registration-slip-title")?.textContent).toContain("Ayu Polyclinic");
+    expect(printViaIframe).toHaveBeenCalledWith(
+      expect.stringContaining('class="registration-slip-header"'),
+      "__hospai_registration_token_slip_print__",
+      expect.objectContaining({ preserveDocumentHeader: true, suppressBrowserHeadersAndFooters: true, footerAtBottom: true, includeFooter: false })
     );
 
     act(() => {

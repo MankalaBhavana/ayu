@@ -53,6 +53,20 @@ type DispenseResult = {
   stock_source: string;
 };
 
+function localDateKey(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function isExpiredBatch(expiryDate?: string): boolean {
+  return !!expiryDate && expiryDate.slice(0, 10) < localDateKey();
+}
+
+function matchesMedicineBatch(batch: StockBatch, query: string): boolean {
+  return (batch.medicine_name || "").toLowerCase().includes(query) ||
+    (batch.generic_name || "").toLowerCase().includes(query) ||
+    (batch.batch_no || "").toLowerCase().includes(query);
+}
+
 export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
   // Tabs: Dispense vs Returns
   const [activeTab, setActiveTab] = useState<"dispense" | "returns" | "history">("dispense");
@@ -133,12 +147,8 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
     if (!q) return [];
 
     const matches = allBatches.filter((b) => {
-      const isNotExpired = !b.expiry_date || new Date(b.expiry_date) >= new Date();
       const hasStock = b.qty_available > 0;
-      const matchText = (b.medicine_name || "").toLowerCase().includes(q) ||
-        (b.generic_name || "").toLowerCase().includes(q) ||
-        (b.batch_no || "").toLowerCase().includes(q);
-      return matchText && hasStock && isNotExpired;
+      return matchesMedicineBatch(b, q) && hasStock && !isExpiredBatch(b.expiry_date);
     });
 
     // FEFO: Sort by expiry date ascending
@@ -148,6 +158,18 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
       return dateA - dateB;
     });
   }, [allBatches, searchMedQuery]);
+
+  const expiredBatches = useMemo(() => {
+    const q = searchMedQuery.trim().toLowerCase();
+    if (!q) return [];
+    return allBatches.filter((batch) =>
+      matchesMedicineBatch(batch, q) && batch.qty_available > 0 && isExpiredBatch(batch.expiry_date)
+    );
+  }, [allBatches, searchMedQuery]);
+  const expiredMedicineNames = useMemo(
+    () => Array.from(new Set(expiredBatches.map((batch) => batch.medicine_name))),
+    [expiredBatches]
+  );
 
   // Add to cart
   const handleAddToCart = () => {
@@ -633,7 +655,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
                         </button>
                       )}
                     </div>
-                    {showMedDropdown && !selectedBatch && filteredBatches.length > 0 && (
+                    {showMedDropdown && !selectedBatch && (filteredBatches.length > 0 || expiredBatches.length > 0) && (
                       <div
                         style={{
                           position: "absolute",
@@ -650,6 +672,17 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
                           marginTop: "4px",
                         }}
                       >
+                        {expiredMedicineNames.length > 0 && (
+                          <div
+                            role="status"
+                            aria-live="polite"
+                            style={{ padding: "0.55rem 0.85rem", background: "#fef2f2", color: "#b91c1c", borderBottom: "1px solid #fecaca", fontSize: "0.8rem", fontWeight: 700 }}
+                          >
+                            {expiredMedicineNames.length === 1
+                              ? `${expiredMedicineNames[0]} is expired and unavailable for dispensing.`
+                              : `Expired stock for ${expiredMedicineNames.join(", ")} is unavailable for dispensing.`}
+                          </div>
+                        )}
                         {filteredBatches.slice(0, 10).map((batch, idx) => (
                           <div
                             key={batch.id}
@@ -681,6 +714,35 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
                               <div style={{ fontSize: "0.75rem", color: batch.qty_available <= 10 ? "#e11d48" : "#16a34a", fontWeight: 600 }}>
                                 Stock: {batch.qty_available}
                               </div>
+                            </div>
+                          </div>
+                        ))}
+                        {expiredBatches.slice(0, 10).map((batch) => (
+                          <div
+                            key={`expired-${batch.id}`}
+                            role="option"
+                            aria-disabled="true"
+                            style={{
+                              padding: "0.6rem 0.85rem",
+                              borderBottom: "1px solid #f1f5f9",
+                              background: "#fff7f7",
+                              cursor: "not-allowed",
+                              display: "flex",
+                              justifyContent: "space-between",
+                              alignItems: "center",
+                              opacity: 0.82,
+                            }}
+                          >
+                            <div>
+                              <div style={{ fontWeight: 700, color: "#0f172a", fontSize: "0.875rem" }}>
+                                {batch.medicine_name} <span style={{ fontSize: "0.7rem", background: "#fee2e2", color: "#b91c1c", padding: "1px 6px", borderRadius: "10px", fontWeight: 700 }}>Expired</span>
+                              </div>
+                              <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                                Batch: <strong>{batch.batch_no}</strong> · Expired: {batch.expiry_date} · Source: {batch.stock_source}
+                              </div>
+                            </div>
+                            <div style={{ textAlign: "right", color: "#b91c1c", fontSize: "0.75rem", fontWeight: 700 }}>
+                              Not available for dispensing
                             </div>
                           </div>
                         ))}

@@ -74,13 +74,17 @@ export function renderAyuPdfHeaderHtml(options?: PdfHeaderOptions): string {
  *  - Left: "Thank you for choosing AYU POLYCLINIC." (italic primary blue)
  *  - Right: "Page 1 of 1" (italic grey)
  */
-export function renderAyuPdfFooterHtml(pageText = "Page 1 of 1"): string {
-  return `
-    <div class="ayu-shared-footer-shell" aria-label="${escapeHtml(pageText)}" style="width:100%;position:relative;margin:18mm 0 0;padding-top:13mm;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;clear:both;break-inside:avoid;">
-      <div style="position:absolute;top:0;right:0;width:58mm;text-align:center;color:#1d4289;font-size:8px;font-weight:800;">
+export function renderAyuPdfFooterHtml(pageText = "Page 1 of 1", includeSignature = true): string {
+  const signatureSpacing = includeSignature ? "margin:18mm 0 0;padding-top:13mm;" : "margin:0;padding-top:0;";
+  const signatureHtml = includeSignature
+    ? `<div style="position:absolute;top:0;right:0;width:58mm;text-align:center;color:#1d4289;font-size:8px;font-weight:800;">
         <div style="width:100%;border-top:1px solid #1d4289;margin-bottom:3px;"></div>
         <span style="letter-spacing:0.6px;">SIGNATURE</span>
-      </div>
+      </div>`
+    : "";
+  return `
+    <div class="ayu-shared-footer-shell" aria-label="${escapeHtml(pageText)}" style="width:100%;position:relative;${signatureSpacing}font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;clear:both;break-inside:avoid;">
+      ${signatureHtml}
       <img src="${PRINT_FOOTER_IMAGE_DATA_URI}" alt="Ayu Polyclinic services, address, phone and email" style="display:block;width:100%;max-width:100%;height:auto;object-fit:contain;object-position:center bottom;" />
     </div>
   `;

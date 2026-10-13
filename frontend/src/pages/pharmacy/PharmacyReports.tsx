@@ -5,6 +5,7 @@ import { apiFetch, reportError } from "../../lib/api";
 import type { Notice } from "../../types";
 import { printViaIframe } from "../../lib/printViaIframe";
 import { buildPrintDocumentHtml } from "../../lib/printTemplates";
+import { PRINT_BRAND_HEADER_DATA_URI } from "../../lib/printBrand";
 
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
@@ -262,7 +263,13 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
         rows,
         totals: grandTotalValue ? [{ label: grandTotalLabel || "Grand Total", value: grandTotalValue, grand: true }] : undefined,
         emptyMessage: "No report records found for the selected category and filter.",
-      }));
+        brandLogoDataUri: PRINT_BRAND_HEADER_DATA_URI,
+        brandName: "AYU CLINIC",
+      }), "__hospai_pharmacy_reports_print_frame__", {
+        suppressBrowserHeadersAndFooters: true,
+        preserveDocumentHeader: true,
+        footerAtBottom: true,
+      });
     } catch (error) {
       setNotice({ type: "error", message: error instanceof Error ? error.message : "Unable to print the report." });
     }

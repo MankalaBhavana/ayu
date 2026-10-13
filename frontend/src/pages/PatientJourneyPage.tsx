@@ -198,6 +198,8 @@ export default function PatientJourneyPage({ setNotice, onNavigate, selectedPati
       title: "Patient Journey Summary",
       subtitle: `${journey.selected.label} · ${journey.selected.start?.slice(0, 10) || ""}${journey.selected.end && journey.selected.end !== journey.selected.start ? ` – ${journey.selected.end.slice(0, 10)}` : ""}`,
       filename: `Patient_Journey_${journey.patient.patient_id}`,
+      brand_logo: "ayu",
+      include_signature: false,
       operator_name: "Ayu Polyclinic System",
       patient_info: {
         patient_name: journey.patient.name, patient_id: journey.patient.patient_id,

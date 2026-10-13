@@ -16,6 +16,9 @@ export type StandardPdfPayload = {
   title: string;
   subtitle: string;
   filename: string;
+  brand_logo?: "ayu";
+  include_signature?: boolean;
+  include_doctor_details?: boolean;
   operator_name?: string;
   invoice_meta?: {
     invoice_number?: string;

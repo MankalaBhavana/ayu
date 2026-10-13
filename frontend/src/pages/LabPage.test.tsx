@@ -1,4 +1,5 @@
 import { act } from "react";
+import { fireEvent } from "@testing-library/react";
 import { createRoot } from "react-dom/client";
 import LabPage from "./LabPage";
 import LabDiagnosticsOrdersPage from "./LabDiagnosticsOrdersPage";
@@ -180,6 +181,51 @@ describe("LabPage", () => {
     });
 
     expect(container.textContent).toContain("New order");
+
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
+  test("excludes inpatient admissions from the new-order visit dropdown", async () => {
+    mockLocalStorage();
+    const patient = { patient_id: "PAT-OP-100", name: "Asha", age: 30, gender: "Female", phone: "9999999999" };
+    const appointment = { id: 41, visit_type: "OP", department: "General Medicine", appointment_date: "2026-10-13", doctor_name: "Dr. Rao" };
+    global.fetch = vi.fn((url: string) => {
+      const requestUrl = String(url);
+      if (requestUrl.includes("/api/patients?q=")) return jsonResponse({ patients: [patient] });
+      if (requestUrl.includes("/api/appointments?patient_id=")) return jsonResponse({ appointments: [appointment] });
+      if (requestUrl.includes("/api/patients/PAT-OP-100/admissions")) return jsonResponse({ admissions: [{ id: 7, admission_date: "2026-10-13", discharge_date: null }] });
+      if (requestUrl.includes("/api/diag/services")) return jsonResponse({ services: [] });
+      if (requestUrl.includes("/api/diag/orders")) return jsonResponse({ orders: [] });
+      if (requestUrl.includes("/api/diag/invoices")) return jsonResponse({ invoices: [] });
+      return jsonResponse({});
+    }) as any;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+
+    await act(async () => {
+      root.render(<LabDiagnosticsOrdersPage setNotice={vi.fn()} />);
+      await flush();
+      await flush();
+    });
+
+    const searchInput = container.querySelector('input[placeholder="Search UHID, patient name or phone"]') as HTMLInputElement;
+    const searchButton = Array.from(container.querySelectorAll("button")).find((button) => button.textContent?.trim() === "Search");
+    await act(async () => {
+      fireEvent.change(searchInput, { target: { value: "PAT-OP-100" } });
+      fireEvent.click(searchButton as HTMLButtonElement);
+      await flush();
+      await flush();
+    });
+
+    const encounterSelect = Array.from(container.querySelectorAll("select")).find((select) =>
+      Array.from(select.options).some((option) => option.textContent?.includes("External / referred order"))
+    ) as HTMLSelectElement;
+    expect(Array.from(encounterSelect.options).map((option) => option.textContent).join(" ")).toContain("OPD visit");
+    expect(Array.from(encounterSelect.options).map((option) => option.textContent).join(" ")).not.toContain("Inpatient admission");
+    expect(global.fetch).not.toHaveBeenCalledWith(expect.stringContaining("/admissions"));
 
     act(() => { root.unmount(); });
     container.remove();

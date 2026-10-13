@@ -2173,13 +2173,13 @@ def create_appointment(db, data):
         patient_id = data.get("patient_id")
         if patient_id:
             cursor.execute(
-                "SELECT id, status FROM appointments WHERE patient_id = ? AND status IN ('scheduled', 'checked_in', 'in_consultation') LIMIT 1",
-                (patient_id,)
+                "SELECT id, status FROM appointments WHERE patient_id = ? AND DATE(appointment_date) = DATE(?) AND status IN ('scheduled', 'checked_in', 'in_consultation') LIMIT 1",
+                (patient_id, appointment_day),
             )
             active_appointment = cursor.fetchone()
             if active_appointment:
                 status_display = active_appointment["status"].replace("_", " ").title()
-                raise ValueError(f"Patient already has an active consultation token (Status: {status_display}). Please complete or cancel the existing consultation first.")
+                raise ValueError(f"Patient already has an active consultation token for this date (Status: {status_display}). Please complete or cancel the existing consultation first.")
 
         if doctor_name:
             cursor.execute(
@@ -2222,6 +2222,8 @@ def create_appointment(db, data):
         )
         token_no = int((cursor.fetchone() or {"value": 0})["value"] or 0) + 1
         resolved_fee, appointment_kind = _resolve_doctor_fee(conn, data.get("doctor_name"), appointment_date, data.get("patient_id"))
+        fee_to_store = _coerce_float(data["consultation_fee"]) if data.get("consultation_fee") is not None else resolved_fee
+        kind_to_store = data.get("appointment_kind") or appointment_kind
         cursor.execute(
             """
             INSERT INTO appointments (
@@ -2240,11 +2242,11 @@ def create_appointment(db, data):
                 token_no,
                 _normalize_appointment_status(data.get("status", "scheduled")),
                 data.get("notes"),
-                appointment_kind,
+                kind_to_store,
                 data.get("follow_up_for"),
                 data.get("reminder_sent_at"),
                 1 if data.get("no_show_marked") else 0,
-                resolved_fee,
+                fee_to_store,
             ),
         )
         appointment_id = cursor.lastrowid

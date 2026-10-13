@@ -149,7 +149,43 @@ export default function OpQueuePage({ setNotice, onOpenPatient, onNavigate }: Pr
           appointmentDate: a.appointment_date,
         };
       });
-      saveQueue(mapped);
+      let readmitEntries: QueueItem[] = [];
+      try {
+        const stored = JSON.parse(localStorage.getItem("hospai_op_queue") || "[]");
+        if (Array.isArray(stored)) {
+          readmitEntries = stored
+            .filter((item) => {
+              if (!item || !["In Queue", "In Consultation"].includes(String(item.status || ""))) return false;
+              const createdAt = item.createdAt ? new Date(item.createdAt) : null;
+              const createdDate = createdAt && !Number.isNaN(createdAt.getTime())
+                ? `${createdAt.getFullYear()}-${String(createdAt.getMonth() + 1).padStart(2, "0")}-${String(createdAt.getDate()).padStart(2, "0")}`
+                : "";
+              if (createdDate && createdDate !== targetDate) return false;
+              return !mapped.some((appointment) =>
+                appointment.uhid === String(item.uhid || "") && appointment.status !== "Completed"
+              );
+            })
+            .map((item) => ({
+              id: `readmit:${item.token || item.uhid}`,
+              token: String(item.token || "-"),
+              name: String(item.name || item.uhid || "Patient"),
+              uhid: String(item.uhid || ""),
+              ageGender: String(item.ageGender || ""),
+              doctor: String(item.doctor || "-"),
+              department: String(item.department || "-"),
+              appointmentTime: String(item.arrivedAt || "-"),
+              status: item.status === "In Consultation" ? "In Consultation" : "Waiting",
+              visitType: "Re-visit",
+              phone: String(item.mobile || ""),
+              appointmentId: Number.isFinite(Number(item.appointmentId)) ? Number(item.appointmentId) : undefined,
+              appointmentDate: item.createdAt,
+              paymentMode: item.paymentMode,
+            }));
+        }
+      } catch {
+        // Ignore malformed or unavailable local re-visit data.
+      }
+      saveQueue([...mapped, ...readmitEntries]);
     } catch {
       // Keep whatever was already shown (e.g. offline) rather than blocking the page.
     }
@@ -314,6 +350,22 @@ export default function OpQueuePage({ setNotice, onOpenPatient, onNavigate }: Pr
         });
       } catch {
         // silent
+      }
+    }
+
+    if (id.startsWith("readmit:")) {
+      try {
+        const stored = JSON.parse(localStorage.getItem("hospai_op_queue") || "[]");
+        if (Array.isArray(stored)) {
+          const token = id.slice("readmit:".length);
+          localStorage.setItem("hospai_op_queue", JSON.stringify(stored.map((entry) =>
+            String(entry?.token || entry?.uhid) === token
+              ? { ...entry, status: newStatus === "Waiting" ? "In Queue" : newStatus }
+              : entry
+          )));
+        }
+      } catch {
+        // Keep queue status usable if local storage is unavailable.
       }
     }
 
@@ -600,6 +652,7 @@ export default function OpQueuePage({ setNotice, onOpenPatient, onNavigate }: Pr
               <option value="OP">OP</option>
               <option value="Follow-up">Follow-up</option>
               <option value="Review">Review</option>
+              <option value="Re-visit">Re-visit</option>
             </select>
           </div>
         </div>

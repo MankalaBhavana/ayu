@@ -19,7 +19,7 @@ export const HOSPITAL_BRAND_CONFIG = {
   emblemSrc: "/logo_emblem.png?v=20261012-v5",
   colors: {
     sidebarText: "#ffffff",
-    sidebarHospital: "#e11d48", // Highly readable crimson red on navy sidebar
+    sidebarHospital: "#ffffff", // Clean white on navy sidebar
     screenText: "#062f56",      // Dark navy on light backgrounds
     screenHospital: "#dc2626",  // Red on light backgrounds
   },

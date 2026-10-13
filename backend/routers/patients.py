@@ -335,7 +335,7 @@ def admissions_list(patient_id: str, db: Session = Depends(get_db), user: dict =
 @router.post("/patients/{patient_id}/admissions")
 def admissions_create(patient_id: str, request: Request, payload: dict = Body(...), db: Session = Depends(get_db),
                        user: dict = Depends(require_permissions("patients.write")), hospital_id: int = Depends(current_hospital_id)):
-    _get_patient_or_404(db, patient_id, hospital_id)
+    patient = _get_patient_or_404(db, patient_id, hospital_id)
     notes = payload.get("notes", "")
     from routers.clinical import _validate_vitals_in_notes
     vitals_err = _validate_vitals_in_notes(notes)
@@ -346,6 +346,8 @@ def admissions_create(patient_id: str, request: Request, payload: dict = Body(..
     log_audit_event(db, user, client_ip(request), "create", "admissions", str(admission_id), {"patient_id": patient_id})
 
     review_fee = payload.get("review_fee")
+    doctor_name = payload.get("doctor_name")
+    department = payload.get("department")
     if review_fee:
         try:
             review_fee_val = float(review_fee)
@@ -354,13 +356,37 @@ def admissions_create(patient_id: str, request: Request, payload: dict = Body(..
                 invoice_no = f"INV-OP-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
                 invoice_id = lq.create_invoice(db, {
                     "invoice_no": invoice_no, "patient_id": patient_id, "module": "OP",
-                    "doctor_name": payload.get("doctor_name"), "total_amount": review_fee_val, "paid_amount": 0,
+                    "doctor_name": doctor_name, "total_amount": review_fee_val, "paid_amount": 0,
                     "advance_amount": 0, "refunded_amount": 0, "payment_status": "due", "created_by": user.get("username"),
                 })
                 lq.record_invoice_payment(db, invoice_id, {"amount": review_fee_val, "payment_mode": payment_mode})
         except (ValueError, TypeError):
             pass
-    return {"admission_id": admission_id}
+
+    # Automatically create the OP appointment / queue token for this re-visit / follow-up
+    # so it immediately appears in OP Queue Management
+    appointment_id = None
+    token_no = None
+    try:
+        patient_name = " ".join(p for p in [patient.get("name"), patient.get("middle_name"), patient.get("last_name")] if p).strip() or patient_id
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        fee_to_use = float(review_fee) if review_fee is not None else 0.0
+        appointment_id, token_no = lq.create_appointment(db, {
+            "patient_id": patient_id,
+            "patient_name": patient_name,
+            "visit_type": "Re-visit",
+            "department": department or "General Medicine",
+            "doctor_name": doctor_name or "General",
+            "appointment_date": today_str,
+            "status": "scheduled",
+            "appointment_kind": "follow_up",
+            "consultation_fee": fee_to_use,
+            "notes": notes,
+        })
+    except Exception as exc:
+        print(f"[WARN] Could not auto-create re-visit appointment: {exc}")
+
+    return {"admission_id": admission_id, "appointment_id": appointment_id, "token_no": token_no}
 
 
 @router.get("/patients/{patient_id}/documents")

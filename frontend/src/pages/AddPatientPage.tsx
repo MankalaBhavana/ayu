@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import type { Notice, Patient, PatientForm } from "../types";
 import { apiFetch, reportError } from "../lib/api";
 import { printViaIframe } from "../lib/printViaIframe";
+import { PRINT_BRAND_HEADER_DATA_URI } from "../lib/printBrand";
 import { calculateAgeFromDob } from "../lib/format";
 import { Modal } from "../components/ui";
 
@@ -773,10 +774,13 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
     }
     const tokenPart = bookedAppointment?.tokenNo || target.tokenNo;
     const slipHtml = `
-      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 20px auto; padding: 24px; border: 2px solid #00828a; border-radius: 8px;">
-        <div style="text-align: center; border-bottom: 2px solid #00828a; padding-bottom: 12px; margin-bottom: 16px;">
-          <h2 style="margin: 0; color: #16324a;">Ayu Polyclinic</h2>
-          <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Patient Registration & Token Slip</div>
+      <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 2px solid #00828a; border-radius: 8px;">
+        <div class="registration-slip-header" style="display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #00828a; padding-bottom: 12px; margin-bottom: 16px;">
+          <img src="${PRINT_BRAND_HEADER_DATA_URI}" alt="Ayu Polyclinic logo" style="display: block; flex: 0 0 48px; width: 48px; height: 42px; object-fit: contain; object-position: left center;" />
+          <div class="registration-slip-title" style="flex: 1; text-align: center;">
+            <h2 style="margin: 0; color: #16324a;">Ayu Polyclinic</h2>
+            <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Patient Registration & Token Slip</div>
+          </div>
         </div>
         <div style="font-size: 13px; line-height: 1.8; color: #1e293b; margin-bottom: 16px;">
           <div style="background: #f0fdfa; border: 1px solid #ccfbf1; padding: 8px 12px; border-radius: 6px; margin-bottom: 10px; display: flex; justify-content: space-between; align-items: center;">
@@ -804,7 +808,12 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
         </div>
       </div>
     `;
-    printViaIframe(slipHtml);
+    printViaIframe(slipHtml, "__hospai_registration_token_slip_print__", {
+      suppressBrowserHeadersAndFooters: true,
+      preserveDocumentHeader: true,
+      footerAtBottom: true,
+      includeFooter: false,
+    });
   };
 
   const todayFormatted = new Intl.DateTimeFormat("en-GB", {

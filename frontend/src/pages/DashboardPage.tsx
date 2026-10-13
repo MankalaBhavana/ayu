@@ -373,6 +373,9 @@ export default function DashboardPage({
       title: "Executive Dashboard Report",
       subtitle: `Hospital Performance & Revenue Summary for ${currentDateLabel}`,
       filename: "Executive_Dashboard",
+      brand_logo: "ayu",
+      include_signature: false,
+      include_doctor_details: false,
       operator_name: user?.full_name || "Ayu Polyclinic System",
       sections: [
         {
@@ -482,6 +485,11 @@ export default function DashboardPage({
         : revenuePopup === "pharmacy"
           ? "Pharmacy Revenue Details"
           : "Monthly Revenue Details";
+  const revenuePopupPdfTitle = revenuePopup === "today"
+    ? "Today's Revenue"
+    : revenuePopup === "monthly"
+      ? "Monthly Revenue"
+      : revenuePopupTitle;
 
   const downloadRevenuePopupPdf = () => {
     if (!revenuePopup) return;
@@ -490,29 +498,26 @@ export default function DashboardPage({
       <!doctype html>
       <html>
         <head>
-          <title>${safeDashboardPrintText(revenuePopupTitle)}</title>
+          <title>${safeDashboardPrintText(revenuePopupPdfTitle)}</title>
           <style>
             @page { size: A4 portrait; margin: 14mm; }
             * { box-sizing: border-box; }
             body { margin: 0; color: #12344c; font-family: Arial, Helvetica, sans-serif; background: #fff; }
             .pdf { border: 1px solid #dbeafe; border-radius: 12px; overflow: hidden; }
-            /* 3-column branding header */
             .print-header {
               display: grid;
-              grid-template-columns: 140px 1fr 220px;
-              align-items: start;
-              gap: 14px;
-              padding: 18px 22px 14px;
+              grid-template-columns: 64px minmax(0, 1fr) auto;
+              align-items: center;
+              gap: 10px;
+              padding: 14px 16px 12px;
               background: #eef7ff;
               border-bottom: 2px solid #111827;
             }
-            .print-logo { width: 130px; height: auto; max-height: 56px; object-fit: contain; display: block; }
-            .print-brand-title { margin: 0 0 3px; font-size: 24px; font-weight: 800; color: #062f56; line-height: 1.1; }
-            .print-brand-line { margin: 1px 0; font-size: 12px; font-weight: 700; color: #062f56; line-height: 1.25; }
-            .print-brand-unit { margin: 2px 0 0; font-size: 10px; color: #475569; line-height: 1.3; }
+            .print-logo { width: 64px; height: 50px; object-fit: contain; object-position: left center; display: block; }
+            .print-brand-title { margin: 0 0 2px; font-size: 18px; font-weight: 800; color: #062f56; line-height: 1.1; }
             .print-title-block { text-align: right; }
-            .print-title-block h1 { margin: 0 0 6px; color: #1d4ed8; font-size: 20px; line-height: 1.2; }
-            .print-title-block p { margin: 2px 0; color: #60758a; font-size: 12px; }
+            .print-title-block p { margin: 2px 0; color: #60758a; font-size: 9px; }
+            .print-report-title { margin: 5px 0 0; color: #1d4ed8; font-size: 13px; line-height: 1.2; }
             /* Content */
             .content { padding: 22px; }
             .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
@@ -531,14 +536,9 @@ export default function DashboardPage({
               <img class="print-logo" src="${PRINT_BRAND_HEADER_DATA_URI}" alt="Ayu Polyclinic" />
               <div>
                 <p class="print-brand-title">Ayu Polyclinic</p>
-                <p class="print-brand-line">POLYCLINIC &amp;</p>
-                <p class="print-brand-line">DIAGNOSTICS</p>
-                
-                
-                
+                <h1 class="print-report-title">${safeDashboardPrintText(revenuePopupPdfTitle)}</h1>
               </div>
               <div class="print-title-block">
-                <h1>${safeDashboardPrintText(revenuePopupTitle)}</h1>
                 <p>${safeDashboardPrintText(currentDateLabel)}</p>
                 <p>Generated: ${safeDashboardPrintText(printedAt)}</p>
               </div>
@@ -553,13 +553,18 @@ export default function DashboardPage({
                 <thead><tr><th>Module</th><th>Amount</th></tr></thead>
                 <tbody>${revenuePopupRows.map((row) => `<tr><td>${safeDashboardPrintText(row.module)}</td><td>${safeDashboardPrintText(formatCurrency(row.amount))}</td></tr>`).join("")}</tbody>
               </table>
-              <div class="total"><span>${safeDashboardPrintText(revenuePopupTitle)}</span><span>${safeDashboardPrintText(formatCurrency(revenuePopupTotal))}</span></div>
+              <div class="total"><span>${safeDashboardPrintText(revenuePopupPdfTitle)}</span><span>${safeDashboardPrintText(formatCurrency(revenuePopupTotal))}</span></div>
             </section>
           </main>
         </body>
       </html>
     `;
-    printViaIframe(html, "__hospai_dash_print_frame__");
+    printViaIframe(html, "__hospai_dash_print_frame__", {
+      suppressBrowserHeadersAndFooters: true,
+      preserveDocumentHeader: true,
+      footerAtBottom: true,
+      includeSignature: false,
+    });
   };
 
 

@@ -52,7 +52,7 @@ def _clinic_pdf_asset_path(filename: str):
     return next((path for path in candidates if path and os.path.exists(path)), None)
 
 
-def draw_pdf_brand_header(pdf, left_margin: float, top_y: float, title_width: float = 120, is_prescription: bool = False):
+def draw_pdf_brand_header(pdf, left_margin: float, top_y: float, title_width: float = 120, is_prescription: bool = False, use_ayu_logo: bool = False, include_doctor_details: bool = True):
     """Draw the approved Ayu Polyclinic logo/address header used by every PDF export."""
     logo_path = _frontend_logo_path()
     
@@ -93,26 +93,27 @@ def draw_pdf_brand_header(pdf, left_margin: float, top_y: float, title_width: fl
         pdf.set_line_width(0.45)
         pdf.line(left_margin, top_y + 9, left_margin + 76, top_y + 9)
 
-        pdf.set_xy(left_margin, top_y + 11)
-        pdf.set_font("Helvetica", "B", 12.5)
-        pdf.cell(125, 6, "Dr. Sushanth. B", ln=True)
-        pdf.set_x(left_margin)
-        pdf.set_font("Helvetica", "", 9)
-        pdf.cell(125, 4.5, "MBBS (Gandhi), (FCCM)", ln=True)
-        pdf.set_x(left_margin)
-        pdf.cell(125, 4.5, "TSMC/FM/27444", ln=True)
+        if include_doctor_details:
+            pdf.set_xy(left_margin, top_y + 11)
+            pdf.set_font("Helvetica", "B", 12.5)
+            pdf.cell(125, 6, "Dr. Sushanth. B", ln=True)
+            pdf.set_x(left_margin)
+            pdf.set_font("Helvetica", "", 9)
+            pdf.cell(125, 4.5, "MBBS (Gandhi), (FCCM)", ln=True)
+            pdf.set_x(left_margin)
+            pdf.cell(125, 4.5, "TSMC/FM/27444", ln=True)
 
-        caduceus_path = _clinic_pdf_asset_path("ayu_caduceus.png")
-        if caduceus_path:
+        logo_path = _frontend_logo_path() if use_ayu_logo else _clinic_pdf_asset_path("ayu_caduceus.png")
+        if logo_path:
             try:
-                pdf.image(caduceus_path, x=170, y=top_y, w=25)
+                pdf.image(logo_path, x=170, y=top_y, w=25)
             except Exception:
                 pass
         pdf.set_text_color(0, 0, 0)
-        pdf.set_y(top_y + 31)
+        pdf.set_y(top_y + (31 if include_doctor_details else 13))
 
 
-def draw_pdf_brand_footer(pdf, is_prescription: bool = False, left_margin: float = 15, right_margin: float = 15):
+def draw_pdf_brand_footer(pdf, is_prescription: bool = False, left_margin: float = 15, right_margin: float = 15, include_signature: bool = True):
     """Draw the standardized Ayu Polyclinic footer (Reference Image 2) or doctor prescription footer."""
     def _clean(val) -> str:
         text = "" if val is None else str(val)
@@ -210,17 +211,18 @@ def draw_pdf_brand_footer(pdf, is_prescription: bool = False, left_margin: float
         footer_y = pdf.h - 7 - footer_height
         pdf.image(footer_path, x=left_margin, y=footer_y, w=content_width)
 
-        signature_width = 58.0
-        signature_x = page_w - right_margin - signature_width
-        signature_y = footer_y - 10
-        pdf.set_draw_color(29, 66, 137)
-        pdf.set_line_width(0.35)
-        pdf.line(signature_x, signature_y, signature_x + signature_width, signature_y)
-        pdf.set_xy(signature_x, signature_y + 1.5)
-        pdf.set_font("Helvetica", "B", 7.5)
-        pdf.set_text_color(29, 66, 137)
-        pdf.cell(signature_width, 4, _clean("SIGNATURE"), align="C")
-        pdf.set_text_color(0, 0, 0)
+        if include_signature:
+            signature_width = 58.0
+            signature_x = page_w - right_margin - signature_width
+            signature_y = footer_y - 10
+            pdf.set_draw_color(29, 66, 137)
+            pdf.set_line_width(0.35)
+            pdf.line(signature_x, signature_y, signature_x + signature_width, signature_y)
+            pdf.set_xy(signature_x, signature_y + 1.5)
+            pdf.set_font("Helvetica", "B", 7.5)
+            pdf.set_text_color(29, 66, 137)
+            pdf.cell(signature_width, 4, _clean("SIGNATURE"), align="C")
+            pdf.set_text_color(0, 0, 0)
 
 
 def parse_markdown_line(line):
@@ -599,12 +601,16 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
         text = text.replace("₹", "Rs.").replace("•", "-").replace("–", "-").replace("—", "-")
         return text.encode("latin-1", errors="replace").decode("latin-1")
 
+    use_ayu_logo = payload.get("brand_logo") == "ayu"
+    include_signature = payload.get("include_signature", True)
+    include_doctor_details = payload.get("include_doctor_details", True)
+
     class ReportPDF(FPDF):
         def header(self):
-            draw_pdf_brand_header(self, left_margin, 8, title_width=92, is_prescription=False)
+            draw_pdf_brand_header(self, left_margin, 8, title_width=92, is_prescription=False, use_ayu_logo=use_ayu_logo, include_doctor_details=include_doctor_details)
 
         def footer(self):
-            draw_pdf_brand_footer(self, is_prescription=False, left_margin=left_margin, right_margin=right_margin)
+            draw_pdf_brand_footer(self, is_prescription=False, left_margin=left_margin, right_margin=right_margin, include_signature=include_signature)
 
     pdf = ReportPDF(format="A4")
     left_margin = 15
@@ -766,7 +772,8 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
     pdf.set_text_color(50, 50, 50)
     pdf.cell(effective_width, 5, _clean(f"Generated: {generated}" + (f"  |  By: {payload.get('operator_name')}" if payload.get("operator_name") else "")), ln=True)
     pdf.set_text_color(0, 0, 0)
-    pdf.set_y(max(pdf.get_y() + 2, 64))
+    content_start_min = 45 if not include_doctor_details else 64
+    pdf.set_y(max(pdf.get_y() + 2, content_start_min))
 
     invoice_meta = payload.get("invoice_meta") or {}
     if invoice_meta.get("invoice_number") or invoice_meta.get("invoice_date"):

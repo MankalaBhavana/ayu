@@ -41,6 +41,14 @@ type StockMovement = {
   created_at: string;
 };
 
+function localDateKey(date = new Date()): string {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function isExpiredBatch(expiryDate?: string): boolean {
+  return !!expiryDate && expiryDate.slice(0, 10) < localDateKey();
+}
+
 export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props) {
   const [activeTab, setActiveTab] = useState<
     "overview" | "ledger" | "batches" | "low_stock" | "adjustments" | "physical_count" | "transfers"
@@ -143,6 +151,8 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
       medicine_name: string;
       generic_name?: string;
       total_qty: number;
+      available_qty: number;
+      expired_qty: number;
       batch_count: number;
       total_val: number;
       nearest_exp?: string;
@@ -156,6 +166,8 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
         medicine_name: item.medicine_name,
         generic_name: item.generic_name,
         total_qty: 0,
+        available_qty: 0,
+        expired_qty: 0,
         batch_count: 0,
         total_val: 0,
         nearest_exp: item.expiry_date,
@@ -164,6 +176,8 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
       };
 
       existing.total_qty += item.qty_available;
+      if (isExpiredBatch(item.expiry_date)) existing.expired_qty += item.qty_available;
+      else existing.available_qty += item.qty_available;
       existing.batch_count += 1;
       existing.total_val += (item.qty_available * (item.unit_price || 0));
       if (!existing.unit_type && item.unit_type) existing.unit_type = item.unit_type;
@@ -343,8 +357,9 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
               </thead>
               <tbody>
                 {medicineAggregates.map((m) => {
-                  const isLow = m.total_qty <= m.reorder_level;
-                  const isOut = m.total_qty === 0;
+                  const isLow = m.available_qty > 0 && m.available_qty <= m.reorder_level;
+                  const isExpired = m.available_qty === 0 && m.expired_qty > 0;
+                  const isOut = m.available_qty === 0 && !isExpired;
 
                   return (
                     <tr key={m.medicine_name} style={{ borderBottom: "1px solid #f1f5f9" }}>
@@ -373,11 +388,11 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
                             borderRadius: "12px",
                             fontSize: "0.75rem",
                             fontWeight: 700,
-                            background: isOut ? "#fee2e2" : (isLow ? "#fef3c7" : "#dcfce7"),
-                            color: isOut ? "#991b1b" : (isLow ? "#92400e" : "#166534"),
+                            background: isOut || isExpired ? "#fee2e2" : (isLow ? "#fef3c7" : "#dcfce7"),
+                            color: isOut || isExpired ? "#991b1b" : (isLow ? "#92400e" : "#166534"),
                           }}
                         >
-                          {isOut ? "Out of Stock" : (isLow ? "Low Stock" : "In Stock")}
+                          {isExpired ? "Expired" : (isOut ? "Out of Stock" : (isLow ? "Low Stock" : "In Stock"))}
                         </span>
                       </td>
                     </tr>

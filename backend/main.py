@@ -10,6 +10,8 @@ from sqlalchemy.exc import IntegrityError, OperationalError
 
 from database import db_session
 import security
+import legacy_sql
+import legacy_queries
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
@@ -50,6 +52,9 @@ def on_startup():
     with db_session() as db:
         security.create_default_users(db)
         security.create_default_clinical_master(db)
+        with legacy_sql.get_connection(db) as conn:
+            legacy_queries.ensure_lab_diagnostics_tables(conn)
+        db.commit()
 
 
 # ------------------------------------------------------------ error handling --

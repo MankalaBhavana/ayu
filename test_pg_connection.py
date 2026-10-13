@@ -6,6 +6,7 @@ try:
     with engine.connect() as conn:
         result = conn.execute(text('SELECT version();')).fetchone()
         print("Connected to PostgreSQL successfully.")
-        print("PostgreSQL Version:", result[0])
+        if result is not None:
+            print("PostgreSQL Version:", result[0])
 except Exception as e:
     print("Failed to connect to PostgreSQL:", str(e))

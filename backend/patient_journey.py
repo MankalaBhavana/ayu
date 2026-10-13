@@ -325,11 +325,18 @@ def get_patient_journey(db, patient_id, encounter_type=None, encounter_id=None):
                     events.append({"date": d, "time": t, "type": "room_charges", "title": "Room & nursing charges posted",
                                     "subtitle": f"{bed['ward']} · {bed.get('total_days') or ''} day(s)", "charge": bed_total, "received": None})
 
-            cursor.execute(
-                "SELECT id, invoice_no, total_amount, paid_amount, due_amount, invoice_type, created_at FROM invoices "
-                "WHERE patient_id = ? AND module = 'IP' AND (id = ANY(?) OR (invoice_type = 'DISCHARGE' AND ? IS NOT NULL))",
-                (patient_id, list(invoice_ids) or [-1], discharge_date),
-            )
+            if discharge_date:
+                cursor.execute(
+                    "SELECT id, invoice_no, total_amount, paid_amount, due_amount, invoice_type, created_at FROM invoices "
+                    "WHERE patient_id = ? AND module = 'IP' AND (id = ANY(?) OR invoice_type = 'DISCHARGE')",
+                    (patient_id, list(invoice_ids) or [-1]),
+                )
+            else:
+                cursor.execute(
+                    "SELECT id, invoice_no, total_amount, paid_amount, due_amount, invoice_type, created_at FROM invoices "
+                    "WHERE patient_id = ? AND module = 'IP' AND id = ANY(?)",
+                    (patient_id, list(invoice_ids) or [-1]),
+                )
             for inv in cursor.fetchall():
                 invoice_ids.add(inv["id"])
 

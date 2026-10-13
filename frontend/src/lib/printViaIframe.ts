@@ -24,15 +24,31 @@ function extractSharedPrintTitle(html: string): string {
   return headingMatch?.[1]?.replace(/<[^>]+>/g, "").trim() || "Medical Document";
 }
 
-function applySharedHospaiPrintFrame(html: string): string {
+type SharedPrintOptions = {
+  suppressBrowserHeadersAndFooters?: boolean;
+  preserveDocumentHeader?: boolean;
+  footerAtBottom?: boolean;
+  includeFooter?: boolean;
+  includeSignature?: boolean;
+};
+
+function applySharedHospaiPrintFrame(html: string, options: SharedPrintOptions): string {
   if (!html || html.includes("data-hospai-shared-print-shell")) {
     return html;
   }
 
-  const title = escapeSharedPrintText(extractSharedPrintTitle(html));
+  const preserveDocumentHeader = options.preserveDocumentHeader ?? false;
+  const footerAtBottom = options.footerAtBottom ?? false;
+  const includeFooter = options.includeFooter ?? true;
+  const includeSignature = options.includeSignature ?? true;
+  const suppressBrowserHeadersAndFooters = options.suppressBrowserHeadersAndFooters ?? false;
+  const rawTitle = extractSharedPrintTitle(html);
+  const title = escapeSharedPrintText(rawTitle);
   const now = new Date();
   const printDate = now.toLocaleDateString("en-GB");
   const printTime = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
+  const pageMargin = suppressBrowserHeadersAndFooters ? "0" : "10mm 18mm 14mm";
+  const bodyPadding = suppressBrowserHeadersAndFooters ? "10mm 18mm 14mm" : "0";
 
   // A physical specimen/medicine/wristband label declares its own narrow
   // body width (it's sized for a small sticker, not an A4 page). The full
@@ -66,12 +82,26 @@ function applySharedHospaiPrintFrame(html: string): string {
     return compactOutput;
   }
 
+  const documentHeaderVisibility = preserveDocumentHeader ? "" : `
+      body > .print-header,
+      main > .print-header,
+      .journey-print-header,
+      .journey-print-topline,
+      .report-header,
+      .pdf > .print-header { display: none !important; }`;
+  const footerAlignment = footerAtBottom && includeFooter ? `
+      @media print {
+        body { display: flex !important; flex-direction: column !important; min-height: 297mm !important; }
+        body > .pdf { flex: 0 0 auto; }
+        .hospai-shared-print-footer { margin-top: auto !important; }
+      }` : "";
+
   const sharedCss = `
     <style data-hospai-shared-print-style>
-      @page { size: A4 portrait; margin: 10mm 18mm 14mm; }
+      @page { size: A4 portrait; margin: ${pageMargin}; }
       * { box-sizing: border-box; }
       html { background: #fff !important; }
-      body { margin: 0 !important; color: #000 !important; background: transparent !important; position: relative; z-index: 0; }
+      body { margin: 0 !important; padding: ${bodyPadding} !important; color: #000 !important; background: transparent !important; position: relative; z-index: 0; }
       .hospai-shared-watermark {
         display: none !important;
       }
@@ -138,12 +168,7 @@ function applySharedHospaiPrintFrame(html: string): string {
       .hospai-shared-report-meta td:first-child { width: 30mm; white-space: nowrap; }
       .hospai-shared-report-meta td:nth-child(2) { width: 5mm; text-align: center; padding: 0 1mm; }
       .hospai-shared-report-meta td:last-child { font-weight: 600; text-align: right; }
-      body > .print-header,
-      main > .print-header,
-      .journey-print-header,
-      .journey-print-topline,
-      .report-header,
-      .pdf > .print-header { display: none !important; }
+      ${documentHeaderVisibility}
       .hospai-shared-print-footer {
         position: relative;
         min-height: 56mm;
@@ -197,17 +222,18 @@ function applySharedHospaiPrintFrame(html: string): string {
         .hospai-shared-print-footer { display: block; }
         .hospai-shared-print-shell { display: block; }
       }
+      ${footerAlignment}
     </style>`;
 
-  const header = `
+  const header = preserveDocumentHeader ? "" : `
     <header class="hospai-shared-print-shell" data-hospai-shared-print-shell>
-      ${renderAyuPdfHeaderHtml({ title, printDate, printTime, generatedBy: "Ayu Polyclinic System" })}
+      ${renderAyuPdfHeaderHtml({ title: rawTitle, printDate, printTime, generatedBy: "Ayu Polyclinic System" })}
     </header>`;
 
-  const footer = `
+  const footer = includeFooter ? `
     <footer class="hospai-shared-print-footer" data-hospai-shared-print-footer>
-      ${renderAyuPdfFooterHtml("Page 1 of 1")}
-    </footer>`;
+      ${renderAyuPdfFooterHtml("Page 1 of 1", includeSignature)}
+    </footer>` : "";
 
   let output = html;
   output = output.includes("</head>") ? output.replace("</head>", `${sharedCss}</head>`) : `${sharedCss}${output}`;
@@ -218,7 +244,11 @@ function applySharedHospaiPrintFrame(html: string): string {
   return output;
 }
 
-export function printViaIframe(html: string, frameId = "__hospai_print_frame__"): void {
+export function printViaIframe(
+  html: string,
+  frameId = "__hospai_print_frame__",
+  options: SharedPrintOptions = {},
+): void {
   const existing = document.getElementById(frameId);
   if (existing) existing.remove();
 
@@ -230,7 +260,7 @@ export function printViaIframe(html: string, frameId = "__hospai_print_frame__")
   );
   document.body.appendChild(iframe);
 
-  const standardizedHtml = applySharedHospaiPrintFrame(html);
+  const standardizedHtml = applySharedHospaiPrintFrame(html, options);
   const blob = new Blob([standardizedHtml], { type: "text/html;charset=utf-8" });
   const url = URL.createObjectURL(blob);
 

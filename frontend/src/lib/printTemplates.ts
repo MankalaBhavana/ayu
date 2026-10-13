@@ -38,6 +38,8 @@ export function buildPrintDocumentHtml(opts: {
   rows: (string | number)[][];
   totals?: { label: string; value: string; grand?: boolean }[];
   emptyMessage?: string;
+  brandLogoDataUri?: string;
+  brandName?: string;
 }) {
   const metaHtml = opts.meta?.length
     ? `<div class="meta-row">${opts.meta.map((m) => `<div class="meta-item"><span>${escapeHtml(m.label)}</span><strong>${escapeHtml(m.value)}</strong></div>`).join("")}</div>`
@@ -50,11 +52,22 @@ export function buildPrintDocumentHtml(opts: {
     ? `<div class="totals">${opts.totals.map((t) => `<div class="totals-row${t.grand ? " grand" : ""}"><span>${escapeHtml(t.label)}</span><span>${escapeHtml(t.value)}</span></div>`).join("")}</div>`
     : "";
   const subtitle = opts.subtitleLines.filter(Boolean).join(" · ");
+  const headerHtml = opts.brandLogoDataUri
+    ? `<header class="custom-report-header"><img src="${escapeHtml(opts.brandLogoDataUri)}" alt="Ayu Polyclinic logo" /><div class="custom-report-header-copy">${opts.brandName ? `<strong class="custom-report-brand-name">${escapeHtml(opts.brandName)}</strong>` : ""}<h1>${escapeHtml(opts.title)}</h1></div></header>`
+    : "";
+  const headerStyle = opts.brandLogoDataUri
+     ? `.custom-report-header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 2px solid #1d4289; }
+       .custom-report-header img { display: block; width: 24mm; height: 22mm; object-fit: contain; object-position: left center; flex: 0 0 auto; }
+       .custom-report-header-copy { min-width: 0; }
+       .custom-report-brand-name { display: block; margin-bottom: 3px; color: #1d4289; font-size: 15px; }
+       .custom-report-header h1 { margin: 0; color: #1d4289; font-size: 17px; line-height: 1.25; }`
+    : "";
 
   return `
-    <html><head><title>${opts.title}</title><style>${BASE_STYLE}</style></head>
+    <html><head><title>${escapeHtml(opts.title)}</title><style>${BASE_STYLE}${headerStyle}</style></head>
     <body>
       <section class="content">
+        ${headerHtml}
         ${subtitle ? `<p style="margin:0 0 14px;color:#60758a;font-size:12px;">${escapeHtml(subtitle)}</p>` : ""}
         ${metaHtml}
         ${tableHtml}
