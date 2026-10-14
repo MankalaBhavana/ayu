@@ -154,6 +154,8 @@ describe("AddPatientPage", () => {
     const parsedPrintHtml = new DOMParser().parseFromString(printHtml, "text/html");
     expect(parsedPrintHtml.querySelector(".registration-slip-header img")?.getAttribute("src")).toBe(PRINT_BRAND_HEADER_DATA_URI);
     expect(parsedPrintHtml.querySelector(".registration-slip-title")?.textContent).toContain("Ayu Polyclinic");
+    expect(parsedPrintHtml.querySelector(".registration-slip-header")?.getAttribute("style")).toContain("gap: 6px");
+    expect(parsedPrintHtml.querySelector(".registration-slip-title")?.getAttribute("style")).toContain("text-align: left");
     expect(printViaIframe).toHaveBeenCalledWith(
       expect.stringContaining('class="registration-slip-header"'),
       "__hospai_registration_token_slip_print__",

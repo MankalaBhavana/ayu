@@ -16,25 +16,26 @@ describe("shared Ayu PDF branding", () => {
     expect(html).toContain("Dr. Sushanth. B");
     expect(html).toContain("MBBS (Gandhi), (FCCM)");
     expect(html).toContain("TSMC/FM/27444");
-    expect(html).toContain(`src="${PRINT_CADUCEUS_DATA_URI}"`);
     expect(html).toContain("Billing Summary");
     expect(html).toContain("Daily collections");
   });
 
-  test("renders the exact clinic services and contact footer artwork", () => {
+  test("renders the exact clinic services and contact footer artwork with Powered by HospAI", () => {
     const html = renderAyuPdfFooterHtml();
 
     expect(html).toContain(`src="${PRINT_FOOTER_IMAGE_DATA_URI}"`);
     expect(html).toContain("SIGNATURE");
     expect(html).toContain("Ayu Polyclinic services, address, phone and email");
+    expect(html).toContain("Powered by HospAI");
   });
 
-  test("omits the signature area while retaining footer artwork when disabled", () => {
+  test("omits the signature area while retaining footer artwork and Powered by HospAI when disabled", () => {
     const html = renderAyuPdfFooterHtml("Page 1 of 1", false);
 
     expect(html).not.toContain("SIGNATURE");
     expect(html).toContain(`src="${PRINT_FOOTER_IMAGE_DATA_URI}"`);
     expect(html).toContain("margin:0;padding-top:0;");
+    expect(html).toContain("Powered by HospAI");
   });
 
   test("escapes ampersands once in report titles", () => {

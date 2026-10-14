@@ -233,6 +233,8 @@ export interface Patient {
   insurance_verified?: boolean;
   insurance_verified_by?: string | null;
   insurance_verified_at?: string | null;
+  visit_dates?: string | null;
+  admission_dates?: string | null;
 }
 
 export interface PatientVital {

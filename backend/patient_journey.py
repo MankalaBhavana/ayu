@@ -31,59 +31,44 @@ def _patient_name(row):
 
 
 def list_patient_journey_encounters(db, patient_id):
-    """Every real visit for this patient (OP appointment, IPD admission,
-    Emergency encounter), newest first -- powers the encounter selector."""
+    """Every real outpatient visit for this patient (OP appointment and
+    Follow-up / Re-visit encounters), newest first -- powers the encounter selector.
+    IP admissions are preserved in the DB for IPD workflows but excluded from OP Patient Journey."""
     with get_connection(db) as conn:
         cursor = conn.cursor()
         encounters = []
 
         cursor.execute(
             """
-            SELECT a.id, a.admission_date, a.discharge_date,
-                   ba.ward, ba.bed_no
-            FROM admissions a
-            LEFT JOIN LATERAL (
-                SELECT ward, bed_no FROM bed_allocations
-                WHERE admission_id = a.id ORDER BY allocated_at DESC LIMIT 1
-            ) ba ON TRUE
-            WHERE a.patient_id = ? AND COALESCE(a.notes, '') != 'Initial registration'
-            ORDER BY a.admission_date DESC
-            """,
-            (patient_id,),
-        )
-        for row in cursor.fetchall():
-            encounters.append({
-                "key": f"IP:{row['id']}",
-                "encounter_type": "IP",
-                "encounter_id": row["id"],
-                "label": f"IPD · ADM-{row['id']}",
-                "start": _iso(row["admission_date"]),
-                "end": _iso(row["discharge_date"]),
-                "status": "Discharged" if row["discharge_date"] else "Active",
-                "ward": row["ward"],
-                "bed_no": row["bed_no"],
-            })
-
-        cursor.execute(
-            """
-            SELECT id, appointment_date, status, department, doctor_name
+            SELECT id, status, department, doctor_name, visit_type, appointment_kind, notes, consultation_fee, created_at, token_no,
+                   COALESCE(
+                       CASE 
+                           WHEN CAST(appointment_date AS time) != '00:00:00' THEN appointment_date
+                           WHEN created_at IS NOT NULL THEN
+                               (DATE(appointment_date) + CAST(timezone('Asia/Kolkata', created_at) AS time))
+                           ELSE appointment_date
+                       END,
+                       appointment_date
+                   ) AS effective_appointment_date
             FROM appointments
-            WHERE patient_id = ? AND LOWER(COALESCE(visit_type, '')) != 'emergency'
-            ORDER BY appointment_date DESC
+            WHERE patient_id = ? AND LOWER(COALESCE(visit_type, '')) != 'emergency' AND LOWER(COALESCE(visit_type, '')) != 'ip'
+            ORDER BY effective_appointment_date DESC, id DESC
             """,
             (patient_id,),
         )
         for row in cursor.fetchall():
+            is_followup = (row.get("visit_type") or "").lower() in ("re-visit", "revisit", "follow_up", "follow up") or (row.get("appointment_kind") or "").lower() == "follow_up"
             encounters.append({
                 "key": f"OP:{row['id']}",
                 "encounter_type": "OP",
                 "encounter_id": row["id"],
                 "label": f"OP · APT-{row['id']}",
-                "start": _iso(row["appointment_date"]),
-                "end": _iso(row["appointment_date"]),
+                "start": _iso(row["effective_appointment_date"]),
+                "end": _iso(row["effective_appointment_date"]),
                 "status": (row["status"] or "scheduled").replace("_", " ").title(),
                 "ward": None,
                 "bed_no": None,
+                "visit_type": "Follow-up" if is_followup else "New Patient",
             })
 
         cursor.execute(
@@ -392,11 +377,28 @@ def get_patient_journey(db, patient_id, encounter_type=None, encounter_id=None):
             appointment_id = eid
             appt = {}
             if appointment_id and appointment_id != 0:
-                cursor.execute("SELECT * FROM appointments WHERE id = ?", (appointment_id,))
-                appt = dict(cursor.fetchone() or {})
+                cursor.execute(
+                    """
+                    SELECT id, status, department, doctor_name, visit_type, appointment_kind, notes, consultation_fee, created_at, token_no,
+                           COALESCE(
+                               CASE 
+                                   WHEN CAST(appointment_date AS time) != '00:00:00' THEN appointment_date
+                                   WHEN created_at IS NOT NULL THEN
+                                       (DATE(appointment_date) + CAST(timezone('Asia/Kolkata', created_at) AS time))
+                                   ELSE appointment_date
+                               END,
+                               appointment_date
+                           ) AS effective_appointment_date
+                    FROM appointments WHERE id = ?
+                    """,
+                    (appointment_id,),
+                )
+                appt_row = cursor.fetchone()
+                appt = dict(appt_row or {})
             doctor_name = appt.get("doctor_name")
-            appt_date, appt_time = _split_dt(appt.get("created_at") or appt.get("appointment_date") or patient.get("created_at"))
-            appt_day = (appt.get("appointment_date") or "")[:10] if isinstance(appt.get("appointment_date"), str) else _iso(appt.get("appointment_date"))[:10] if appt.get("appointment_date") else ""
+            appt_date, appt_time = _split_dt(appt.get("effective_appointment_date") or appt.get("created_at") or appt.get("appointment_date") or patient.get("created_at"))
+            appt_day = (appt.get("effective_appointment_date") or appt.get("appointment_date") or "")
+            appt_day_str = appt_day[:10] if isinstance(appt_day, str) else _iso(appt_day)[:10] if appt_day else ""
 
             if is_first:
                 reg_date, reg_time = _split_dt(patient.get("created_at"))
@@ -405,21 +407,114 @@ def get_patient_journey(db, patient_id, encounter_type=None, encounter_id=None):
                                 "charge": None, "received": None})
 
             consultation_fee = 0.0
-            if appt_day:
+            if appt_day_str:
                 cursor.execute(
                     "SELECT * FROM invoices WHERE patient_id = ? AND module = 'OP' AND DATE(created_at) = ? ORDER BY created_at LIMIT 1",
-                    (patient_id, appt_day),
+                    (patient_id, appt_day_str),
                 )
                 consultation_invoice = cursor.fetchone()
                 consultation_fee = float(consultation_invoice["total_amount"] or 0) if consultation_invoice else float(appt.get("consultation_fee") or 0)
                 if consultation_invoice:
                     invoice_ids.add(consultation_invoice["id"])
 
+            notes = appt.get("notes") or ""
+            is_followup = (
+                (appt.get("visit_type") or "").lower() in ("re-visit", "revisit", "follow_up", "follow up")
+                or (appt.get("appointment_kind") or "").lower() == "follow_up"
+            )
+
+            # 1. Vitals event extraction (from patient_vitals table or parsed from notes)
+            v_row = None
+            try:
+                cursor.execute(
+                    """
+                    SELECT * FROM patient_vitals
+                    WHERE patient_id = ? AND (
+                        encounter_id = ?
+                        OR DATE(COALESCE(recorded_at, record_time, created_at)) = DATE(?)
+                    )
+                    ORDER BY id DESC LIMIT 1
+                    """,
+                    (patient_id, appointment_id, appt_day_str or appt.get("created_at")),
+                )
+                v_row = cursor.fetchone()
+            except Exception as e:
+                print(f"[WARN] Failed to query patient_vitals: {e}")
+            bp = v_row["bp"] if v_row and v_row["bp"] else None
+            pulse = v_row["pulse"] if v_row and v_row["pulse"] else None
+            temp = v_row["temperature"] if v_row and v_row["temperature"] else None
+            spo2 = v_row["spo2"] if v_row and v_row["spo2"] else None
+            height = v_row["height"] if v_row and v_row["height"] else None
+            weight = v_row["weight"] if v_row and v_row["weight"] else None
+
+            if not any([bp, pulse, temp, spo2, height, weight]) and appt_day_str:
+                cursor.execute(
+                    """
+                    SELECT notes FROM admissions
+                    WHERE patient_id = ? AND DATE(admission_date) = DATE(?)
+                    ORDER BY admission_date DESC LIMIT 1
+                    """,
+                    (patient_id, appt_day_str),
+                )
+                adm_row = cursor.fetchone()
+                if adm_row and adm_row["notes"]:
+                    notes = f"{notes}\n{adm_row['notes']}"
+
+            if notes and not (bp and temp and pulse):
+                import re
+                bp_m = re.search(r"BP:\s*([^\s|]+)", notes, re.I)
+                temp_m = re.search(r"Temp(?:erature)?:\s*([^\s|]+)", notes, re.I)
+                pulse_m = re.search(r"Pulse:\s*([^\s|]+)", notes, re.I)
+                spo2_m = re.search(r"SpO2:\s*([^\s|]+)", notes, re.I)
+                h_m = re.search(r"Height:\s*([^\s|]+)", notes, re.I)
+                w_m = re.search(r"Weight:\s*([^\s|]+)", notes, re.I)
+                if not bp and bp_m: bp = bp_m.group(1).strip()
+                if not temp and temp_m: temp = temp_m.group(1).strip()
+                if not pulse and pulse_m: pulse = pulse_m.group(1).strip()
+                if not spo2 and spo2_m: spo2 = spo2_m.group(1).strip()
+                if not height and h_m: height = h_m.group(1).strip()
+                if not weight and w_m: weight = w_m.group(1).strip()
+
+            if any([bp, pulse, temp, spo2, height, weight]):
+                v_parts = []
+                if bp: v_parts.append(f"BP: {bp} mmHg")
+                if pulse: v_parts.append(f"Pulse: {pulse} bpm")
+                if temp: v_parts.append(f"Temp: {temp}°F")
+                if spo2: v_parts.append(f"SpO2: {spo2}%")
+                if weight: v_parts.append(f"Weight: {weight} kg")
+                if height: v_parts.append(f"Height: {height} cm")
+                events.append({
+                    "date": appt_date, "time": appt_time, "type": "vitals",
+                    "title": "Vitals recorded", "subtitle": " · ".join(v_parts),
+                    "charge": None, "received": None,
+                })
+
+            # 2. Consultation event
+            revisit_notes = None
+            if "[Re-visit Notes]" in notes:
+                revisit_notes = notes.split("[Re-visit Notes]")[-1].strip()
+            elif "Current Symptoms:" in notes:
+                import re
+                sym_m = re.search(r"Current Symptoms:\s*([^|]+)", notes)
+                if sym_m:
+                    revisit_notes = sym_m.group(1).strip()
+            elif notes and not notes.startswith("[Re-visit Details]"):
+                revisit_notes = notes.strip()
+
+            consult_title = "Follow-up consultation" if is_followup else "Doctor consultation"
+            parts = [f"{appt.get('department') or 'General'} · {doctor_name or 'Duty doctor'}"]
+            if appt.get("token_no"):
+                parts.append(f"Token {appt['token_no']}")
+            if revisit_notes:
+                parts.append(f"Complaint: {revisit_notes}")
+            consult_subtitle = " · ".join(parts)
+
             if appointment_id and appointment_id != 0:
-                events.append({"date": appt_date, "time": appt_time, "type": "consultation", "title": "Doctor consultation",
-                                "subtitle": f"{appt.get('department') or 'General'} · {doctor_name or 'Duty doctor'}"
-                                + (f" · Token {appt['token_no']}" if appt.get("token_no") else ""),
-                                "charge": consultation_fee or None, "received": None})
+                events.append({
+                    "date": appt_date, "time": appt_time, "type": "consultation",
+                    "title": consult_title, "subtitle": consult_subtitle,
+                    "charge": consultation_fee or None, "received": None,
+                })
 
             items = _diag_scope_rows(cursor, "OP", appointment_id, None, patient_id=patient_id)
             for it in items:
@@ -515,16 +610,92 @@ def get_patient_journey(db, patient_id, encounter_type=None, encounter_id=None):
                 pharmacy_total = float(cursor.fetchone()["val"] or 0)
 
             categories = [c for c in [
-                ("Consultation", consultation_fee),
+                ("Follow-up Fee" if is_followup else "Consultation", consultation_fee),
                 ("Laboratory", lab_total), ("Imaging", imaging_total), ("Pharmacy", pharmacy_total),
             ] if c[1] > 0]
 
-            prescription = None
-            if appointment_id and appointment_id != 0:
-                cursor.execute("SELECT * FROM prescriptions WHERE appointment_id = ? LIMIT 1", (appointment_id,))
-                prescription = cursor.fetchone()
+            rx_date = appt_day_str or (str(appt.get("effective_appointment_date") or appt.get("appointment_date"))[:10] if (appt.get("effective_appointment_date") or appt.get("appointment_date")) else None)
+            if rx_date:
+                cursor.execute(
+                    """
+                    SELECT * FROM prescriptions
+                    WHERE patient_id = ? AND (
+                        appointment_id = ?
+                        OR (appointment_id IS NULL AND DATE(created_at) = DATE(?))
+                    )
+                    ORDER BY created_at ASC
+                    """,
+                    (patient_id, appointment_id, rx_date),
+                )
+            else:
+                cursor.execute(
+                    """
+                    SELECT * FROM prescriptions
+                    WHERE patient_id = ? AND appointment_id = ?
+                    ORDER BY created_at ASC
+                    """,
+                    (patient_id, appointment_id),
+                )
+            prescriptions_rows = [dict(r) for r in cursor.fetchall()]
+
+            for p in prescriptions_rows:
+                rx_id = p["id"]
+                cursor.execute(
+                    "SELECT * FROM prescription_medicines WHERE prescription_id = ? ORDER BY id",
+                    (rx_id,),
+                )
+                med_rows = [dict(m) for m in cursor.fetchall()]
+                if not med_rows:
+                    cursor.execute(
+                        "SELECT * FROM prescription_items WHERE prescription_id = ? ORDER BY id",
+                        (rx_id,),
+                    )
+                    med_rows = [dict(m) for m in cursor.fetchall()]
+
+                med_items = []
+                for med in med_rows:
+                    med_name = med.get("medicine_name") or med.get("name") or "Medicine"
+                    dosage = med.get("dosage") or ""
+                    freq = med.get("frequency") or ""
+                    dur = med.get("duration") or ""
+                    inst = med.get("instructions") or ""
+                    details = [x for x in [dosage, freq, inst] if x]
+                    desc = f"{med_name} ({' · '.join(details)})" if details else med_name
+                    dur_val = int(dur) if str(dur).isdigit() else 1
+                    med_items.append({
+                        "name": desc,
+                        "quantity": dur_val,
+                        "unit_price": 0.0,
+                        "amount": 0.0,
+                    })
+
+                p_doc = p.get("doctor_name") or doctor_name or "Consultant"
+                sub_parts = [f"Prescribed by: {p_doc}"]
+                if p.get("department"):
+                    sub_parts.append(p["department"])
+                if p.get("diagnosis"):
+                    sub_parts.append(f"Diagnosis: {p['diagnosis']}")
+                if p.get("advice"):
+                    sub_parts.append(f"Advice: {p['advice']}")
+                if p.get("follow_up_date"):
+                    sub_parts.append(f"Follow-up: {_iso(p['follow_up_date'])[:10]}")
+
+                rx_date, rx_time = _split_dt(p.get("created_at") or appt.get("effective_appointment_date") or appt.get("created_at"))
+                events.append({
+                    "date": rx_date,
+                    "time": rx_time,
+                    "type": "prescription",
+                    "title": "Doctor prescription",
+                    "subtitle": " · ".join(sub_parts),
+                    "charge": None,
+                    "received": None,
+                    "items": med_items,
+                })
+
+            has_rx = len(prescriptions_rows) > 0
+            first_rx_id = prescriptions_rows[0]["id"] if has_rx else None
             documents = [
-                {"type": "prescription", "label": "Prescription", "available": bool(prescription), "ref": prescription["id"] if prescription else None},
+                {"type": "prescription", "label": "Prescription", "available": has_rx, "ref": first_rx_id},
                 {"type": "lab_report", "label": "Lab report", "available": (lab_total > 0 or any(e["type"] in ("report_released", "lab_collected") for e in events)), "ref": None},
                 {"type": "imaging_report", "label": "Imaging report", "available": (imaging_total > 0 or any(e["type"] == "report_released" and "Imaging" in e["title"] for e in events)), "ref": None},
                 {"type": "pharmacy_slip", "label": "Pharmacy issue slip", "available": (len(pharmacy_rows) > 0 or pharmacy_total > 0), "ref": None},

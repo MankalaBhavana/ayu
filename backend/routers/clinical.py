@@ -42,9 +42,9 @@ def _validate_vitals_in_notes(notes):
 
 @router.get("/stats")
 @router.get("/dashboard/stats")
-def stats(db: Session = Depends(get_db), user: dict = Depends(require_permissions("patients.read")),
+def stats(date: str | None = None, db: Session = Depends(get_db), user: dict = Depends(require_permissions("patients.read")),
           hospital_id: int = Depends(current_hospital_id)):
-    return lq.get_patient_stats(db, hospital_id=hospital_id)
+    return lq.get_patient_stats(db, hospital_id=hospital_id, target_date=date)
 
 
 @router.get("/dashboard/analytics")
@@ -304,6 +304,21 @@ def prescriptions_create(payload: dict = Body(...), db: Session = Depends(get_db
     with legacy_sql.get_connection(db) as conn:
         try:
             cursor = conn.cursor()
+            if not appointment_id:
+                cursor.execute(
+                    """
+                    SELECT id FROM appointments
+                    WHERE patient_id = ?
+                    ORDER BY CASE WHEN DATE(appointment_date) = CURRENT_DATE THEN 0 ELSE 1 END,
+                             appointment_date DESC, id DESC
+                    LIMIT 1
+                    """,
+                    (patient_id,),
+                )
+                matched_appt = cursor.fetchone()
+                if matched_appt:
+                    appointment_id = matched_appt[0]
+
             prescription_id = None
             is_update = False
 

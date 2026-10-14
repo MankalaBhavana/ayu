@@ -146,6 +146,7 @@ describe("Pharmacy Module Architecture", () => {
       preserveDocumentHeader: true,
       footerAtBottom: true,
       suppressBrowserHeadersAndFooters: true,
+      includeSignature: false,
     }));
   });
 

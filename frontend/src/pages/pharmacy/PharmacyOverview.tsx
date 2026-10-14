@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { Button, Input, Modal } from "../../components/ui";
 import { apiFetch, reportError } from "../../lib/api";
 import type { Notice, Patient } from "../../types";
 import DateCalendarPicker, { toIsoDate, parseIsoDate } from "../../components/DateCalendarPicker";
 import { DonutChart } from "../../components/charts";
+import { formatDateTimeIST } from "../../lib/format";
 
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
@@ -125,6 +126,23 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
   const [topMedsMetric, setTopMedsMetric] = useState<"qty" | "value">("qty");
   const [topMedsCount, setTopMedsCount] = useState<5 | 10>(5);
 
+  // Patient search & pharmacy history modal
+  const [patientSearchSuggestions, setPatientSearchSuggestions] = useState<Patient[]>([]);
+  const [patientSearching, setPatientSearching] = useState(false);
+  const [patientSearchOpen, setPatientSearchOpen] = useState(false);
+  const [noPatientFoundMsg, setNoPatientFoundMsg] = useState<string | null>(null);
+
+  // Selected patient pharmacy details
+  const [selectedPatient, setSelectedPatient] = useState<Patient | null>(null);
+  const [patientPharmacyLoading, setPatientPharmacyLoading] = useState(false);
+  const [patientPrescriptions, setPatientPrescriptions] = useState<any[]>([]);
+  const [patientSales, setPatientSales] = useState<any[]>([]);
+  const [patientInvoices, setPatientInvoices] = useState<any[]>([]);
+  const [patientReturns, setPatientReturns] = useState<any[]>([]);
+  const [patientModalTab, setPatientModalTab] = useState<"prescriptions" | "dispensed" | "invoices">("prescriptions");
+
+  const searchContainerRef = useRef<HTMLDivElement | null>(null);
+
 
   const loadData = async (isManualRefresh = false) => {
     if (isManualRefresh) setRefreshing(true);
@@ -181,10 +199,108 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
     void loadData();
   }, []);
 
-  const handleGlobalSearch = (e: React.FormEvent) => {
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (searchContainerRef.current && !searchContainerRef.current.contains(e.target as Node)) {
+        setPatientSearchOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  useEffect(() => {
+    const q = globalSearch.trim();
+    if (q.length < 2) {
+      setPatientSearchSuggestions([]);
+      setPatientSearchOpen(false);
+      setNoPatientFoundMsg(null);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setPatientSearching(true);
+      try {
+        const res = await apiFetch<{ patients?: Patient[] }>(`/api/patients?q=${encodeURIComponent(q)}`);
+        const list = res.patients || [];
+        setPatientSearchSuggestions(list);
+        setPatientSearchOpen(true);
+        if (list.length === 0) {
+          setNoPatientFoundMsg(`No matching patient found for "${q}".`);
+        } else {
+          setNoPatientFoundMsg(null);
+        }
+      } catch {
+        setPatientSearchSuggestions([]);
+      } finally {
+        setPatientSearching(false);
+      }
+    }, 250);
+
+    return () => clearTimeout(timer);
+  }, [globalSearch]);
+
+  const openPatientPharmacyModal = async (patient: Patient) => {
+    setSelectedPatient(patient);
+    setPatientSearchOpen(false);
+    setPatientPharmacyLoading(true);
+    setPatientModalTab("prescriptions");
+
+    try {
+      const [prescRes, salesRes, invRes, retRes] = await Promise.allSettled([
+        apiFetch<{ prescriptions?: any[] }>(`/api/prescriptions?patient_id=${encodeURIComponent(patient.patient_id)}`),
+        apiFetch<{ sales?: any[] }>(`/api/pharmacy/sales?patient_id=${encodeURIComponent(patient.patient_id)}`),
+        apiFetch<{ invoices?: any[] }>(`/api/pharmacy/invoices?patient_id=${encodeURIComponent(patient.patient_id)}`),
+        apiFetch<{ returns?: any[] }>(`/api/pharmacy/returns?patient_id=${encodeURIComponent(patient.patient_id)}`),
+      ]);
+
+      const prescriptions = prescRes.status === "fulfilled" ? (prescRes.value.prescriptions || []) : [];
+      const sales = salesRes.status === "fulfilled" ? (salesRes.value.sales || []) : [];
+      const invoices = invRes.status === "fulfilled" ? (invRes.value.invoices || []) : [];
+      const returns = retRes.status === "fulfilled" ? (retRes.value.returns || []) : [];
+
+      setPatientPrescriptions(prescriptions);
+      setPatientSales(sales);
+      setPatientInvoices(invoices);
+      setPatientReturns(returns);
+
+      if (prescriptions.length === 0 && sales.length > 0) {
+        setPatientModalTab("dispensed");
+      }
+    } catch (error) {
+      reportError(setNotice, error as any, "Failed to load patient pharmacy records");
+    } finally {
+      setPatientPharmacyLoading(false);
+    }
+  };
+
+  const handleGlobalSearch = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!globalSearch.trim()) return;
-    onNavigate("pharmacy-op-dispense");
+    const q = globalSearch.trim();
+    if (!q) return;
+
+    setPatientSearching(true);
+    try {
+      const res = await apiFetch<{ patients?: Patient[] }>(`/api/patients?q=${encodeURIComponent(q)}`);
+      const list = res.patients || [];
+      if (list.length === 1) {
+        setPatientSearchOpen(false);
+        void openPatientPharmacyModal(list[0]);
+      } else if (list.length > 1) {
+        setPatientSearchSuggestions(list);
+        setPatientSearchOpen(true);
+        setNoPatientFoundMsg(null);
+      } else {
+        setPatientSearchSuggestions([]);
+        setPatientSearchOpen(true);
+        setNoPatientFoundMsg(`No matching patient found for "${q}".`);
+      }
+    } catch {
+      setPatientSearchSuggestions([]);
+      setPatientSearchOpen(true);
+      setNoPatientFoundMsg(`No matching patient found for "${q}".`);
+    } finally {
+      setPatientSearching(false);
+    }
   };
 
 
@@ -375,32 +491,137 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
 
         {/* Global Search + Date Selector + Notification Bell + Live Refresh */}
         <div className="hosp-dashboard-top-actions" style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-          <form onSubmit={handleGlobalSearch} style={{ position: "relative", width: "280px" }}>
-            <span style={{ position: "absolute", left: "13px", top: "50%", transform: "translateY(-50%)", color: "#94a3b8", display: "flex", pointerEvents: "none" }}>
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="11" cy="11" r="8" />
-                <line x1="21" y1="21" x2="16.65" y2="16.65" />
-              </svg>
-            </span>
-            <input
-              type="text"
-              className="search-input-with-icon"
-              placeholder="Search patient, medicine, invoice..."
-              value={globalSearch}
-              onChange={(e) => setGlobalSearch(e.target.value)}
-              style={{
-                width: "100%",
-                boxSizing: "border-box",
-                height: "36px",
-                borderRadius: "8px",
-                border: "1px solid #cbd5e1",
-                fontSize: "12.5px",
-                outline: "none",
-                background: "#ffffff",
-                boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
-              }}
-            />
-          </form>
+          <div ref={searchContainerRef} style={{ position: "relative", width: "300px" }}>
+            <form onSubmit={handleGlobalSearch} style={{ position: "relative", width: "100%" }}>
+              <span style={{ position: "absolute", left: "13px", top: "50%", transform: "translateY(-50%)", color: "#94a3b8", display: "flex", pointerEvents: "none" }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <circle cx="11" cy="11" r="8" />
+                  <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                </svg>
+              </span>
+              <input
+                type="text"
+                className="search-input-with-icon"
+                placeholder="Search patient, medicine, invoice..."
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                onFocus={() => {
+                  if (globalSearch.trim().length >= 2) setPatientSearchOpen(true);
+                }}
+                style={{
+                  width: "100%",
+                  boxSizing: "border-box",
+                  height: "36px",
+                  borderRadius: "8px",
+                  border: "1px solid #cbd5e1",
+                  fontSize: "12.5px",
+                  outline: "none",
+                  background: "#ffffff",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                  paddingLeft: "34px",
+                  paddingRight: globalSearch ? "28px" : "10px",
+                }}
+              />
+              {globalSearch && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setGlobalSearch("");
+                    setPatientSearchSuggestions([]);
+                    setPatientSearchOpen(false);
+                    setNoPatientFoundMsg(null);
+                  }}
+                  style={{
+                    position: "absolute",
+                    right: "8px",
+                    top: "50%",
+                    transform: "translateY(-50%)",
+                    background: "none",
+                    border: "none",
+                    cursor: "pointer",
+                    fontSize: "16px",
+                    lineHeight: "1",
+                    color: "#94a3b8",
+                    padding: "2px",
+                  }}
+                  title="Clear search"
+                >
+                  ×
+                </button>
+              )}
+            </form>
+
+            {/* Dropdown for live patient search results */}
+            {patientSearchOpen && (
+              <div
+                style={{
+                  position: "absolute",
+                  top: "calc(100% + 4px)",
+                  left: 0,
+                  right: 0,
+                  background: "#ffffff",
+                  borderRadius: "8px",
+                  boxShadow: "0 10px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08)",
+                  border: "1px solid #e2e8f0",
+                  zIndex: 100,
+                  maxHeight: "340px",
+                  overflowY: "auto",
+                }}
+              >
+                {patientSearching ? (
+                  <div style={{ padding: "14px", textAlign: "center", color: "#64748b", fontSize: "12px" }}>
+                    Searching patients...
+                  </div>
+                ) : patientSearchSuggestions.length > 0 ? (
+                  <div>
+                    <div style={{ padding: "7px 12px", fontSize: "11px", fontWeight: 700, color: "#94a3b8", textTransform: "uppercase", background: "#f8fafc", borderBottom: "1px solid #f1f5f9" }}>
+                      Matching Patients ({patientSearchSuggestions.length})
+                    </div>
+                    {patientSearchSuggestions.map((pat) => (
+                      <div
+                        key={pat.patient_id}
+                        onClick={() => void openPatientPharmacyModal(pat)}
+                        style={{
+                          padding: "10px 12px",
+                          borderBottom: "1px solid #f1f5f9",
+                          cursor: "pointer",
+                          display: "flex",
+                          flexDirection: "column",
+                          gap: "3px",
+                          transition: "background 0.12s ease",
+                        }}
+                        onMouseEnter={(e) => (e.currentTarget.style.background = "#f0fdfa")}
+                        onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}
+                      >
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                          <strong style={{ fontSize: "13px", color: "#0f172a" }}>
+                            {[pat.name, pat.middle_name, pat.last_name].filter(Boolean).join(" ") || pat.patient_id}
+                          </strong>
+                          <span style={{ fontSize: "11px", fontWeight: 700, color: "#00828a", background: "#e6f9f5", padding: "1px 6px", borderRadius: "4px" }}>
+                            {pat.patient_id}
+                          </span>
+                        </div>
+                        <div style={{ fontSize: "11.5px", color: "#64748b", display: "flex", gap: "8px" }}>
+                          <span>{pat.age ? `${pat.age} yrs` : "Age not added"} / {pat.gender || "-"}</span>
+                          <span>•</span>
+                          <span>{pat.phone || "No phone added"}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : noPatientFoundMsg ? (
+                  <div style={{ padding: "14px 12px", textAlign: "center" }}>
+                    <p style={{ margin: 0, fontSize: "12.5px", fontWeight: 600, color: "#b91c1c" }}>
+                      {noPatientFoundMsg}
+                    </p>
+                    <p style={{ margin: "4px 0 0 0", fontSize: "11px", color: "#64748b" }}>
+                      Try searching by patient name, UHID, or 10-digit mobile number.
+                    </p>
+                  </div>
+                ) : null}
+              </div>
+            )}
+          </div>
 
           <DateCalendarPicker
             value={dateRange}
@@ -1418,8 +1639,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
               key={idx}
               type="button"
               onClick={() => {
-                if (act.action) act.action();
-                else if (act.page) onNavigate(act.page);
+                if (act.page) onNavigate(act.page);
               }}
               style={{
                 background: "#ffffff",
@@ -1504,6 +1724,326 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
               View Full Audit Report
             </Button>
           </div>
+        </Modal>
+      )}
+
+      {/* Patient-specific pharmacy history modal */}
+      {selectedPatient && (
+        <Modal
+          open={!!selectedPatient}
+          onClose={() => setSelectedPatient(null)}
+          title={`${[selectedPatient.name, selectedPatient.middle_name, selectedPatient.last_name].filter(Boolean).join(" ") || selectedPatient.patient_id} — Pharmacy Details`}
+          description={`UHID: ${selectedPatient.patient_id} • ${selectedPatient.phone || "No phone added"}`}
+          className="hosp-revenue-pop-modal"
+        >
+          {patientPharmacyLoading ? (
+            <div style={{ padding: "40px", textAlign: "center", color: "#64748b" }}>
+              <div style={{ fontSize: "24px", marginBottom: "8px" }}>⏳</div>
+              <p style={{ margin: 0, fontSize: "14px", fontWeight: 600 }}>Loading patient pharmacy details...</p>
+            </div>
+          ) : (
+            <div>
+              {/* Patient Demographics & Spend Snapshot */}
+              <div
+                style={{
+                  background: "#f8fafc",
+                  border: "1px solid #e2e8f0",
+                  borderRadius: "10px",
+                  padding: "14px 16px",
+                  marginBottom: "16px",
+                }}
+              >
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: "10px" }}>
+                  <div>
+                    <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>UHID</span>
+                    <strong style={{ display: "block", fontSize: "13px", color: "#00828a" }}>{selectedPatient.patient_id}</strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Full Name</span>
+                    <strong style={{ display: "block", fontSize: "13px", color: "#0f172a" }}>
+                      {[selectedPatient.name, selectedPatient.middle_name, selectedPatient.last_name].filter(Boolean).join(" ") || "-"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Age / Gender</span>
+                    <strong style={{ display: "block", fontSize: "13px", color: "#0f172a" }}>
+                      {selectedPatient.age ? `${selectedPatient.age} yrs` : "-"} / {selectedPatient.gender || "-"}
+                    </strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Mobile</span>
+                    <strong style={{ display: "block", fontSize: "13px", color: "#0f172a" }}>{selectedPatient.phone || "Not added"}</strong>
+                  </div>
+                  <div>
+                    <span style={{ fontSize: "10.5px", fontWeight: 700, color: "#64748b", textTransform: "uppercase" }}>Registered</span>
+                    <strong style={{ display: "block", fontSize: "13px", color: "#0f172a" }}>
+                      {selectedPatient.created_at ? formatDateTimeIST(selectedPatient.created_at) : (selectedPatient.dob || "-")}
+                    </strong>
+                  </div>
+                </div>
+
+                {/* KPI Pill summary */}
+                <div style={{ display: "flex", gap: "8px", marginTop: "12px", paddingTop: "10px", borderTop: "1px solid #e2e8f0", flexWrap: "wrap", alignItems: "center" }}>
+                  <span style={{ background: "#e0f2fe", color: "#0369a1", fontSize: "11px", fontWeight: 700, padding: "3px 9px", borderRadius: "14px" }}>
+                    🩺 {patientPrescriptions.length} Prescription{patientPrescriptions.length === 1 ? "" : "s"}
+                  </span>
+                  <span style={{ background: "#ecfdf5", color: "#047857", fontSize: "11px", fontWeight: 700, padding: "3px 9px", borderRadius: "14px" }}>
+                    💊 {patientSales.length} Dispensed Record{patientSales.length === 1 ? "" : "s"}
+                  </span>
+                  <span style={{ background: "#fef3c7", color: "#b45309", fontSize: "11px", fontWeight: 700, padding: "3px 9px", borderRadius: "14px" }}>
+                    🧾 {patientInvoices.length} Pharmacy Invoice{patientInvoices.length === 1 ? "" : "s"}
+                  </span>
+                  <span style={{ background: "#f1f5f9", color: "#334155", fontSize: "11px", fontWeight: 700, padding: "3px 9px", borderRadius: "14px", marginLeft: "auto" }}>
+                    Total Spend: ₹{patientSales.reduce((acc, s) => acc + Number(s.amount || 0), 0).toLocaleString("en-IN")}
+                  </span>
+                </div>
+              </div>
+
+              {/* Navigation Tabs */}
+              <div style={{ display: "flex", gap: "6px", borderBottom: "2px solid #e2e8f0", marginBottom: "14px" }}>
+                <button
+                  type="button"
+                  onClick={() => setPatientModalTab("prescriptions")}
+                  style={{
+                    padding: "8px 14px",
+                    fontSize: "12.5px",
+                    fontWeight: 700,
+                    border: "none",
+                    background: "none",
+                    cursor: "pointer",
+                    color: patientModalTab === "prescriptions" ? "#00828a" : "#64748b",
+                    borderBottom: patientModalTab === "prescriptions" ? "2px solid #00828a" : "2px solid transparent",
+                    marginBottom: "-2px",
+                  }}
+                >
+                  Doctor Prescriptions ({patientPrescriptions.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPatientModalTab("dispensed")}
+                  style={{
+                    padding: "8px 14px",
+                    fontSize: "12.5px",
+                    fontWeight: 700,
+                    border: "none",
+                    background: "none",
+                    cursor: "pointer",
+                    color: patientModalTab === "dispensed" ? "#00828a" : "#64748b",
+                    borderBottom: patientModalTab === "dispensed" ? "2px solid #00828a" : "2px solid transparent",
+                    marginBottom: "-2px",
+                  }}
+                >
+                  Medicines Dispensed ({patientSales.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPatientModalTab("invoices")}
+                  style={{
+                    padding: "8px 14px",
+                    fontSize: "12.5px",
+                    fontWeight: 700,
+                    border: "none",
+                    background: "none",
+                    cursor: "pointer",
+                    color: patientModalTab === "invoices" ? "#00828a" : "#64748b",
+                    borderBottom: patientModalTab === "invoices" ? "2px solid #00828a" : "2px solid transparent",
+                    marginBottom: "-2px",
+                  }}
+                >
+                  Billing & Invoices ({patientInvoices.length})
+                </button>
+              </div>
+
+              {/* Tab 1: Prescriptions */}
+              {patientModalTab === "prescriptions" && (
+                <div style={{ maxHeight: "360px", overflowY: "auto" }}>
+                  {patientPrescriptions.length === 0 ? (
+                    <div style={{ padding: "30px", textAlign: "center", color: "#64748b", fontSize: "13px" }}>
+                      No prescriptions found for this patient.
+                    </div>
+                  ) : (
+                    <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+                      {patientPrescriptions.map((presc) => (
+                        <div
+                          key={presc.id}
+                          style={{
+                            border: "1px solid #e2e8f0",
+                            borderRadius: "8px",
+                            padding: "12px",
+                            background: "#ffffff",
+                          }}
+                        >
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "8px" }}>
+                            <div>
+                              <strong style={{ fontSize: "13px", color: "#0f172a" }}>
+                                {presc.doctor_name || "Doctor"} {presc.department ? `(${presc.department})` : ""}
+                              </strong>
+                              {presc.diagnosis && (
+                                <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748b" }}>
+                                  Diagnosis: <span style={{ color: "#0f172a", fontWeight: 600 }}>{presc.diagnosis}</span>
+                                </p>
+                              )}
+                            </div>
+                            <span style={{ fontSize: "11px", color: "#94a3b8" }}>
+                              {formatDateTimeIST(presc.created_at)}
+                            </span>
+                          </div>
+
+                          {presc.medicines && presc.medicines.length > 0 ? (
+                            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px", marginTop: "6px" }}>
+                              <thead>
+                                <tr style={{ background: "#f8fafc", color: "#64748b", textAlign: "left" }}>
+                                  <th style={{ padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>Medicine</th>
+                                  <th style={{ padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>Dosage</th>
+                                  <th style={{ padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>Frequency</th>
+                                  <th style={{ padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>Duration</th>
+                                  <th style={{ padding: "6px 8px", borderBottom: "1px solid #e2e8f0" }}>Instructions</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {presc.medicines.map((med: any) => (
+                                  <tr key={med.id || med.medicine_name} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                                    <td style={{ padding: "6px 8px", fontWeight: 600, color: "#0f172a" }}>{med.medicine_name}</td>
+                                    <td style={{ padding: "6px 8px" }}>{med.dosage || "-"}</td>
+                                    <td style={{ padding: "6px 8px" }}>{med.frequency || "-"}</td>
+                                    <td style={{ padding: "6px 8px" }}>{med.duration || "-"}</td>
+                                    <td style={{ padding: "6px 8px", color: "#64748b" }}>{med.instructions || "-"}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <p style={{ margin: "4px 0 0 0", fontSize: "11.5px", color: "#94a3b8", fontStyle: "italic" }}>
+                              {presc.advice ? `Advice: ${presc.advice}` : "No specific medicine items recorded in this prescription."}
+                            </p>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Tab 2: Medicines Dispensed */}
+              {patientModalTab === "dispensed" && (
+                <div style={{ maxHeight: "360px", overflowY: "auto" }}>
+                  {patientSales.length === 0 ? (
+                    <div style={{ padding: "30px", textAlign: "center", color: "#64748b", fontSize: "13px" }}>
+                      No dispensed medicine records found for this patient.
+                    </div>
+                  ) : (
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                      <thead>
+                        <tr style={{ background: "#f8fafc", color: "#64748b", textAlign: "left" }}>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>Date</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>Medicine Name</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #e2e8f0", textAlign: "center" }}>Qty</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #e2e8f0", textAlign: "right" }}>Unit Price</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #e2e8f0", textAlign: "right" }}>Total Amount</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>Payment</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>Ref</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {patientSales.map((sale: any) => (
+                          <tr key={sale.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                            <td style={{ padding: "8px", color: "#64748b" }}>{formatDateTimeIST(sale.sold_at)}</td>
+                            <td style={{ padding: "8px", fontWeight: 600, color: "#0f172a" }}>{sale.medicine_name}</td>
+                            <td style={{ padding: "8px", textAlign: "center" }}>{sale.quantity}</td>
+                            <td style={{ padding: "8px", textAlign: "right" }}>₹{Number(sale.unit_price || 0).toLocaleString("en-IN")}</td>
+                            <td style={{ padding: "8px", textAlign: "right", fontWeight: 700, color: "#00828a" }}>
+                              ₹{Number(sale.amount || 0).toLocaleString("en-IN")}
+                            </td>
+                            <td style={{ padding: "8px" }}>
+                              <span style={{ fontSize: "11px", padding: "2px 6px", borderRadius: "4px", background: "#f1f5f9", color: "#334155" }}>
+                                {sale.payment_mode || "Cash"}
+                              </span>
+                            </td>
+                            <td style={{ padding: "8px", color: "#94a3b8", fontSize: "11px" }}>{sale.invoice_id ? `#${sale.invoice_id}` : "-"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+
+              {/* Tab 3: Invoices & Transactions */}
+              {patientModalTab === "invoices" && (
+                <div style={{ maxHeight: "360px", overflowY: "auto" }}>
+                  {patientInvoices.length === 0 ? (
+                    <div style={{ padding: "30px", textAlign: "center", color: "#64748b", fontSize: "13px" }}>
+                      No pharmacy invoices found for this patient.
+                    </div>
+                  ) : (
+                    <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "12px" }}>
+                      <thead>
+                        <tr style={{ background: "#f8fafc", color: "#64748b", textAlign: "left" }}>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>Invoice #</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>Date</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #e2e8f0", textAlign: "right" }}>Total</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #e2e8f0", textAlign: "right" }}>Paid</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #e2e8f0", textAlign: "right" }}>Due</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>Status</th>
+                          <th style={{ padding: "8px", borderBottom: "1px solid #e2e8f0" }}>Mode</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {patientInvoices.map((inv: any) => {
+                          const isPaid = (inv.status || "").toLowerCase() === "paid" || Number(inv.due_amount || 0) <= 0;
+                          return (
+                            <tr key={inv.id || inv.invoice_number} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                              <td style={{ padding: "8px", fontWeight: 700, color: "#00828a" }}>
+                                {inv.invoice_number || `#${inv.id}`}
+                              </td>
+                              <td style={{ padding: "8px", color: "#64748b" }}>{formatDateTimeIST(inv.created_at)}</td>
+                              <td style={{ padding: "8px", textAlign: "right", fontWeight: 600 }}>₹{Number(inv.total_amount || 0).toLocaleString("en-IN")}</td>
+                              <td style={{ padding: "8px", textAlign: "right", color: "#16a34a", fontWeight: 600 }}>₹{Number(inv.paid_amount || 0).toLocaleString("en-IN")}</td>
+                              <td style={{ padding: "8px", textAlign: "right", color: Number(inv.due_amount || 0) > 0 ? "#dc2626" : "#64748b" }}>
+                                ₹{Number(inv.due_amount || 0).toLocaleString("en-IN")}
+                              </td>
+                              <td style={{ padding: "8px" }}>
+                                <span
+                                  style={{
+                                    fontSize: "11px",
+                                    fontWeight: 700,
+                                    padding: "2px 8px",
+                                    borderRadius: "10px",
+                                    background: isPaid ? "#dcfce7" : "#fee2e2",
+                                    color: isPaid ? "#15803d" : "#b91c1c",
+                                  }}
+                                >
+                                  {inv.status || (isPaid ? "Paid" : "Due")}
+                                </span>
+                              </td>
+                              <td style={{ padding: "8px", color: "#64748b" }}>{inv.payment_mode || "Cash"}</td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+
+              {/* Actions Footer */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "18px", paddingTop: "14px", borderTop: "1px solid #e2e8f0" }}>
+                <Button variant="ghost" onClick={() => setSelectedPatient(null)}>
+                  Close
+                </Button>
+                <Button
+                  variant="primary"
+                  style={{ background: "#00828a", borderColor: "#00828a" }}
+                  onClick={() => {
+                    setSelectedPatient(null);
+                    onNavigate("pharmacy-op-dispense");
+                  }}
+                >
+                  New OP Dispense for Patient
+                </Button>
+              </div>
+            </div>
+          )}
         </Modal>
       )}
     </div>

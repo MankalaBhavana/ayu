@@ -592,8 +592,8 @@ export default function OpPage({ setNotice, canEdit }: Props) {
   };
 
   return (
-    <section className="module-page">
-
+    <section className="module-page" aria-label="OP Desk">
+      <h2 style={{ display: "none" }}>OP Desk</h2>
       <div className="op-desk-stack">
         <div className="panel">
           <div className="module-panel-head">

@@ -128,7 +128,7 @@ export default function OpQueuePage({ setNotice, onOpenPatient, onNavigate }: Pr
             : ["completed", "done", "consulted", "finished"].includes(rawStatus)
             ? "Completed"
             : "Waiting";
-        const timeStr = a.appointment_time || (a.appointment_date ? new Date(a.appointment_date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "-");
+        const timeStr = a.appointment_time || (a.created_at ? new Date(a.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : (a.appointment_date ? new Date(a.appointment_date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "-"));
         return {
           id: String(a.id),
           token: String(a.token_no || a.id),
@@ -162,7 +162,8 @@ export default function OpQueuePage({ setNotice, onOpenPatient, onNavigate }: Pr
                 : "";
               if (createdDate && createdDate !== targetDate) return false;
               return !mapped.some((appointment) =>
-                appointment.uhid === String(item.uhid || "") && appointment.status !== "Completed"
+                (item.appointmentId && appointment.appointmentId === Number(item.appointmentId)) ||
+                (appointment.uhid === String(item.uhid || "") && appointment.visitType === "Re-visit" && appointment.status !== "Completed")
               );
             })
             .map((item) => ({
@@ -336,15 +337,16 @@ export default function OpQueuePage({ setNotice, onOpenPatient, onNavigate }: Pr
     setDetailsPatient((prev) => (prev && prev.id === id ? { ...prev, status: newStatus } : prev));
 
     // Call backend API if appointmentId is present
-    if (item?.appointmentId) {
+    const apptId = item?.appointmentId || (Number.isFinite(Number(id)) ? Number(id) : undefined);
+    if (apptId) {
       try {
         const backendStatus =
           newStatus === "Waiting"
-            ? "pending"
+            ? "waiting"
             : newStatus === "In Consultation"
             ? "in_consultation"
             : "completed";
-        await apiFetch(`/api/appointments/${item.appointmentId}`, {
+        await apiFetch(`/api/appointments/${apptId}`, {
           method: "PUT",
           body: JSON.stringify({ status: backendStatus }),
         });
@@ -886,10 +888,17 @@ export default function OpQueuePage({ setNotice, onOpenPatient, onNavigate }: Pr
                           onClick={() => handleWorkflowAction(patient)}
                           title={`Mark consultation finished for ${patient.name}`}
                         >
-                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                            <polyline points="20 6 9 17 4 12" />
-                          </svg>
-                          <span>Completed</span>
+                          <span
+                            style={{
+                              display: "inline-block",
+                              width: "7px",
+                              height: "7px",
+                              borderRadius: "50%",
+                              backgroundColor: "currentColor",
+                              marginRight: "4px",
+                            }}
+                          />
+                          <span>Complete</span>
                         </button>
                       )}
 
@@ -1358,10 +1367,17 @@ export default function OpQueuePage({ setNotice, onOpenPatient, onNavigate }: Pr
                     onClick={handleModalWorkflowAction}
                     style={{ height: "36px", padding: "0 16px", fontSize: "13px" }}
                   >
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <polyline points="20 6 9 17 4 12" />
-                    </svg>
-                    <span>Mark Completed</span>
+                    <span
+                      style={{
+                        display: "inline-block",
+                        width: "7px",
+                        height: "7px",
+                        borderRadius: "50%",
+                        backgroundColor: "currentColor",
+                        marginRight: "4px",
+                      }}
+                    />
+                    <span>Complete</span>
                   </button>
                 )}
 

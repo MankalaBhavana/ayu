@@ -175,10 +175,23 @@ export default function DoctorsHistoryPage({ setNotice, onOpenPatient }: Props) 
   const pagedRecords = consultations.slice((safePage - 1) * pageSize, safePage * pageSize);
 
   const getStatusBadgeClass = (status: string) => {
-    const s = (status || "").toLowerCase();
+    const s = (status || "").toLowerCase().replace(/[\s-]+/g, "_");
     if (s === "completed") return "badge-completed"; // green
     if (s === "cancelled" || s === "canceled") return "badge-cancelled"; // red
-    return "badge-pending"; // default/blue/yellow
+    if (s === "in_consultation") return "badge-in-consultation"; // yellow / amber
+    return "badge-pending"; // default / waiting
+  };
+
+  const formatStatus = (status: string) => {
+    const s = (status || "").toLowerCase().replace(/[\s-]+/g, "_");
+    if (s === "in_consultation") return "In Consultation";
+    if (s === "completed") return "Completed";
+    if (s === "cancelled" || s === "canceled") return "Cancelled";
+    if (s === "waiting" || s === "scheduled" || s === "checked_in" || s === "pending") return "Waiting";
+    return (status || "Waiting")
+      .split(/[_\s]+/)
+      .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
+      .join(" ");
   };
 
   const formatVisitType = (record: ConsultationRecord) => {
@@ -333,7 +346,7 @@ export default function DoctorsHistoryPage({ setNotice, onOpenPatient }: Props) 
                     <TableCell className="chief-complaint-cell">{record.notes || "-"}</TableCell>
                     <TableCell>
                       <span className={`status-pill ${getStatusBadgeClass(record.status)}`}>
-                        {record.status === "cancelled" || record.status === "canceled" ? "Canceled" : "Completed"}
+                        {formatStatus(record.status)}
                       </span>
                     </TableCell>
                     <TableCell>

@@ -847,7 +847,10 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
 
     <!-- Prescription Footer -->
     <footer class="rx-footer">
-      <img src="${PRINT_FOOTER_IMAGE_DATA_URI}" class="rx-footer-brand" alt="Ayu Polyclinic emergency services, address, phone and email" />
+      <div style="width:100%;border-top:0.35mm solid #1d4289;border-bottom:0.35mm solid #1d4289;padding:1.5mm 0;">
+        <img src="${PRINT_FOOTER_IMAGE_DATA_URI}" class="rx-footer-brand" alt="Ayu Polyclinic emergency services, address, phone and email" />
+      </div>
+      <div style="text-align:center;font-size:8.5pt;color:#1e567a;font-family:Arial,Helvetica,sans-serif;font-weight:500;margin-top:2mm;letter-spacing:0.2px;">Powered by HospAI</div>
     </footer>
   </div>
 </body>
@@ -856,7 +859,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
 
   const getPrescriptionHtml = () => {
     const printDate = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
-    const patientAddress = bannerPatient ? [bannerPatient.address, bannerPatient.city].filter(Boolean).join(", ") : "";
+    const patientAddress = bannerPatient ? [bannerPatient.address, (bannerPatient as any).city].filter(Boolean).join(", ") : "";
 
     const medsHtml = buildPrescriptionMedicineTable(medicines);
 
@@ -882,7 +885,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
       ? new Date(rx.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" })
       : "";
     const rxMeds = rx.medicines || [];
-    const patientAddress = bannerPatient ? [bannerPatient.address, bannerPatient.city].filter(Boolean).join(", ") : "";
+    const patientAddress = bannerPatient ? [bannerPatient.address, (bannerPatient as any).city].filter(Boolean).join(", ") : "";
 
     const medsHtml = buildPrescriptionMedicineTable(rxMeds);
 

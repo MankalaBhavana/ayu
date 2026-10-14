@@ -432,7 +432,16 @@ export default function PatientsPage({
                 <TableRow
                   id={`patient-row-${patient.patient_id}`}
                   data-patient-id={(patient.patient_id || "").trim().toLowerCase()}
-                  className={expanded ? "active" : ""}
+                  className={`patient-row-clickable ${expanded ? "active" : ""}`}
+                  onClick={() => onSelect(expanded ? null : patient)}
+                  role="button"
+                  tabIndex={0}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      onSelect(expanded ? null : patient);
+                    }
+                  }}
                 >
                   <TableCell>{patient.patient_id}</TableCell>
                   <TableCell>
@@ -446,7 +455,10 @@ export default function PatientsPage({
                     <Button
                       variant={expanded ? "secondary" : "ghost"}
                       size="sm"
-                      onClick={() => onSelect(expanded ? null : patient)}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        onSelect(expanded ? null : patient);
+                      }}
                       style={
                         expanded
                           ? { fontWeight: 700 }
@@ -505,7 +517,10 @@ export default function PatientsPage({
                     type="button"
                     variant={expanded ? "secondary" : "ghost"}
                     size="sm"
-                    onClick={() => onSelect(expanded ? null : patient)}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onSelect(expanded ? null : patient);
+                    }}
                     style={
                       expanded
                         ? { fontWeight: 700 }
@@ -516,7 +531,7 @@ export default function PatientsPage({
                   </Button>
                 </div>
                 {expanded && (
-                  <div className="table-row-expand" style={{ marginTop: "1rem" }}>
+                  <div className="table-row-expand" style={{ marginTop: "1rem" }} onClick={(e) => e.stopPropagation()}>
                     <PatientDetail
                       patientRef={patient}
                       setNotice={setNotice}
@@ -560,8 +575,24 @@ export default function PatientsPage({
         confirmLabel="Delete Patient"
       />
       <style>{`
+        .patient-list-table .table-row.patient-row-clickable {
+          cursor: pointer;
+          transition: background-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        .patient-list-table .table-row.patient-row-clickable:hover {
+          background-color: #f0fdfa !important;
+        }
+        .patient-list-table .table-row.patient-row-clickable.active {
+          background-color: #e6f7f8 !important;
+        }
         tbody tr.active {
           background-color: #f0fdfa !important;
+        }
+        .module-mobile-card.patient-row-clickable {
+          cursor: pointer;
+        }
+        .module-mobile-card.patient-row-clickable:hover {
+          background-color: #f0fdfa;
         }
         .module-mobile-card.active {
           border-color: #00828a;

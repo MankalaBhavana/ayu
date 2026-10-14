@@ -369,7 +369,8 @@ def admissions_create(patient_id: str, request: Request, payload: dict = Body(..
     token_no = None
     try:
         patient_name = " ".join(p for p in [patient.get("name"), patient.get("middle_name"), patient.get("last_name")] if p).strip() or patient_id
-        today_str = datetime.now().strftime("%Y-%m-%d")
+        now_dt = lq.current_ist_datetime() if hasattr(lq, "current_ist_datetime") else datetime.now()
+        appointment_datetime_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
         fee_to_use = float(review_fee) if review_fee is not None else 0.0
         appointment_id, token_no = lq.create_appointment(db, {
             "patient_id": patient_id,
@@ -377,14 +378,52 @@ def admissions_create(patient_id: str, request: Request, payload: dict = Body(..
             "visit_type": "Re-visit",
             "department": department or "General Medicine",
             "doctor_name": doctor_name or "General",
-            "appointment_date": today_str,
+            "appointment_date": appointment_datetime_str,
             "status": "scheduled",
             "appointment_kind": "follow_up",
             "consultation_fee": fee_to_use,
             "notes": notes,
+            "allow_revisit": True,
         })
+        if invoice_id and appointment_id:
+            try:
+                with legacy_sql.get_connection(db) as conn:
+                    conn.cursor().execute("UPDATE invoices SET appointment_id = ? WHERE id = ?", (appointment_id, invoice_id))
+                    conn.commit()
+            except Exception:
+                pass
+
+        # Record vitals into patient_vitals table if vitals exist in notes
+        try:
+            import re
+            bp_m = re.search(r"BP:\s*([^\s|]+)", notes, re.I)
+            pulse_m = re.search(r"Pulse:\s*([^\s|]+)", notes, re.I)
+            temp_m = re.search(r"Temp(?:erature)?:\s*([^\s|]+)", notes, re.I)
+            spo2_m = re.search(r"SpO2:\s*([^\s|]+)", notes, re.I)
+            h_m = re.search(r"Height:\s*([^\s|]+)", notes, re.I)
+            w_m = re.search(r"Weight:\s*([^\s|]+)", notes, re.I)
+            if any([bp_m, pulse_m, temp_m, spo2_m, h_m, w_m]):
+                with legacy_sql.get_connection(db) as conn:
+                    conn.cursor().execute(
+                        """
+                        INSERT INTO patient_vitals (hospital_id, patient_id, patient_name, bp, pulse, temperature, spo2, height, weight, recorded_at, encounter_id, admission_id)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (hospital_id, patient_id, patient_name,
+                         bp_m.group(1) if bp_m else None,
+                         pulse_m.group(1) if pulse_m else None,
+                         temp_m.group(1) if temp_m else None,
+                         spo2_m.group(1) if spo2_m else None,
+                         float(h_m.group(1)) if (h_m and h_m.group(1).replace(".", "", 1).isdigit()) else None,
+                         float(w_m.group(1)) if (w_m and w_m.group(1).replace(".", "", 1).isdigit()) else None,
+                         now_dt, appointment_id, admission_id)
+                    )
+                    conn.commit()
+        except Exception as e:
+            print(f"[WARN] Could not record vitals in patient_vitals: {e}")
     except Exception as exc:
-        print(f"[WARN] Could not auto-create re-visit appointment: {exc}")
+        print(f"[ERROR] Could not auto-create re-visit appointment: {exc}")
+        raise HTTPException(status_code=400, detail=f"Could not create queue appointment for re-visit: {exc}")
 
     return {"admission_id": admission_id, "appointment_id": appointment_id, "token_no": token_no}
 

@@ -5,7 +5,6 @@ const LOGO_QUERY = "?v=hospai-clean-transparent-20261012";
 const LOGO_PATHS = [
   `${LOGO_BASE}logo.png${LOGO_QUERY}`,
   `${LOGO_BASE}logo.jpg${LOGO_QUERY}`,
-  `${LOGO_BASE}logo.svg${LOGO_QUERY}`,
   `${LOGO_BASE}logo_square.png${LOGO_QUERY}`,
   `${LOGO_BASE}logo-icon.svg${LOGO_QUERY}`,
 ];

@@ -63,6 +63,23 @@ function patientDisplayName(patient: Patient) {
   return [patient.name, patient.middle_name, patient.last_name].filter(Boolean).join(" ") || patient.patient_id;
 }
 
+function isPatientActiveOnDate(patient: Patient, dateIso: string) {
+  if (!patient || !dateIso) return false;
+  // 1. Initial registration on this date
+  if (patientCreatedIso(patient) === dateIso) return true;
+  // 2. Appointment or revisit on this date
+  if (patient.visit_dates) {
+    const dates = patient.visit_dates.split(",").map((d) => d.trim());
+    if (dates.includes(dateIso)) return true;
+  }
+  // 3. Admission on this date
+  if (patient.admission_dates) {
+    const dates = patient.admission_dates.split(",").map((d) => d.trim());
+    if (dates.includes(dateIso)) return true;
+  }
+  return false;
+}
+
 function patientAgeGender(patient: Patient) {
   const age = patient.age ? `${patient.age} yrs` : "Age not added";
   const gender = patient.gender || "Gender not added";
@@ -279,10 +296,18 @@ export default function DashboardPage({
   // Removed old handleShareDashboardPdf and handleDownloadDashboardPdf in favor of PdfExportDropdown
 
   const patientsForDashboardDate = useMemo(
-    () => patients.filter((patient) => patientCreatedIso(patient) === dashboardDate),
+    () => patients.filter((patient) => isPatientActiveOnDate(patient, dashboardDate)),
     [patients, dashboardDate]
   );
-  const selectedDateRegistrationCount = dashboardDate === todayIso ? (stats.today || patientsForDashboardDate.length) : patientsForDashboardDate.length;
+  const newRegistrationsCount = useMemo(
+    () => patientsForDashboardDate.filter((p) => patientCreatedIso(p) === dashboardDate).length,
+    [patientsForDashboardDate, dashboardDate]
+  );
+  const revisitedPatientsCount = useMemo(
+    () => patientsForDashboardDate.filter((p) => patientCreatedIso(p) !== dashboardDate).length,
+    [patientsForDashboardDate, dashboardDate]
+  );
+  const selectedDateRegistrationCount = patientsForDashboardDate.length;
   const dashboardDateIsToday = dashboardDate === todayIso;
   const selectedDateRevenueLabel = dashboardDateIsToday ? "Today's Revenue" : "Revenue";
   // Derived values
@@ -704,7 +729,7 @@ export default function DashboardPage({
               { label: "Doctor Scheduling", icon: "🩺", page: "op-desk" },
               { label: "Re-visit", icon: "🔄", page: "readmit" },
               { label: "Pharmacy Operations", icon: "💊", page: "pharmacy-overview" },
-              { label: "Lab & Diagnostic Billing", icon: "🧪", page: "lab" },
+              { label: "Lab & Diagnostic Billing", icon: "🧪", page: "diag-overview" },
               { label: "Revenue Reports", icon: "📊", page: "billing-module-collections" },
             ].map((action) => (
               <button
@@ -732,7 +757,7 @@ export default function DashboardPage({
           <CardContent>
             <div className="hosp-rev-list">
               {revenueSnapshotData.map((row) => (
-                <button key={row.label} type="button" className="hosp-rev-row hosp-table-click" onClick={() => go(row.label.includes("Lab") ? "lab" : row.label.includes("Doctor") ? "accounts-doctor-payouts" : "billing-module-collections")}>
+                <button key={row.label} type="button" className="hosp-rev-row hosp-table-click" onClick={() => go(row.label.includes("Lab") ? "diag-overview" : row.label.includes("Doctor") ? "accounts-doctor-payouts" : "billing-module-collections")}>
                   <span className="hosp-rev-icon">{row.icon}</span>
                   <span className="hosp-rev-label">{row.label}</span>
                   <span className="hosp-rev-value">{formatCurrency(row.value)}</span>
@@ -822,6 +847,39 @@ export default function DashboardPage({
         description="Today's patient data updates automatically from the live patient list."
         className="hosp-patient-pop-modal"
       >
+        <div className="hosp-patient-pop-summary">
+          <div className="hosp-pop-summary-card new-reg">
+            <div className="hosp-pop-summary-icon">👤</div>
+            <div className="hosp-pop-summary-content">
+              <span className="hosp-pop-summary-label">
+                {dashboardDateIsToday ? "Today's New Registrations" : "New Registrations"}
+              </span>
+              <strong className="hosp-pop-summary-value">{newRegistrationsCount}</strong>
+              <span className="hosp-pop-summary-sub">First-time registered</span>
+            </div>
+          </div>
+
+          <div className="hosp-pop-summary-card revisit">
+            <div className="hosp-pop-summary-icon">🔄</div>
+            <div className="hosp-pop-summary-content">
+              <span className="hosp-pop-summary-label">
+                {dashboardDateIsToday ? "Today's Revisited Patients" : "Revisited Patients"}
+              </span>
+              <strong className="hosp-pop-summary-value">{revisitedPatientsCount}</strong>
+              <span className="hosp-pop-summary-sub">Follow-up & revisit</span>
+            </div>
+          </div>
+
+          <div className="hosp-pop-summary-card total">
+            <div className="hosp-pop-summary-icon">📋</div>
+            <div className="hosp-pop-summary-content">
+              <span className="hosp-pop-summary-label">Total Active</span>
+              <strong className="hosp-pop-summary-value">{selectedDateRegistrationCount}</strong>
+              <span className="hosp-pop-summary-sub">Active visits</span>
+            </div>
+          </div>
+        </div>
+
         {patientsForDashboardDate.length === 0 ? (
           <div className="hosp-empty-pop">
             <strong>No registrations found.</strong>
@@ -830,16 +888,37 @@ export default function DashboardPage({
           </div>
         ) : (
           <div className="hosp-patient-pop-list">
-            {patientsForDashboardDate.map((patient) => (
-              <div key={patient.patient_id} className="hosp-patient-pop-row">
-                <div>
-                  <strong>{patientDisplayName(patient)}</strong>
-                  <p>{patient.patient_id} • {patientAgeGender(patient)}</p>
-                  <p>{patient.phone || "Phone not added"}</p>
+            {patientsForDashboardDate.map((patient) => {
+              const isRevisit = patientCreatedIso(patient) !== dashboardDate;
+              return (
+                <div key={patient.patient_id} className="hosp-patient-pop-row">
+                  <div>
+                    <strong>
+                      {patientDisplayName(patient)}
+                      {isRevisit && (
+                        <span
+                          style={{
+                            marginLeft: "8px",
+                            fontSize: "11px",
+                            padding: "2px 8px",
+                            borderRadius: "12px",
+                            background: "#e0e7ff",
+                            color: "#3730a3",
+                            fontWeight: 600,
+                            display: "inline-block",
+                          }}
+                        >
+                          Revisit
+                        </span>
+                      )}
+                    </strong>
+                    <p>{patient.patient_id} • {patientAgeGender(patient)}</p>
+                    <p>{patient.phone || "Phone not added"}</p>
+                  </div>
+                  <Button variant="secondary" onClick={() => setViewPatient(patient)}>View</Button>
                 </div>
-                <Button variant="secondary" onClick={() => setViewPatient(patient)}>View</Button>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </Modal>
@@ -855,6 +934,7 @@ export default function DashboardPage({
           <div className="hosp-patient-detail-grid">
             {[
               ["UHID / Patient ID", viewPatient.patient_id],
+              ["Visit Type", patientCreatedIso(viewPatient) === dashboardDate ? "New Registration" : "Revisit / Follow-up"],
               ["Age / Gender", patientAgeGender(viewPatient)],
               ["DOB", viewPatient.dob || "Not added"],
               ["Phone", viewPatient.phone || "Not added"],

@@ -49,6 +49,15 @@ export default function AuthView({ onLogin }: Props) {
           <circle cx="680" cy="150" r="140" fill="#9fe6da" opacity="0.05" />
           <circle cx="90" cy="760" r="180" fill="#5fc9d6" opacity="0.05" />
         </svg>
+
+        <div className="login-hero-top-brand">
+          <img
+            src="/hospai_logo.png"
+            alt="HospAI - AI-Driven Healthcare Optimization"
+            className="login-hero-hospai-logo"
+          />
+        </div>
+
         <div className="login-hero-content">
           <h1 className="login-hero-headline">
             Care starts with <span className="login-hero-accent">connection.</span>
@@ -56,8 +65,18 @@ export default function AuthView({ onLogin }: Props) {
           <p className="login-hero-quote">
             Behind every patient record is a person who deserves care, clarity, and compassion.
           </p>
+          <div className="login-hero-divider" />
+          <p className="login-hero-footer">One connected workspace for every step of the patient journey.</p>
         </div>
-        <p className="login-hero-footer">One connected workspace for every step of the patient journey.</p>
+
+        <div className="login-hero-bottom-brand">
+          <span className="login-hero-powered">Powered by</span>
+          <img
+            src="/kalpra_logo.png"
+            alt="Kalpra Tech Solutions - Your AI & Gen AI Partner"
+            className="login-hero-kalpra-logo"
+          />
+        </div>
       </div>
 
       <div className="login-panel">

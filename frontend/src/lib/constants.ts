@@ -154,6 +154,10 @@ export const MODULE_PERMISSIONS: Record<ModuleId, string[]> = {
   "follow-up": ["patients.read", "patients.write"],
 
   "op-management": ["patients.read", "patients.write"],
+  "bed-management": ["ipd.read", "ipd.write"],
+  "ip-management": ["ipd.read", "ipd.write"],
+  analytics: ["reports.read"],
+  emergency: ["emergency.read", "emergency.write"],
   settings: [],
   employees: ["employees.read", "employees.write"],
   // Legacy stored values remain supported.

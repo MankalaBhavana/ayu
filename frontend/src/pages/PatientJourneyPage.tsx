@@ -62,14 +62,17 @@ function formatDateHeading(iso: string) {
 function eventDotColor(type: string) {
   if (type === "discharge" || type === "disposition") return "#16a34a";
   if (type === "nursing_note") return "#7c3aed";
+  if (type === "prescription") return "#0284c7";
+  if (type === "vitals") return "#f59e0b";
   return "#0d9488";
 }
 
 const EVENT_DEPARTMENTS: Record<string, string> = {
   registration: "Registration", admission: "Admission", consultation: "Consultation",
-  emergency_registration: "Emergency", vitals: "Emergency",
+  emergency_registration: "Emergency", vitals: "Vitals",
   room_charges: "Room & Nursing", payment: "Billing", discharge: "Discharge",
   disposition: "Emergency", nursing_note: "Nursing",
+  prescription: "Doctor Prescription",
 };
 
 export default function PatientJourneyPage({ setNotice, onNavigate, selectedPatient }: Props) {
@@ -358,10 +361,18 @@ export default function PatientJourneyPage({ setNotice, onNavigate, selectedPati
 
             <span style={{
               fontSize: "12px", fontWeight: 700, padding: "5px 14px", borderRadius: "9999px",
-              background: selected.status === "Discharged" || selected.status === "Admitted" ? "#dcfce7" : "#eff6ff",
-              color: selected.status === "Discharged" || selected.status === "Admitted" ? "#166534" : "#1d4ed8",
+              background: ["Discharged", "Completed", "Done"].includes(selected.status)
+                ? "#dcfce7"
+                : ["In Consultation", "Consulting"].includes(selected.status)
+                ? "#fef9c3"
+                : "#eff6ff",
+              color: ["Discharged", "Completed", "Done"].includes(selected.status)
+                ? "#166534"
+                : ["In Consultation", "Consulting"].includes(selected.status)
+                ? "#854d0e"
+                : "#1d4ed8",
             }}>
-              {selected.status === "Discharged" ? "✅ " : ""}{selected.status}
+              {["Discharged", "Completed", "Done"].includes(selected.status) ? "✓ " : ""}{selected.status}
             </span>
 
             {selected.ward && (

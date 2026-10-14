@@ -269,6 +269,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
         suppressBrowserHeadersAndFooters: true,
         preserveDocumentHeader: true,
         footerAtBottom: true,
+        includeSignature: false,
       });
     } catch (error) {
       setNotice({ type: "error", message: error instanceof Error ? error.message : "Unable to print the report." });

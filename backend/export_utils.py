@@ -106,123 +106,128 @@ def draw_pdf_brand_header(pdf, left_margin: float, top_y: float, title_width: fl
         logo_path = _frontend_logo_path() if use_ayu_logo else _clinic_pdf_asset_path("ayu_caduceus.png")
         if logo_path:
             try:
-                pdf.image(logo_path, x=170, y=top_y, w=25)
+                pdf.image(logo_path, x=170, y=top_y, w=22)
             except Exception:
                 pass
         pdf.set_text_color(0, 0, 0)
-        pdf.set_y(top_y + (31 if include_doctor_details else 13))
+        pdf.set_y(top_y + (34 if include_doctor_details else 16))
 
 
 def draw_pdf_brand_footer(pdf, is_prescription: bool = False, left_margin: float = 15, right_margin: float = 15, include_signature: bool = True):
-    """Draw the standardized Ayu Polyclinic footer (Reference Image 2) or doctor prescription footer."""
+    """Draw the standardized, pixel-perfect Ayu Polyclinic footer across all modules and pages."""
     def _clean(val) -> str:
         text = "" if val is None else str(val)
         text = text.replace("₹", "Rs.").replace("•", "-").replace("–", "-").replace("—", "-")
         return text.encode("latin-1", errors="replace").decode("latin-1")
 
-    if is_prescription:
-        pdf.set_y(-25)
-        pdf.set_font("Helvetica", "", 8.5)
-        pdf.set_text_color(30, 86, 122)
-        
-        left_x = left_margin
-        pdf.set_xy(left_x, pdf.get_y())
-        pdf.cell(48, 4, _clean("• 24/7 Emergency"), ln=True)
-        pdf.set_x(left_x)
-        pdf.cell(48, 4, _clean("• Ambulance Service"), ln=True)
-        pdf.set_x(left_x)
-        pdf.cell(48, 4, _clean("• Home Care Service Available"), ln=True)
-        
-        # Ambulance Icon
-        amb_x, amb_y = 65, pdf.get_y() - 11
-        pdf.set_fill_color(30, 86, 122)
-        pdf.rect(amb_x, amb_y, 9, 7, 'F')
-        pdf.rect(amb_x + 9, amb_y + 3, 3, 4, 'F')
-        pdf.set_fill_color(0, 0, 0)
-        pdf.ellipse(amb_x + 1.5, amb_y + 6, 2.5, 2.5, 'F')
-        pdf.ellipse(amb_x + 9, amb_y + 6, 2.5, 2.5, 'F')
-        pdf.set_fill_color(255, 255, 255)
-        pdf.rect(amb_x + 3.5, amb_y + 2, 2, 3, 'F')
-        pdf.rect(amb_x + 3, amb_y + 2.5, 3, 2, 'F')
+    page_w = getattr(pdf, "w", 210.0)
+    page_h = getattr(pdf, "h", 297.0)
+    footer_y = page_h - 21.5
 
-        # Vertical line
-        pdf.set_draw_color(30, 86, 122)
-        pdf.set_line_width(0.5)
-        pdf.line(82, pdf.get_y() - 11, 82, pdf.get_y() + 1)
-        
-        right_x = 88
-        pdf.set_xy(right_x, pdf.get_y() - 12)
-        
-        # Pin icon
-        px, py = right_x - 4.5, pdf.get_y() + 0.5
-        pdf.set_fill_color(30, 86, 122)
-        pdf.ellipse(px, py, 3, 3, 'F')
-        pdf.polygon(((px, py + 1.5), (px + 3, py + 1.5), (px + 1.5, py + 4)), 'F')
-        pdf.set_fill_color(255, 255, 255)
-        pdf.ellipse(px + 1, py + 1, 1, 1, 'F')
+    # Optional signature area above footer (for reports/bills with signature)
+    if include_signature and not is_prescription:
+        sig_w = 54.0
+        sig_x = page_w - right_margin - sig_w
+        sig_y = footer_y - 7.5
+        pdf.set_draw_color(29, 66, 137)
+        pdf.set_line_width(0.35)
+        pdf.line(sig_x, sig_y, sig_x + sig_w, sig_y)
+        pdf.set_xy(sig_x, sig_y + 1.0)
+        pdf.set_font("Helvetica", "B", 7.5)
+        pdf.set_text_color(29, 66, 137)
+        pdf.cell(sig_w, 3.5, _clean("SIGNATURE"), align="C")
 
-        pdf.cell(100, 4, _clean("GGF2+2F8, Old Alwal Road, Jonnabanda,"), ln=True)
-        pdf.set_x(right_x)
-        pdf.cell(100, 4, _clean("Chetana Housing Colony, Brundavan Colony,"), ln=True)
-        pdf.set_x(right_x)
-        pdf.cell(100, 4, _clean("Bollaram - 500010, Hyderabad."), ln=True)
-        
-        pdf.set_x(right_x)
-        
-        # Phone icon
-        ph_x, ph_y = right_x - 4, pdf.get_y() + 0.5
-        pdf.set_fill_color(30, 86, 122)
-        pdf.rect(ph_x, ph_y, 2.5, 4, 'F')
-        pdf.set_fill_color(255, 255, 255)
-        pdf.rect(ph_x + 0.4, ph_y + 0.4, 1.7, 2.4, 'F')
-        
-        pdf.cell(32, 4, _clean("+91 6303346810"))
-        
-        # Email icon
-        em_x, em_y = right_x + 29, pdf.get_y() + 0.5
-        pdf.set_draw_color(30, 86, 122)
-        pdf.set_fill_color(255, 255, 255)
-        pdf.set_line_width(0.3)
-        pdf.rect(em_x, em_y, 4, 3, 'D')
-        pdf.line(em_x, em_y, em_x + 2, em_y + 1.5)
-        pdf.line(em_x + 4, em_y, em_x + 2, em_y + 1.5)
-        
-        pdf.set_x(right_x + 35)
-        pdf.cell(60, 4, _clean("dr.sushanth108@gmail.com"), ln=True)
-        
-        pdf.set_text_color(0, 0, 0)
-    else:
-        footer_path = _clinic_pdf_asset_path("ayu_pdf_footer.png")
-        if not footer_path:
-            pdf.set_text_color(29, 66, 137)
-            pdf.set_y(-13.8)
-            pdf.set_font("Helvetica", "I", 8.5)
-            pdf.set_x(left_margin)
-            pdf.cell(pdf.w - left_margin - right_margin, 5, _clean("AYU POLYCLINIC | +91 6303346810 | dr.sushanth108@gmail.com"))
-            pdf.set_text_color(0, 0, 0)
-            return
+    # Standard top divider rule
+    pdf.set_draw_color(29, 66, 137)
+    pdf.set_line_width(0.35)
+    pdf.line(left_margin, footer_y - 1.5, page_w - right_margin, footer_y - 1.5)
 
-        from PIL import Image
-        with Image.open(footer_path) as image:
-            image_width, image_height = image.size
-        page_w = getattr(pdf, "w", 210.0)
-        content_width = page_w - left_margin - right_margin
-        footer_height = content_width * image_height / image_width
-        footer_y = pdf.h - 7 - footer_height
-        pdf.image(footer_path, x=left_margin, y=footer_y, w=content_width)
+    # 1. Left Column: Emergency & Home Care Services
+    left_x = left_margin
+    pdf.set_font("Helvetica", "", 8.0)
+    pdf.set_text_color(30, 86, 122)
+    pdf.set_xy(left_x, footer_y)
+    pdf.cell(48, 3.8, _clean("• 24/7 Emergency"), ln=False)
+    pdf.set_xy(left_x, footer_y + 3.8)
+    pdf.cell(48, 3.8, _clean("• Ambulance Service"), ln=False)
+    pdf.set_xy(left_x, footer_y + 7.6)
+    pdf.cell(48, 3.8, _clean("• Home Care Service Available"), ln=False)
 
-        if include_signature:
-            signature_width = 58.0
-            signature_x = page_w - right_margin - signature_width
-            signature_y = footer_y - 10
-            pdf.set_draw_color(29, 66, 137)
-            pdf.set_line_width(0.35)
-            pdf.line(signature_x, signature_y, signature_x + signature_width, signature_y)
-            pdf.set_xy(signature_x, signature_y + 1.5)
-            pdf.set_font("Helvetica", "B", 7.5)
-            pdf.set_text_color(29, 66, 137)
-            pdf.cell(signature_width, 4, _clean("SIGNATURE"), align="C")
-            pdf.set_text_color(0, 0, 0)
+    # Ambulance Icon: Vertically centered next to emergency bullets
+    amb_x = left_x + 50.0
+    amb_y = footer_y + 2.5
+    pdf.set_fill_color(30, 86, 122)
+    pdf.rect(amb_x, amb_y, 8.5, 6.0, "F")
+    pdf.rect(amb_x + 8.5, amb_y + 2.5, 3.2, 3.5, "F")
+    pdf.set_fill_color(0, 0, 0)
+    pdf.ellipse(amb_x + 1.6, amb_y + 5.0, 2.2, 2.2, "F")
+    pdf.ellipse(amb_x + 8.2, amb_y + 5.0, 2.2, 2.2, "F")
+    pdf.set_fill_color(255, 255, 255)
+    pdf.rect(amb_x + 3.4, amb_y + 1.2, 1.4, 3.6, "F")
+    pdf.rect(amb_x + 2.3, amb_y + 2.3, 3.6, 1.4, "F")
+
+    # 2. Vertical Divider Rule
+    pdf.set_draw_color(30, 86, 122)
+    pdf.set_line_width(0.4)
+    pdf.line(78.0, footer_y, 78.0, footer_y + 12.5)
+
+    # 3. Right Column: Address, Phone & Email
+    right_x = 86.0
+    pdf.set_font("Helvetica", "", 7.8)
+    pdf.set_text_color(30, 86, 122)
+
+    # Location Pin Icon
+    px, py = right_x - 3.8, footer_y + 0.3
+    pdf.set_fill_color(30, 86, 122)
+    pdf.ellipse(px, py, 2.6, 2.6, "F")
+    pdf.polygon(((px, py + 1.3), (px + 2.6, py + 1.3), (px + 1.3, py + 3.6)), "F")
+    pdf.set_fill_color(255, 255, 255)
+    pdf.ellipse(px + 0.8, py + 0.8, 1.0, 1.0, "F")
+
+    # Address Text
+    pdf.set_xy(right_x, footer_y)
+    pdf.cell(105, 3.4, _clean("GGF2+2F8, Old Alwal Road, Jonnabanda,"), ln=False)
+    pdf.set_xy(right_x, footer_y + 3.4)
+    pdf.cell(105, 3.4, _clean("Chetana Housing Colony, Brundavan Colony,"), ln=False)
+    pdf.set_xy(right_x, footer_y + 6.8)
+    pdf.cell(105, 3.4, _clean("Bollaram - 500010, Hyderabad."), ln=False)
+
+    # Phone Icon
+    ph_x, ph_y = right_x - 3.8, footer_y + 10.3
+    pdf.set_fill_color(30, 86, 122)
+    pdf.rect(ph_x, ph_y, 2.2, 3.2, "F")
+    pdf.set_fill_color(255, 255, 255)
+    pdf.rect(ph_x + 0.3, ph_y + 0.3, 1.6, 2.0, "F")
+
+    # Phone Text
+    pdf.set_xy(right_x, footer_y + 10.2)
+    pdf.cell(28, 3.4, _clean("+91 6303346810"), ln=False)
+
+    # Email Icon
+    em_x, em_y = right_x + 30.0, footer_y + 10.6
+    pdf.set_draw_color(30, 86, 122)
+    pdf.set_fill_color(255, 255, 255)
+    pdf.set_line_width(0.3)
+    pdf.rect(em_x, em_y, 3.6, 2.6, "D")
+    pdf.line(em_x, em_y, em_x + 1.8, em_y + 1.3)
+    pdf.line(em_x + 3.6, em_y, em_x + 1.8, em_y + 1.3)
+
+    # Email Text
+    pdf.set_xy(em_x + 4.8, footer_y + 10.2)
+    pdf.cell(60, 3.4, _clean("dr.sushanth108@gmail.com"), ln=False)
+
+    # Standard bottom divider rule matching reference Screenshot 3
+    pdf.set_draw_color(29, 66, 137)
+    pdf.set_line_width(0.35)
+    pdf.line(left_margin, footer_y + 13.8, page_w - right_margin, footer_y + 13.8)
+
+    # Centered "Powered by HospAI" text directly below footer rule
+    pdf.set_xy(0, footer_y + 14.8)
+    pdf.set_font("Helvetica", "", 8.5)
+    pdf.set_text_color(30, 86, 122)
+    pdf.cell(page_w, 4.0, _clean("Powered by HospAI"), align="C")
+
+    pdf.set_text_color(0, 0, 0)
 
 
 def parse_markdown_line(line):
@@ -327,20 +332,6 @@ def generate_pdf(patient_name: str, doc_type: str, ocr_text: str, date_str: str 
         draw_pdf_brand_header(pdf, left_margin, 8, title_width=92, is_prescription=is_prescription)
         
         if is_prescription:
-            symbol_path = _footer_symbol_path()
-            if symbol_path:
-                wm_path = symbol_path.replace('hospai_medical_symbol.png', 'hospai_watermark.png')
-                if os.path.exists(wm_path):
-                    try:
-                        pdf.image(wm_path, x=55, y=90, w=100) # Watermark
-                    except Exception:
-                        pass
-                else:
-                    try:
-                        pdf.image(symbol_path, x=55, y=90, w=100)
-                    except Exception:
-                        pass
-            
             pdf.set_xy(left_margin, 40)
             pdf.set_font("Helvetica", "", 9)
             pdf.set_text_color(30, 86, 122)
@@ -612,21 +603,27 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
         def footer(self):
             draw_pdf_brand_footer(self, is_prescription=False, left_margin=left_margin, right_margin=right_margin, include_signature=include_signature)
 
+    page1_top_y = 22 if not include_doctor_details else 38
+    subsequent_top_y = 28 if not include_doctor_details else 42
+    content_top_min = subsequent_top_y
     pdf = ReportPDF(format="A4")
     left_margin = 15
     right_margin = 15
     pdf.set_left_margin(left_margin)
     pdf.set_right_margin(right_margin)
-    pdf.set_auto_page_break(auto=True, margin=58)
+    pdf.set_top_margin(content_top_min)
+    pdf.set_auto_page_break(auto=True, margin=26)
     pdf.alias_nb_pages()
     pdf.add_page()
+    pdf.set_y(page1_top_y)
 
     page_width = pdf.w
     effective_width = page_width - left_margin - right_margin
 
     def _ensure_space(height: float):
-        if pdf.get_y() + height > 238:
+        if pdf.get_y() + height > 270:
             pdf.add_page()
+            pdf.set_y(subsequent_top_y)
 
     def _draw_icon(pdf, icon_type, x, y, size=4):
         pdf.set_fill_color(255, 255, 255)
@@ -675,19 +672,21 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
                 pdf.rect(x, y, size, size, style="F")
 
     def _section(title: str):
-        _ensure_space(15)
-        pdf.ln(3)
+        _ensure_space(14)
+        pdf.ln(1.5)
         pdf.set_fill_color(30, 86, 122)
         pdf.set_draw_color(30, 86, 122)
-        pdf.set_font("Helvetica", "B", 11)
+        pdf.set_font("Helvetica", "B", 10.5)
         pdf.set_text_color(255, 255, 255)
         
         y_before = pdf.get_y()
-        pdf.cell(effective_width, 8, "        " + _clean(title), border=1, fill=True, ln=True)
+        pdf.cell(effective_width, 7.5, "        " + _clean(title), border=1, fill=True, ln=True)
+        y_after = pdf.get_y()
         
         # draw icon manually
-        _draw_icon(pdf, title, left_margin + 3.5, y_before + 2.0, size=4)
+        _draw_icon(pdf, title, left_margin + 3.5, y_before + 1.8, size=3.8)
         
+        pdf.set_xy(left_margin, y_after)
         pdf.set_text_color(0, 0, 0)
 
     def _cell_label_value(label: str, value: str, x: float, y: float, w: float, h: float = 12):
@@ -739,41 +738,52 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
         pdf.set_draw_color(215, 230, 240)
         pdf.set_text_color(30, 86, 122)
         for h, w in zip(headers, col_widths):
-            pdf.cell(w, 7, _clean(h)[:30], border=1, fill=True)
+            pdf.cell(w, 6.5, _clean(h)[:30], border=1, fill=True)
         pdf.set_text_color(0, 0, 0)
-        pdf.ln(7)
-        pdf.set_font("Helvetica", "", 9)
+        pdf.ln(6.5)
+        pdf.set_font("Helvetica", "", 8.5)
         for row in rows:
             cell_texts = [_clean(row[i] if i < len(row) else "") for i in range(col_count)]
-            line_counts = [max(1, len(pdf.multi_cell(col_widths[i], 4, text, border=0, dry_run=True, output="LINES"))) for i, text in enumerate(cell_texts)]
-            row_h = max(line_counts) * 4 + 2
-            _ensure_space(row_h)
+            line_counts = [max(1, len(pdf.multi_cell(col_widths[i], 3.8, text, border=0, dry_run=True, output="LINES"))) for i, text in enumerate(cell_texts)]
+            row_h = max(line_counts) * 3.8 + 1.8
+            if pdf.get_y() + row_h > 268:
+                pdf.add_page()
+                pdf.set_y(subsequent_top_y)
+                pdf.set_font("Helvetica", "B", 9)
+                pdf.set_fill_color(229, 239, 245)
+                pdf.set_draw_color(215, 230, 240)
+                pdf.set_text_color(30, 86, 122)
+                for h, w in zip(headers, col_widths):
+                    pdf.cell(w, 6.5, _clean(h)[:30], border=1, fill=True)
+                pdf.set_text_color(0, 0, 0)
+                pdf.ln(6.5)
+                pdf.set_font("Helvetica", "", 8.5)
             y = pdf.get_y()
             x = pdf.get_x()
             for i, text in enumerate(cell_texts):
                 pdf.set_xy(x, y)
-                pdf.multi_cell(col_widths[i], 4, text, border=1)
+                pdf.multi_cell(col_widths[i], 3.8, text, border=1)
                 x += col_widths[i]
             pdf.set_xy(left_margin, y + row_h)
 
-    pdf.set_xy(left_margin, pdf.get_y() + 4)
-    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_xy(left_margin, page1_top_y)
+    pdf.set_font("Helvetica", "B", 15)
     pdf.set_text_color(30, 86, 122)
-    pdf.cell(effective_width, 7, _clean(payload.get("title") or "Hospital Report"), ln=True)
+    pdf.cell(effective_width, 6.5, _clean(payload.get("title") or "Hospital Report"), ln=True)
     
     pdf.set_x(left_margin)
-    pdf.set_font("Helvetica", "", 10)
+    pdf.set_font("Helvetica", "", 9.5)
     pdf.set_text_color(50, 50, 50)
-    pdf.cell(effective_width, 5, _clean(payload.get("subtitle") or ""), ln=True)
+    pdf.cell(effective_width, 4.5, _clean(payload.get("subtitle") or ""), ln=True)
     
     generated = datetime.now().strftime("%d/%m/%Y %I:%M %p")
     pdf.set_x(left_margin)
-    pdf.set_font("Helvetica", "B", 9)
+    pdf.set_font("Helvetica", "B", 8.5)
     pdf.set_text_color(50, 50, 50)
-    pdf.cell(effective_width, 5, _clean(f"Generated: {generated}" + (f"  |  By: {payload.get('operator_name')}" if payload.get("operator_name") else "")), ln=True)
+    pdf.cell(effective_width, 4.5, _clean(f"Generated: {generated}" + (f"  |  By: {payload.get('operator_name')}" if payload.get("operator_name") else "")), ln=True)
     pdf.set_text_color(0, 0, 0)
-    content_start_min = 45 if not include_doctor_details else 64
-    pdf.set_y(max(pdf.get_y() + 2, content_start_min))
+    content_start_min = page1_top_y + 16
+    pdf.set_y(max(pdf.get_y() + 1.5, content_start_min))
 
     invoice_meta = payload.get("invoice_meta") or {}
     if invoice_meta.get("invoice_number") or invoice_meta.get("invoice_date"):

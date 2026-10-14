@@ -2,7 +2,7 @@
  * Centralized Ayu Polyclinic PDF & Print Header/Footer Template
  * Reproduces Reference Images 1 and 2 identically across all modules.
  */
-import { PRINT_CADUCEUS_DATA_URI, PRINT_FOOTER_IMAGE_DATA_URI } from "./printBrand";
+import { PRINT_CADUCEUS_DATA_URI, PRINT_FOOTER_IMAGE_DATA_URI, PRINT_BRAND_HEADER_DATA_URI } from "./printBrand";
 
 export const AYU_PDF_COLORS = {
   primary: "#1d4289",
@@ -18,16 +18,15 @@ export type PdfHeaderOptions = {
   printDate?: string;
   printTime?: string;
   generatedBy?: string;
+  useAyuLogo?: boolean;
+  brandLogoDataUri?: string;
 };
 
 /**
- * Standard Ayu Polyclinic PDF Header (Reference Image 1)
+ * Standard Ayu Polyclinic PDF Header
  * Displays:
- *  - Blue medical cross logo with stylized silhouettes on left
- *  - Vertical grey separator line
- *  - Large bold "AYU" in primary blue (#1e567a)
- *  - Bold "POLYCLINIC" in grey (#808080)
- *  - Solid horizontal blue divider line across full width
+ *  - Official Ayu Polyclinic logo
+ *  - Doctor credentials and clinic name
  *  - Optional report title section below the divider
  */
 export function renderAyuPdfHeaderHtml(options?: PdfHeaderOptions): string {
@@ -37,6 +36,7 @@ export function renderAyuPdfHeaderHtml(options?: PdfHeaderOptions): string {
     options?.printTime ||
     now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
   const generatedBy = options?.generatedBy || "Ayu Polyclinic System";
+  const logoSrc = options?.brandLogoDataUri || (options?.useAyuLogo !== false ? PRINT_BRAND_HEADER_DATA_URI : PRINT_CADUCEUS_DATA_URI);
 
   const titleSection = options?.title
     ? `<div class="ayu-shared-title-row" style="display:flex;justify-content:space-between;align-items:flex-end;gap:16px;margin:12px 0 16px;font-family:Arial,Helvetica,sans-serif;">
@@ -59,7 +59,7 @@ export function renderAyuPdfHeaderHtml(options?: PdfHeaderOptions): string {
           <div style="margin-top:2px;font-size:11px;font-weight:700;line-height:1.25;color:#1d4289;">MBBS (Gandhi), (FCCM)</div>
           <div style="font-size:11px;font-weight:700;line-height:1.25;color:#1d4289;">TSMC/FM/27444</div>
         </div>
-        <img src="${PRINT_CADUCEUS_DATA_URI}" alt="Blue medical caduceus" style="width:78px;height:76px;object-fit:contain;object-position:center top;display:block;flex:0 0 auto;" />
+        <img src="${logoSrc}" alt="Ayu Polyclinic Logo" style="width:78px;height:76px;object-fit:contain;object-position:center top;display:block;flex:0 0 auto;" />
       </div>
       ${titleSection}
     </div>
@@ -75,7 +75,7 @@ export function renderAyuPdfHeaderHtml(options?: PdfHeaderOptions): string {
  *  - Right: "Page 1 of 1" (italic grey)
  */
 export function renderAyuPdfFooterHtml(pageText = "Page 1 of 1", includeSignature = true): string {
-  const signatureSpacing = includeSignature ? "margin:18mm 0 0;padding-top:13mm;" : "margin:0;padding-top:0;";
+  const signatureSpacing = includeSignature ? "margin:4mm 0 0;padding-top:5mm;" : "margin:0;padding-top:0;";
   const signatureHtml = includeSignature
     ? `<div style="position:absolute;top:0;right:0;width:58mm;text-align:center;color:#1d4289;font-size:8px;font-weight:800;">
         <div style="width:100%;border-top:1px solid #1d4289;margin-bottom:3px;"></div>
@@ -85,7 +85,10 @@ export function renderAyuPdfFooterHtml(pageText = "Page 1 of 1", includeSignatur
   return `
     <div class="ayu-shared-footer-shell" aria-label="${escapeHtml(pageText)}" style="width:100%;position:relative;${signatureSpacing}font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;clear:both;break-inside:avoid;">
       ${signatureHtml}
-      <img src="${PRINT_FOOTER_IMAGE_DATA_URI}" alt="Ayu Polyclinic services, address, phone and email" style="display:block;width:100%;max-width:100%;height:auto;object-fit:contain;object-position:center bottom;" />
+      <div style="border-top:0.35mm solid #1d4289;border-bottom:0.35mm solid #1d4289;padding:1.5mm 0;">
+        <img src="${PRINT_FOOTER_IMAGE_DATA_URI}" alt="Ayu Polyclinic services, address, phone and email" style="display:block;width:100%;max-width:100%;height:auto;object-fit:contain;object-position:center bottom;" />
+      </div>
+      <div class="ayu-shared-footer-powered" style="text-align:center;font-size:8.5pt;color:#1e567a;font-family:Arial,Helvetica,sans-serif;font-weight:500;margin-top:2mm;letter-spacing:0.2px;">Powered by HospAI</div>
     </div>
   `;
 }

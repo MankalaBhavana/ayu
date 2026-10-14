@@ -775,9 +775,9 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
     const tokenPart = bookedAppointment?.tokenNo || target.tokenNo;
     const slipHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 2px solid #00828a; border-radius: 8px;">
-        <div class="registration-slip-header" style="display: flex; align-items: center; gap: 12px; border-bottom: 2px solid #00828a; padding-bottom: 12px; margin-bottom: 16px;">
+        <div class="registration-slip-header" style="display: flex; align-items: center; gap: 6px; border-bottom: 2px solid #00828a; padding-bottom: 12px; margin-bottom: 16px;">
           <img src="${PRINT_BRAND_HEADER_DATA_URI}" alt="Ayu Polyclinic logo" style="display: block; flex: 0 0 48px; width: 48px; height: 42px; object-fit: contain; object-position: left center;" />
-          <div class="registration-slip-title" style="flex: 1; text-align: center;">
+          <div class="registration-slip-title" style="flex: 1; text-align: left;">
             <h2 style="margin: 0; color: #16324a;">Ayu Polyclinic</h2>
             <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Patient Registration & Token Slip</div>
           </div>

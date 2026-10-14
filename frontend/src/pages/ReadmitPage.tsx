@@ -9,7 +9,7 @@ import { apiFetch, reportError } from "../lib/api";
 import { formatDateTimeIST, getISTDateTimeKey, getTimestamp, stripUploadTimestampPrefix, filterInteger, filterDecimal } from "../lib/format";
 import { printViaIframe } from "../lib/printViaIframe";
 import { renderAyuPdfHeaderHtml, renderAyuPdfFooterHtml } from "../lib/pdfTemplate";
-import { PRINT_BRAND_HEADER_DATA_URI, PRINT_MEDICAL_SYMBOL_DATA_URI, PRINT_WATERMARK_DATA_URI } from "../lib/printBrand";
+import { PRINT_BRAND_HEADER_DATA_URI } from "../lib/printBrand";
 import type { DocumentItem, Notice, Patient } from "../types";
 
 type ProfileUpdates = {
@@ -455,14 +455,14 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
           <meta charset="utf-8" />
           <title>Re-visit Confirmation</title>
           <style>
-            @page { size: A4 portrait; margin: 4mm 5mm 5mm; }
+            @page { size: A4 portrait; margin: 8mm 12mm 8mm; }
             * { box-sizing: border-box; }
             html { margin: 0; background: transparent; color: #000; font-family: Arial, Helvetica, sans-serif; }
-            body { margin: 0; font-size: 8.5pt; background: transparent; line-height: 1.5; }
-            .report { width: 100%; position: relative; z-index: 1; min-height: 270mm; display: flex; flex-direction: column; padding-bottom: 25mm; }
+            body { margin: 0; font-size: 8.5pt; background: transparent; line-height: 1.4; }
+            .report { width: 100%; position: relative; z-index: 1; display: flex; flex-direction: column; justify-content: space-between; }
             
             /* Header */
-            .header-container { display: grid; grid-template-columns: 100mm 1fr; align-items: start; margin-bottom: 2mm; margin-top: 5mm; }
+            .header-container { display: grid; grid-template-columns: 100mm 1fr; align-items: start; margin-bottom: 2mm; margin-top: 2mm; }
             .brand-wrap { display: flex; align-items: center; gap: 4mm; }
             .brand-logo { width: auto; height: 24mm; object-fit: contain; }
             .address { text-align: right; font-size: 8pt; font-weight: 700; line-height: 1.3; margin: 0; }
@@ -476,53 +476,28 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
             .meta-table td { padding: 0.3mm 0; border: none !important; }
             .meta-table td:nth-child(1) { width: 25mm; }
             .meta-table td:nth-child(2) { width: 5mm; text-align: center; }
-            .thin-line { border-top: 0.3mm solid #000; margin-top: 0; margin-bottom: 6mm; }
+            .thin-line { border-top: 0.3mm solid #000; margin-top: 0; margin-bottom: 4mm; }
             
-            .info-table { width: 100%; font-size: 9pt; margin-bottom: 12mm; border-collapse: collapse; }
-            .info-table td { padding: 3mm 0; border: none !important; }
+            .info-table { width: 100%; font-size: 9pt; margin-bottom: 6mm; border-collapse: collapse; }
+            .info-table td { padding: 1.5mm 0; border: none !important; }
             .info-table td.label { width: 25mm; font-size: 9pt; font-weight: bold; }
             .info-table td.colon { width: 6mm; text-align: center; font-weight: bold; }
             .info-table td.val { width: 35mm; }
             
-            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 25mm; border: 1px solid #000; }
-            .items-table th { background-color: #0080D7; font-weight: bold; font-size: 9.5pt; color: #ffffff; padding: 3mm 4mm; border: 1px solid #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-            .items-table td { padding: 5mm 4mm; font-size: 9.5pt; border: 1px solid #000; }
+            .items-table { width: 100%; border-collapse: collapse; margin-bottom: 6mm; border: 1px solid #000; }
+            .items-table th { background-color: #0080D7; font-weight: bold; font-size: 9.5pt; color: #ffffff; padding: 2.5mm 4mm; border: 1px solid #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+            .items-table td { padding: 3mm 4mm; font-size: 9.5pt; border: 1px solid #000; }
             
-            .totals-wrap { display: flex; justify-content: flex-end; margin-bottom: 25mm; padding-right: 4mm; }
+            .totals-wrap { display: flex; justify-content: flex-end; margin-bottom: 6mm; padding-right: 4mm; }
             .totals-table { width: 65mm; font-size: 9.5pt; border-collapse: collapse; }
-            .totals-table td { padding: 3.5mm 0; border: none !important; }
+            .totals-table td { padding: 1.5mm 0; border: none !important; }
             
-            .operator { font-size: 9.5pt; margin-bottom: 5mm; padding-left: 4mm; margin-top: auto; padding-bottom: 15mm; }
-            
-            /* Footer */
-            .hospai-shared-print-footer { position: fixed; left: 5mm; right: 5mm; bottom: 2mm; height: 17mm; font-family: Arial, Helvetica, sans-serif; color: #000; z-index: 9999; background: #fff; }
-            .hospai-shared-footer-rule { position: absolute; top: 5.4mm; height: 0; border-top: 0.45mm solid #000; }
-            .hospai-shared-footer-rule.left { left: 0; width: calc(50% - 8.5mm); }
-            .hospai-shared-footer-rule.right { right: 0; width: calc(50% - 8.5mm); }
-            .hospai-shared-footer-symbol { position: absolute; left: 50%; top: -0.2mm; width: 13mm; height: 15mm; transform: translateX(-50%); object-fit: contain; object-position: center center; background: #fff; padding: 0 0.8mm; }
-            .hospai-shared-footer-copy { position: absolute; left: 0; right: 0; bottom: 0.3mm; display: flex; justify-content: space-between; align-items: flex-end; gap: 14mm; font-size: 8pt; line-height: 1; font-style: italic; font-weight: 700; }
-            
-            .hospai-shared-watermark {
-              position: fixed;
-              left: 50%;
-              top: 50%;
-              transform: translate(-50%, -50%);
-              width: 145mm;
-              max-width: 70%;
-              opacity: 0.65;
-              z-index: -1;
-              pointer-events: none;
-              display: block !important;
-              -webkit-print-color-adjust: exact;
-              print-color-adjust: exact;
-            }
+            .operator { font-size: 9.5pt; margin-bottom: 2mm; padding-left: 4mm; }
           </style>
         </head>
         <body>
           <main class="report" data-hospai-shared-print-shell>
-            <img class="hospai-shared-watermark" src="${PRINT_WATERMARK_DATA_URI}" alt="Ayu Polyclinic Watermark" />
-            
-            ${renderAyuPdfHeaderHtml()}
+            ${renderAyuPdfHeaderHtml({ useAyuLogo: true })}
 
             <table class="info-table">
               <tr>
@@ -577,7 +552,7 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
             </div>
             
             <div class="operator">
-              <p style="margin: 0 0 10mm 0;">Operator: ${safeText(operatorName)}</p>
+              <p style="margin: 0 0 2mm 0;">Operator: ${safeText(operatorName)}</p>
               <p style="margin: 0; font-weight: bold; letter-spacing: 2px;">........................................</p>
             </div>
             
@@ -591,14 +566,6 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
 
   const handleReadmit = async () => {
     if (!activePatient) return;
-    const activeQueueEntry = getActiveReadmitEntry(activePatient.patient_id);
-    if (activeQueueEntry) {
-      setNotice({
-        type: "warning",
-        message: `${activePatient.patient_id} is already in OP Queue Management (${activeQueueEntry.status}). Complete the previous OP before re-visitting again.`,
-      });
-      return;
-    }
     setSubmitting(true);
     const validationErrors: Record<string, string> = {};
     const feeValue = String(reviewFee).trim();
@@ -648,18 +615,20 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
       ].filter(Boolean).join(" | ");
       const finalNotes = [additionalNotes, notes ? `[Re-visit Notes]\n${notes}` : ""].filter(Boolean).join("\n\n");
 
-      const data = await apiFetch<{ admission_id: string }>(`/api/patients/${activePatient.patient_id}/admissions`, {
+      const data = await apiFetch<{ admission_id: string; appointment_id?: number; token_no?: number }>(`/api/patients/${activePatient.patient_id}/admissions`, {
         method: "POST",
         body: JSON.stringify({ 
           notes: finalNotes,
           review_fee: Number(reviewFee) || 0,
           payment_mode: paymentMode,
-          doctor_name: doctorName
+          doctor_name: doctorName,
+          department: doctorDepartment,
         }),
       });
 
+      const queueToken = data.token_no ? String(data.token_no) : `RA-${String(Date.now()).slice(-6)}`;
       const queueEntry = {
-        token: `RA-${String(Date.now()).slice(-6)}`,
+        token: queueToken,
         uhid: activePatient.patient_id || "",
         name: [activePatient.name, activePatient.middle_name, activePatient.last_name].filter(Boolean).join(" ").trim() || activePatient.patient_id || "Patient",
         ageGender: `${profileUpdates.age || activePatient.age || "-"} / ${profileUpdates.gender || activePatient.gender || "-"}`,
@@ -669,6 +638,7 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
         mobile: profileUpdates.phone || activePatient.phone || activePatient.family_mobile || "",
         source: "readmit",
         admissionId: data.admission_id,
+        appointmentId: data.appointment_id,
         paymentMode: paymentMode || undefined,
         createdAt: new Date().toISOString(),
         department: doctorDepartment || undefined,
@@ -681,7 +651,7 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
 
       setNotice({
         type: "success",
-        message: `Re-visit created. Admission ${data.admission_id}. Patient added to OP Queue Management.`,
+        message: `Re-visit confirmed (Token #${queueToken}). Patient added to OP Queue Management.`,
       });
       setNotes("");
       setDocFiles({});
@@ -690,6 +660,9 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
       setPreviousDocuments([]);
       onSelect({ ...activePatient, ...profileUpdates, admission_id: data.admission_id });
       await onReadmitComplete?.(activePatient.patient_id);
+      if (onNavigate) {
+        onNavigate("op-queue-management");
+      }
     } catch (error) {
       reportError(setNotice, error as { message?: string; status?: number }, "Unable to re-visit patient.");
     } finally {
@@ -923,22 +896,14 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
                       </div>
 
                       <div className="queue-note">
-                        {getActiveReadmitEntry(activePatient.patient_id) ? (
-                          <>
-                            This patient is already in <b>OP Queue Management</b>. Complete the active OP token before re-visitting again.
-                          </>
-                        ) : (
-                          <>
-                            After confirmation, this patient will be added directly to <b>OP Queue Management</b> with visit type <b>Re-visit</b>.
-                          </>
-                        )}
+                        After confirmation, this patient will be added directly to <b>OP Queue Management</b> with visit type <b>Re-visit</b>.
                       </div>
 
                       <div className="readmit-actions">
                         <Button variant="secondary" onClick={printConfirmation} disabled={!activePatient}>
                           Print Confirmation
                         </Button>
-                        <Button variant="primary" onClick={() => void handleReadmit()} disabled={submitting || Boolean(getActiveReadmitEntry(activePatient.patient_id))}>
+                        <Button variant="primary" onClick={() => void handleReadmit()} disabled={submitting}>
                           {submitting ? "Submitting..." : "Confirm Re-visit"}
                         </Button>
                       </div>

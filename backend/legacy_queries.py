@@ -43,6 +43,17 @@ def date_clause(column_name):
 
 class RevenueService:
     @staticmethod
+    def _fetch_scalar(cursor, default=0.0):
+        row = cursor.fetchone()
+        if row is None:
+            return default
+        try:
+            val = row[0]
+        except (IndexError, KeyError, TypeError):
+            return default
+        return val if val is not None else default
+
+    @staticmethod
     def get_today_collections(db, target_date):
         date_col_ip = date_clause("created_at")
         date_col_d = date_clause("created_at")
@@ -54,7 +65,7 @@ class RevenueService:
             
             # invoice payments amount
             cursor.execute(f"SELECT COALESCE(SUM(amount), 0) FROM invoice_payments WHERE {date_col_ip} = DATE(?)", (target_date,))
-            ip_paid = cursor.fetchone()[0] or 0.0
+            ip_paid = RevenueService._fetch_scalar(cursor)
             
             # initial invoice payments that were paid on invoice creation but do not have entries in invoice_payments
             cursor.execute(
@@ -76,15 +87,15 @@ class RevenueService:
                 """,
                 (target_date,)
             )
-            i_initial_paid = cursor.fetchone()[0] or 0.0
+            i_initial_paid = RevenueService._fetch_scalar(cursor)
             
             # diagnostics paid_amount
             cursor.execute(f"SELECT COALESCE(SUM(paid_amount), 0) FROM diagnostics WHERE {date_col_d} = DATE(?) AND (invoice_no IS NULL OR TRIM(invoice_no) = '')", (target_date,))
-            d_paid = cursor.fetchone()[0] or 0.0
+            d_paid = RevenueService._fetch_scalar(cursor)
             
             # pharmacy sales amount
             cursor.execute(f"SELECT COALESCE(SUM(amount), 0) FROM pharmacy_sales WHERE {date_col_ps} = DATE(?) AND invoice_id IS NULL", (target_date,))
-            ps_paid = cursor.fetchone()[0] or 0.0
+            ps_paid = RevenueService._fetch_scalar(cursor)
             
             return float(ip_paid + i_initial_paid + d_paid + ps_paid)
 
@@ -104,7 +115,7 @@ class RevenueService:
                 """,
                 (target_date,)
             )
-            paid_ip = cursor.fetchone()[0] or 0.0
+            paid_ip = RevenueService._fetch_scalar(cursor)
 
             cursor.execute(
                 f"""
@@ -125,13 +136,13 @@ class RevenueService:
                 """,
                 (target_date,)
             )
-            paid_i = cursor.fetchone()[0] or 0.0
+            paid_i = RevenueService._fetch_scalar(cursor)
 
             cursor.execute(
                 f"SELECT COALESCE(SUM(paid_amount), 0) FROM diagnostics WHERE {date_col_d} = DATE(?) AND (invoice_no IS NULL OR TRIM(invoice_no) = '')",
                 (target_date,)
             )
-            paid_d = cursor.fetchone()[0] or 0.0
+            paid_d = RevenueService._fetch_scalar(cursor)
 
             return float(paid_ip + paid_i + paid_d)
 
@@ -149,13 +160,13 @@ class RevenueService:
                 """,
                 (target_date,)
             )
-            inv_earned = cursor.fetchone()[0] or 0.0
+            inv_earned = RevenueService._fetch_scalar(cursor)
 
             cursor.execute(
                 f"SELECT COALESCE(SUM(amount), 0) FROM diagnostics WHERE {date_col_d} = DATE(?) AND (invoice_no IS NULL OR TRIM(invoice_no) = '')",
                 (target_date,)
             )
-            d_earned = cursor.fetchone()[0] or 0.0
+            d_earned = RevenueService._fetch_scalar(cursor)
 
             return float(inv_earned + d_earned)
 
@@ -165,7 +176,7 @@ class RevenueService:
         with get_connection(db) as conn:
             cursor = conn.cursor()
             cursor.execute(f"SELECT COALESCE(SUM(amount), 0) FROM pharmacy_sales WHERE {date_col_ps} = DATE(?)", (target_date,))
-            return float(cursor.fetchone()[0] or 0.0)
+            return float(RevenueService._fetch_scalar(cursor))
 
     @staticmethod
     def get_today_outstanding(db, target_date):
@@ -176,11 +187,11 @@ class RevenueService:
             
             # today's unpaid invoices
             cursor.execute(f"SELECT COALESCE(SUM(due_amount), 0) FROM invoices WHERE {date_col_i} = DATE(?) AND due_amount > 0", (target_date,))
-            i_due = cursor.fetchone()[0] or 0.0
+            i_due = RevenueService._fetch_scalar(cursor)
             
             # today's unpaid diagnostics
             cursor.execute(f"SELECT COALESCE(SUM(due_amount), 0) FROM diagnostics WHERE {date_col_d} = DATE(?) AND due_amount > 0 AND (invoice_no IS NULL OR TRIM(invoice_no) = '')", (target_date,))
-            d_due = cursor.fetchone()[0] or 0.0
+            d_due = RevenueService._fetch_scalar(cursor)
             
             return float(i_due + d_due)
 
@@ -203,7 +214,7 @@ class RevenueService:
                 """,
                 (target_date,)
             )
-            return float(cursor.fetchone()[0] or 0.0)
+            return float(RevenueService._fetch_scalar(cursor))
 
 
 
@@ -1067,7 +1078,13 @@ def get_all_patients(db, hospital_id=None, visit_status=None):
                    (SELECT a4.doctor_name FROM appointments a4
                     WHERE a4.patient_id = p.patient_id ORDER BY a4.created_at DESC, a4.id DESC LIMIT 1) AS latest_doctor_name,
                    (SELECT a5.department FROM appointments a5
-                    WHERE a5.patient_id = p.patient_id ORDER BY a5.created_at DESC, a5.id DESC LIMIT 1) AS latest_department
+                    WHERE a5.patient_id = p.patient_id ORDER BY a5.created_at DESC, a5.id DESC LIMIT 1) AS latest_department,
+                   (SELECT string_agg(DISTINCT d, ',') FROM (
+                       SELECT TO_CHAR(a_v.appointment_date, 'YYYY-MM-DD') AS d FROM appointments a_v WHERE a_v.patient_id = p.patient_id
+                       UNION
+                       SELECT TO_CHAR(a_v2.created_at, 'YYYY-MM-DD') AS d FROM appointments a_v2 WHERE a_v2.patient_id = p.patient_id
+                   ) sub_v WHERE d IS NOT NULL) AS visit_dates,
+                   (SELECT string_agg(DISTINCT TO_CHAR(ad_v.admission_date, 'YYYY-MM-DD'), ',') FROM admissions ad_v WHERE ad_v.patient_id = p.patient_id) AS admission_dates
             FROM patients p
             WHERE p.hospital_id = ?
             ORDER BY p.created_at DESC
@@ -1130,7 +1147,13 @@ def search_patients(db, query, hospital_id=None, visit_status=None):
                        SELECT 1 FROM bed_allocations ba
                        JOIN admissions ad ON ad.id = ba.admission_id
                        WHERE ad.patient_id = p.patient_id AND ba.status = 'active'
-                   ) AS is_inpatient
+                   ) AS is_inpatient,
+                   (SELECT string_agg(DISTINCT d, ',') FROM (
+                       SELECT TO_CHAR(a_v.appointment_date, 'YYYY-MM-DD') AS d FROM appointments a_v WHERE a_v.patient_id = p.patient_id
+                       UNION
+                       SELECT TO_CHAR(a_v2.created_at, 'YYYY-MM-DD') AS d FROM appointments a_v2 WHERE a_v2.patient_id = p.patient_id
+                   ) sub_v WHERE d IS NOT NULL) AS visit_dates,
+                   (SELECT string_agg(DISTINCT TO_CHAR(ad_v.admission_date, 'YYYY-MM-DD'), ',') FROM admissions ad_v WHERE ad_v.patient_id = p.patient_id) AS admission_dates
             FROM patients p
             WHERE p.hospital_id = ?
             ORDER BY p.created_at DESC, p.id DESC
@@ -1684,15 +1707,27 @@ def update_document_ocr(db, document_id, ocr_text, ocr_language="en", hospital_i
 
 
 
-def get_patient_stats(db, hospital_id=None):
+def get_patient_stats(db, hospital_id=None, target_date=None):
     scoped_hospital_id = hospital_id or resolve_hospital_id(db)
     with get_connection(db) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM patients WHERE hospital_id = ?", (scoped_hospital_id,))
         total = cursor.fetchone()[0]
+        date_param = str(target_date or current_ist_datetime().date().isoformat()).strip()
         cursor.execute(
-            "SELECT COUNT(*) FROM patients WHERE hospital_id = ? AND DATE(created_at) = CURRENT_DATE",
-            (scoped_hospital_id,),
+            """
+            SELECT COUNT(DISTINCT p.patient_id)
+            FROM patients p
+            LEFT JOIN appointments a ON a.patient_id = p.patient_id AND (DATE(a.appointment_date) = DATE(?) OR DATE(a.created_at) = DATE(?))
+            LEFT JOIN admissions ad ON ad.patient_id = p.patient_id AND DATE(ad.admission_date) = DATE(?)
+            WHERE p.hospital_id = ? AND (
+                DATE(p.created_at) = DATE(?)
+                OR DATE(a.appointment_date) = DATE(?)
+                OR DATE(a.created_at) = DATE(?)
+                OR DATE(ad.admission_date) = DATE(?)
+            )
+            """,
+            (date_param, date_param, date_param, scoped_hospital_id, date_param, date_param, date_param, date_param),
         )
         today = cursor.fetchone()[0]
         cursor.execute(
@@ -2171,6 +2206,7 @@ def create_appointment(db, data):
         resolved_department = department
         
         patient_id = data.get("patient_id")
+        is_revisit = bool(data.get("allow_revisit")) or str(data.get("visit_type", "")).strip().lower() in ("re-visit", "revisit", "follow-up", "follow_up")
         if patient_id:
             cursor.execute(
                 "SELECT id, status FROM appointments WHERE patient_id = ? AND DATE(appointment_date) = DATE(?) AND status IN ('scheduled', 'checked_in', 'in_consultation') LIMIT 1",
@@ -2178,8 +2214,14 @@ def create_appointment(db, data):
             )
             active_appointment = cursor.fetchone()
             if active_appointment:
-                status_display = active_appointment["status"].replace("_", " ").title()
-                raise ValueError(f"Patient already has an active consultation token for this date (Status: {status_display}). Please complete or cancel the existing consultation first.")
+                if is_revisit:
+                    cursor.execute(
+                        "UPDATE appointments SET status = 'completed' WHERE id = ?",
+                        (active_appointment["id"],),
+                    )
+                else:
+                    status_display = active_appointment["status"].replace("_", " ").title()
+                    raise ValueError(f"Patient already has an active consultation token for this date (Status: {status_display}). Please complete or cancel the existing consultation first.")
 
         if doctor_name:
             cursor.execute(
@@ -2202,7 +2244,7 @@ def create_appointment(db, data):
             if not resolved_department:
                 resolved_department = department or "General Medicine"
                     
-            if schedules:
+            if schedules and not is_revisit:
                 cursor.execute(
                     "SELECT COUNT(*) as booked_count FROM appointments WHERE doctor_name = ? AND DATE(appointment_date) = ? AND status NOT IN ('cancelled')",
                     (doctor_name, appointment_day)
@@ -2559,7 +2601,30 @@ def list_doctors_history(db, hospital_id, doctor_name=None, from_date=None, to_d
         cursor.execute(
             f"""
             SELECT
-                a.*,
+                a.id,
+                a.patient_id,
+                a.patient_name,
+                a.visit_type,
+                a.department,
+                a.doctor_name,
+                a.token_no,
+                a.status,
+                a.notes,
+                a.appointment_kind,
+                a.follow_up_for,
+                a.reminder_sent_at,
+                a.no_show_marked,
+                a.consultation_fee,
+                a.created_at,
+                COALESCE(
+                    CASE 
+                        WHEN CAST(a.appointment_date AS time) != '00:00:00' THEN a.appointment_date
+                        WHEN a.created_at IS NOT NULL THEN
+                            (DATE(a.appointment_date) + CAST(timezone('Asia/Kolkata', a.created_at) AS time))
+                        ELSE a.appointment_date
+                    END,
+                    a.appointment_date
+                ) AS appointment_date,
                 p.age AS age,
                 p.gender AS gender,
                 p.weight AS weight,
@@ -2581,14 +2646,15 @@ WAITING_STATUSES = ("scheduled", "checked_in")
 TERMINAL_STATUSES = ("completed", "no_show")
 
 APPOINTMENT_STATUS_TRANSITIONS = {
-    "scheduled": {"scheduled", "checked_in", "in_consultation", "skipped", "no_show", "cancelled", "waiting"},
-    "waiting": {"scheduled", "checked_in", "in_consultation", "skipped", "no_show", "cancelled", "waiting"},
-    "checked_in": {"scheduled", "checked_in", "in_consultation", "skipped", "no_show", "cancelled", "waiting"},
-    "in_consultation": {"in_consultation", "completed"},
-    "skipped": {"skipped", "scheduled", "checked_in", "waiting"},
-    "cancelled": {"cancelled", "scheduled", "checked_in", "waiting"},
-    "completed": {"completed"},
-    "no_show": {"no_show", "scheduled", "checked_in", "waiting"},
+    "scheduled": {"scheduled", "checked_in", "in_consultation", "skipped", "no_show", "cancelled", "waiting", "pending"},
+    "waiting": {"scheduled", "checked_in", "in_consultation", "skipped", "no_show", "cancelled", "waiting", "pending"},
+    "pending": {"scheduled", "checked_in", "in_consultation", "skipped", "no_show", "cancelled", "waiting", "pending"},
+    "checked_in": {"scheduled", "checked_in", "in_consultation", "skipped", "no_show", "cancelled", "waiting", "pending"},
+    "in_consultation": {"in_consultation", "completed", "waiting", "scheduled", "cancelled", "pending"},
+    "skipped": {"skipped", "scheduled", "checked_in", "waiting", "pending"},
+    "cancelled": {"cancelled", "scheduled", "checked_in", "waiting", "pending"},
+    "completed": {"completed", "in_consultation", "waiting", "scheduled"},
+    "no_show": {"no_show", "scheduled", "checked_in", "waiting", "pending"},
 }
 
 
@@ -2597,9 +2663,9 @@ def validate_appointment_transition(current_status, next_status):
     """Raise ValueError if next_status isn't a legal move from current_status.
 
     Waiting-equivalent (scheduled/checked_in) can move to in_consultation,
-    skipped, no_show, or cancelled. In_consultation can only complete.
-    Skipped/cancelled/no_show can be Recalled back to waiting. Completed is
-    terminal. A same-status "transition" (no real change) is always allowed.
+    skipped, no_show, or cancelled. In_consultation can complete or move back.
+    Skipped/cancelled/no_show can be Recalled back to waiting. A same-status
+    "transition" (no real change) is always allowed.
     """
     current = (current_status or "scheduled").strip().lower()
     nxt = (next_status or current).strip().lower()
@@ -2607,7 +2673,10 @@ def validate_appointment_transition(current_status, next_status):
         return
     allowed = APPOINTMENT_STATUS_TRANSITIONS.get(current, set())
     if nxt not in allowed:
-        raise ValueError(f"Cannot move an appointment from '{current}' to '{nxt}'.")
+        if current in {"scheduled", "checked_in", "waiting", "pending"}:
+            allowed = allowed | {"in_consultation", "completed", "skipped", "no_show", "cancelled", "waiting", "scheduled", "pending"}
+        if nxt not in allowed:
+            raise ValueError(f"Cannot move an appointment from '{current}' to '{nxt}'.")
 
 
 
