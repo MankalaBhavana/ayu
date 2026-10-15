@@ -17,7 +17,6 @@ import EmployeesPage from "./pages/EmployeesPage";
 import BillingClaimsPage from "./pages/BillingClaimsPage";
 import BillingOverviewPage from "./pages/billing/BillingOverviewPage";
 import PatientBillsPaymentsPage from "./pages/billing/PatientBillsPaymentsPage";
-import AdvancesRefundsPage from "./pages/billing/AdvancesRefundsPage";
 import DoctorPayoutsPage from "./pages/billing/DoctorPayoutsPage";
 import ReportsDayClosePage from "./pages/billing/ReportsDayClosePage";
 import LabPage from "./pages/LabPage";
@@ -65,6 +64,7 @@ export const normalizeRouteAlias = (rawPage: string): string => {
   const p = (rawPage || "").toLowerCase().trim();
   switch (p) {
     case "billing":
+    case "billing-advances-refunds":
       return "billing-overview";
     case "pharmacy":
       return "pharmacy-overview";
@@ -96,7 +96,7 @@ const VALID_PAGE_IDS = new Set([
   "access-denied", "accounts", "accounts-doctor-payouts", "accounts-ledger", "accounts-overview", "accounts-vendor-payments", "add", "registration", "registration-desk", "admin",
   "billing", "billing-aging", "billing-create-invoice", "billing-record-payment",
   "billing-insurance-claims", "billing-invoices", "billing-mode-breakdown", "billing-module-collections",
-  "billing-reconciliation", "billing-overview", "billing-patient-bills", "billing-advances-refunds", "billing-doctor-payouts", "billing-reports-day-close",
+  "billing-reconciliation", "billing-overview", "billing-patient-bills", "billing-doctor-payouts", "billing-reports-day-close",
   "consent-desk", "dashboard", "diag", "lab-diagnostics", "diag-catalogue", "diag-imaging", "diag-laboratory",
   "diag-orders-billing", "diag-overview", "diag-quality-equipment", "diag-reports-approval", "diag-reports-history", "doctor-prescription",
   "doctors-history", "employees", "hrms", "insurance-desk", "lab", "laboratory",
@@ -122,7 +122,6 @@ const NAV_ICON_MAP: Record<string, SidebarIconName> = {
   billing: "billing",
   "billing-overview": "dashboard",
   "billing-patient-bills": "billing",
-  "billing-advances-refunds": "readmit",
   "billing-doctor-payouts": "team",
   "billing-reports-day-close": "chart",
   "billing-aging": "billing",
@@ -394,7 +393,6 @@ const PAGE_SUBTITLES: Record<string, string> = {
   lab: "Generate lab bills and view test reports.",
   "billing-overview": "Real-time revenue tracking, cashier operations, and departmental clearances.",
   "billing-patient-bills": "Patient bill lookup, multi-bill allocation, split payments, and receipt issuance.",
-  "billing-advances-refunds": "Patient security deposits, refund request reservation, and supervisor vouchers.",
   "billing-doctor-payouts": "Contractual doctor earnings, fee splits, adjustments, and payout vouchers.",
   "billing-reports-day-close": "Daily tender reconciliation, drawer cash balancing, and financial exports.",
   "billing-module-collections": "Live revenue snapshot and collection summary.",
@@ -438,8 +436,28 @@ function App() {
     }
     sessionExpiryTimeoutRef.current = setTimeout(handleExpired, msRemaining);
   };
-    // Ensure required asterisks are visually prominent across the app
-    useEffect(() => {
+
+  // Prevent mouse-wheel scrolling from accidentally increasing or decreasing numeric values
+  useEffect(() => {
+    const handleWheel = (e: WheelEvent) => {
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement && active.type === "number") {
+        active.blur();
+      }
+      const target = e.target;
+      if (target instanceof HTMLInputElement && target.type === "number") {
+        target.blur();
+      }
+    };
+
+    window.addEventListener("wheel", handleWheel, { capture: true, passive: true });
+    return () => {
+      window.removeEventListener("wheel", handleWheel, { capture: true });
+    };
+  }, []);
+
+  // Ensure required asterisks are visually prominent across the app
+  useEffect(() => {
       try {
         const labels = Array.from(document.querySelectorAll("label"));
         labels.forEach((label) => {
@@ -1590,15 +1608,6 @@ function App() {
         )}
         {(page === "billing-patient-bills" || page === "billing-invoices" || page === "billing-create-invoice" || page === "billing-record-payment") && hasPermission("billing.read") && (
           <PatientBillsPaymentsPage
-            key={pageKeys[page] || 0}
-            setNotice={setNotice}
-            onNavigate={navigateToPage}
-            selectedPatient={selectedPatient}
-            onSelectPatient={handleSelectPatient}
-          />
-        )}
-        {page === "billing-advances-refunds" && hasPermission("billing.read") && (
-          <AdvancesRefundsPage
             key={pageKeys[page] || 0}
             setNotice={setNotice}
             onNavigate={navigateToPage}

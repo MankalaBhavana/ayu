@@ -419,7 +419,7 @@ a.link.danger {
   position: relative;
   flex: 0 0 55%;
   max-width: 55%;
-  background: linear-gradient(160deg, #0a2540 0%, #0f3a5f 60%, #0a2e4d 100%);
+  background: #0c1926;
   color: #eaf6f6;
   display: flex;
   flex-direction: column;
@@ -433,6 +433,7 @@ a.link.danger {
   inset: 0;
   width: 100%;
   height: 100%;
+  pointer-events: none;
 }
 
 .login-hero-top-brand {
@@ -443,12 +444,14 @@ a.link.danger {
 }
 
 .login-hero-hospai-logo {
-  width: 155px;
+  width: 170px;
   max-width: 100%;
   height: auto;
   object-fit: contain;
   display: block;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.25));
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 .login-hero-content {
@@ -515,12 +518,14 @@ a.link.danger {
 }
 
 .login-hero-kalpra-logo {
-  width: 145px;
+  width: 165px;
   max-width: 100%;
   height: auto;
   object-fit: contain;
   display: block;
-  filter: drop-shadow(0 2px 8px rgba(0, 0, 0, 0.25));
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
 }
 
 @media (max-height: 750px) {
@@ -774,6 +779,152 @@ a.link.danger {
   border: none !important;
   background: transparent !important;
   box-shadow: none !important;
+}
+
+/* Sidebar Brand Flip Card & HospAI / Ayu Polyclinic Toggle */
+.hospital-brand-sidebar-wrapper {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+}
+
+.hospital-brand-flip-card {
+  perspective: 900px;
+  cursor: pointer;
+  width: 100%;
+  border-radius: 8px;
+  padding: 4px 6px;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+  position: relative;
+  outline: none;
+}
+
+.hospital-brand-flip-card:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.hospital-brand-flip-card:focus-visible {
+  box-shadow: 0 0 0 2px #00bcd4;
+}
+
+.hospital-brand-flipper {
+  position: relative;
+  width: 100%;
+  min-height: 68px;
+  transition: transform 0.45s cubic-bezier(0.4, 0, 0.2, 1);
+  transform-style: preserve-3d;
+}
+
+.hospital-brand-flipper.flipped {
+  transform: rotateY(180deg);
+}
+
+.hospital-brand-face {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.hospital-brand-front {
+  position: relative;
+  z-index: 2;
+  transform: rotateY(0deg);
+}
+
+.hospital-brand-back {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 1;
+  transform: rotateY(180deg);
+}
+
+.hospital-brand-hospai-box {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  padding-left: 2px;
+}
+
+.hospital-brand-hospai-img {
+  max-width: 185px;
+  max-height: 66px;
+  height: 64px;
+  width: auto;
+  object-fit: contain;
+  display: block;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.hospital-brand-ayu-box {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex: 1;
+  min-width: 0;
+}
+
+.hospital-brand-titles {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 0;
+  line-height: 1.12;
+}
+
+.hospital-brand-name {
+  font-size: 24px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  margin: 0;
+  padding: 0;
+}
+
+.hospital-brand-sub {
+  font-size: 11px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  margin: 2px 0 0;
+  padding: 0;
+}
+
+.hospital-brand-toggle-btn {
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  border-radius: 6px;
+  color: rgba(255, 255, 255, 0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  cursor: pointer;
+  flex-shrink: 0;
+  transition: all 0.2s ease;
+  margin-left: 6px;
+}
+
+.hospital-brand-toggle-btn:hover {
+  background: rgba(255, 255, 255, 0.18);
+  color: #ffffff;
+  border-color: rgba(255, 255, 255, 0.35);
+  transform: scale(1.08);
 }
 
 .sidebar .brand-title {

@@ -42,17 +42,14 @@ export default function AuthView({ onLogin }: Props) {
     <div className="login-page">
       <div className="login-hero" aria-hidden="true">
         <svg className="login-hero-waves" viewBox="0 0 800 900" preserveAspectRatio="xMidYMid slice" xmlns="http://www.w3.org/2000/svg">
-          <path d="M0 120 C 160 40, 340 200, 520 130 S 820 60, 800 180 L 800 0 L 0 0 Z" fill="#7dd8c8" opacity="0.08" />
-          <path d="M0 300 C 200 220, 380 380, 600 300 S 860 260, 800 400 L 800 900 L 0 900 Z" fill="#3fb8c9" opacity="0.06" />
-          <path d="M-50 520 C 150 470, 320 620, 560 540 S 780 470, 850 600" stroke="#8fe3d3" strokeWidth="2" fill="none" opacity="0.12" />
-          <path d="M-50 700 C 180 640, 360 780, 620 700 S 820 640, 860 760" stroke="#6fd0d8" strokeWidth="1.5" fill="none" opacity="0.1" />
-          <circle cx="680" cy="150" r="140" fill="#9fe6da" opacity="0.05" />
-          <circle cx="90" cy="760" r="180" fill="#5fc9d6" opacity="0.05" />
+          <path d="M-50 520 C 150 470, 320 620, 560 540 S 780 470, 850 600" stroke="#8fe3d3" strokeWidth="1.5" fill="none" opacity="0.08" />
+          <path d="M-50 700 C 180 640, 360 780, 620 700 S 820 640, 860 760" stroke="#6fd0d8" strokeWidth="1" fill="none" opacity="0.06" />
+          <circle cx="720" cy="200" r="140" fill="#9fe6da" opacity="0.03" />
         </svg>
 
         <div className="login-hero-top-brand">
           <img
-            src="/hospai_logo.png"
+            src="/hospai_login_logo.png"
             alt="HospAI - AI-Driven Healthcare Optimization"
             className="login-hero-hospai-logo"
           />
@@ -72,7 +69,7 @@ export default function AuthView({ onLogin }: Props) {
         <div className="login-hero-bottom-brand">
           <span className="login-hero-powered">Powered by</span>
           <img
-            src="/kalpra_logo.png"
+            src="/kalpra_login_logo.png"
             alt="Kalpra Tech Solutions - Your AI & Gen AI Partner"
             className="login-hero-kalpra-logo"
           />

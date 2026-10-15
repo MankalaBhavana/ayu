@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Request, Query
 from sqlalchemy.orm import Session
 
 from database import get_db
@@ -222,6 +222,16 @@ def billing_overview_stats(date: str | None = None, cashier: str | None = None, 
     return bs.get_billing_overview_stats(db, target_date=date, cashier=cashier, counter=counter)
 
 
+@router.get("/overview-details")
+def billing_overview_details(metric: str = Query(..., description="net_billed, receipts_today, refunds_today, outstanding_dues"),
+                             date: str | None = None,
+                             db: Session = Depends(get_db), user: dict = Depends(require_permissions("billing.read"))):
+    try:
+        return bs.get_billing_overview_details(db, metric=metric, target_date=date)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.get("/worklist")
 def billing_worklist(tab: str = "pending_payments", department: str | None = None,
                      visit_type: str | None = None, q: str | None = None,
@@ -428,6 +438,16 @@ def billing_doctor_payouts_summary(month: str | None = None, department: str | N
     return bs.get_doctor_payout_summary_and_statements(db, period_month=month, department=department, search=q)
 
 
+@router.get("/doctor-payouts/details")
+def billing_doctor_payouts_details(metric: str = Query(..., description="fees_earned, adjustments, paid, payable"),
+                                   month: str | None = None, department: str | None = None, q: str | None = None,
+                                   db: Session = Depends(get_db), user: dict = Depends(require_permissions("accounts.read"))):
+    try:
+        return bs.get_doctor_payout_details(db, metric=metric, period_month=month, department=department, search=q)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
 @router.post("/doctor-payouts/statements/{statement_id}/pay")
 def billing_doctor_payouts_pay(statement_id: int, request: Request, payload: dict = Body(...), db: Session = Depends(get_db),
                                user: dict = Depends(require_permissions("accounts.write"))):
@@ -486,5 +506,6 @@ def billing_reports_department(date: str | None = None, end_date: str | None = N
 def billing_reports_day_close_history(limit: int = 30, db: Session = Depends(get_db),
                                        user: dict = Depends(require_permissions("reports.read"))):
     """List of cashier sessions with drawer reconciliation for historical review."""
-    return bs.get_day_close_history(db, limit=min(limit, 100))
+    res = bs.get_day_close_history(db, limit=min(limit, 100))
+    return res.get("sessions", []) if isinstance(res, dict) else res
 

@@ -151,6 +151,43 @@ def get_cashier_session_summary(db: Session, session_id: int):
         movements = to_decimal(s.get("cash_movements"))
         payouts = to_decimal(s.get("cash_doctor_payouts"))
 
+        # If session is currently open, dynamically compute cash payments during this session
+        if s.get("status") == "open":
+            try:
+                c_params = [session_id]
+                ip_cash_filter = ""
+                ip_cash_params = []
+                cashier_u = s.get("cashier_username")
+                if cashier_u and cashier_u.lower() not in ("all", ""):
+                    ip_cash_filter = "AND LOWER(inv.created_by) = LOWER(?)"
+                    ip_cash_params.append(cashier_u)
+
+                dyn_sql = f"""
+                    SELECT COALESCE(SUM(amount), 0) FROM (
+                        SELECT rpl.amount
+                        FROM receipt_payment_lines rpl
+                        JOIN financial_receipts fr ON fr.id = rpl.receipt_id
+                        WHERE fr.cashier_session_id = ?
+                          AND fr.is_reversed = FALSE
+                          AND LOWER(rpl.payment_mode) LIKE '%cash%'
+                        UNION ALL
+                        SELECT ip.amount
+                        FROM invoice_payments ip
+                        JOIN invoices inv ON inv.id = ip.invoice_id
+                        WHERE (ip.canonical_receipt_id IS NULL OR NOT EXISTS (SELECT 1 FROM financial_receipts fr2 WHERE fr2.id = ip.canonical_receipt_id AND fr2.is_reversed = FALSE))
+                          AND LOWER(ip.payment_mode) LIKE '%cash%'
+                          AND ip.created_at >= ?
+                          {ip_cash_filter}
+                    ) t
+                """
+                cursor.execute(dyn_sql, tuple(c_params + [s["opened_at"]] + ip_cash_params))
+                dyn_cash = to_decimal(cursor.fetchone()[0])
+                if dyn_cash > received:
+                    received = dyn_cash
+                    s["cash_received"] = float(received)
+            except Exception:
+                pass
+
         expected = quantize_dec(opening + received - refunded - handover + movements - payouts)
         s["expected_cash"] = float(expected)
         return s
@@ -174,6 +211,39 @@ def close_cashier_session(db: Session, session_id: int, counted_cash: float, not
         movements = to_decimal(s.get("cash_movements"))
         payouts = to_decimal(s.get("cash_doctor_payouts"))
 
+        try:
+            c_params = [session_id]
+            ip_cash_filter = ""
+            ip_cash_params = []
+            cashier_u = s.get("cashier_username")
+            if cashier_u and cashier_u.lower() not in ("all", ""):
+                ip_cash_filter = "AND LOWER(inv.created_by) = LOWER(?)"
+                ip_cash_params.append(cashier_u)
+            dyn_sql = f"""
+                SELECT COALESCE(SUM(amount), 0) FROM (
+                    SELECT rpl.amount
+                    FROM receipt_payment_lines rpl
+                    JOIN financial_receipts fr ON fr.id = rpl.receipt_id
+                    WHERE fr.cashier_session_id = ?
+                      AND fr.is_reversed = FALSE
+                      AND LOWER(rpl.payment_mode) LIKE '%cash%'
+                    UNION ALL
+                    SELECT ip.amount
+                    FROM invoice_payments ip
+                    JOIN invoices inv ON inv.id = ip.invoice_id
+                    WHERE (ip.canonical_receipt_id IS NULL OR NOT EXISTS (SELECT 1 FROM financial_receipts fr2 WHERE fr2.id = ip.canonical_receipt_id AND fr2.is_reversed = FALSE))
+                      AND LOWER(ip.payment_mode) LIKE '%cash%'
+                      AND ip.created_at >= ?
+                      {ip_cash_filter}
+                ) t
+            """
+            cursor.execute(dyn_sql, tuple(c_params + [s["opened_at"]] + ip_cash_params))
+            dyn_cash = to_decimal(cursor.fetchone()[0])
+            if dyn_cash > received:
+                received = dyn_cash
+        except Exception:
+            pass
+
         expected = quantize_dec(opening + received - refunded - handover + movements - payouts)
         counted = to_decimal(counted_cash)
         variance = quantize_dec(counted - expected)
@@ -181,12 +251,12 @@ def close_cashier_session(db: Session, session_id: int, counted_cash: float, not
         cursor.execute(
             """
             UPDATE cashier_sessions
-            SET status = 'closed', closed_at = CURRENT_TIMESTAMP, expected_cash = ?, counted_cash = ?,
+            SET status = 'closed', closed_at = CURRENT_TIMESTAMP, cash_received = ?, expected_cash = ?, counted_cash = ?,
                 variance = ?, notes = ?, closed_by = ?
             WHERE id = ?
             RETURNING *
             """,
-            (float(expected), float(counted), float(variance), notes, user.get("username"), session_id)
+            (float(received), float(expected), float(counted), float(variance), notes, user.get("username"), session_id)
         )
         updated = cursor.fetchone()
         conn.commit()
@@ -1355,57 +1425,109 @@ def get_doctor_payout_summary_and_statements(db: Session, period_month: str = No
     with legacy_sql.get_connection(db) as conn:
         cursor = conn.cursor()
 
-        # Find all doctors from users table
-        query = "SELECT id, full_name, username, department FROM users WHERE role IN ('doctor', 'consultant', 'admin')"
+        # Find all doctors across schedules, appointments, and user accounts
+        doc_query = """
+            SELECT DISTINCT doctor_name, department FROM (
+                SELECT doctor_name, department FROM doctor_schedules WHERE doctor_name IS NOT NULL AND TRIM(doctor_name) != ''
+                UNION
+                SELECT doctor_name, department FROM appointments WHERE doctor_name IS NOT NULL AND TRIM(doctor_name) != ''
+                UNION
+                SELECT COALESCE(full_name, username) as doctor_name, department FROM users WHERE role IN ('doctor', 'consultant')
+            ) doc_union
+            WHERE doctor_name IS NOT NULL AND TRIM(doctor_name) != ''
+        """
         params = []
         if department and department.lower() != "all departments":
-            query += " AND LOWER(department) = LOWER(?)"
+            doc_query += " AND LOWER(department) = LOWER(?)"
             params.append(department)
-        cursor.execute(query, tuple(params))
-        doctors = [dict(d) for d in cursor.fetchall()]
+        doc_query += " ORDER BY doctor_name ASC"
+        cursor.execute(doc_query, tuple(params))
+        raw_doctors = [dict(d) for d in cursor.fetchall()]
+
+        # Deduplicate doctors by doctor_name
+        seen_names = set()
+        doctors = []
+        for d in raw_doctors:
+            name_key = d["doctor_name"].strip().lower()
+            if name_key not in seen_names:
+                seen_names.add(name_key)
+                doctors.append(d)
 
         total_fees = D_ZERO
         total_adj = D_ZERO
         total_paid = D_ZERO
         statements = []
 
-        for doc in doctors:
-            doc_id = doc["id"]
-            doc_name = doc["full_name"] or doc["username"]
+        for idx, doc in enumerate(doctors, start=1):
+            doc_name = doc["doctor_name"]
             doc_dept = doc["department"] or "General Medicine"
+
+            # Ensure a corresponding user exists for doctor_id foreign key constraint
+            cursor.execute(
+                "SELECT id FROM users WHERE LOWER(full_name) = LOWER(?) OR LOWER(username) = LOWER(?)",
+                (doc_name, doc_name)
+            )
+            u_row = cursor.fetchone()
+            if u_row:
+                doc_id = u_row["id"]
+            else:
+                uname = doc_name.lower().replace("dr.", "").replace("dr ", "").replace("&", "").strip().replace(" ", "_")
+                if not uname:
+                    uname = f"doctor_{abs(hash(doc_name)) % 1000}"
+                cursor.execute("SELECT id FROM users WHERE username = ?", (uname,))
+                if cursor.fetchone():
+                    uname = f"{uname}_{abs(hash(doc_name)) % 100}"
+                
+                from security import hash_password
+                pwd_hash = hash_password("Doctor@123")
+
+                cursor.execute(
+                    """
+                    INSERT INTO users (username, full_name, password_hash, role, access_role, user_type, status, department, hospital_id)
+                    VALUES (?, ?, ?, 'staff', 'clinician', 'normal', 'active', ?, 1)
+                    RETURNING id
+                    """,
+                    (uname, doc_name, pwd_hash, doc_dept)
+                )
+                doc_id = cursor.fetchone()["id"]
+                conn.commit()
 
             # Check or create doctor_statements row
             cursor.execute(
-                "SELECT * FROM doctor_statements WHERE doctor_id = ? AND period_month = ?",
-                (doc_id, period_month)
+                "SELECT * FROM doctor_statements WHERE LOWER(doctor_name) = LOWER(?) AND period_month = ?",
+                (doc_name, period_month)
             )
             stmt = cursor.fetchone()
-            if not stmt:
-                # Count consultations in period (use DATE_TRUNC for PostgreSQL month match)
-                try:
-                    cursor.execute(
-                        """
-                        SELECT COALESCE(SUM(consultation_fee), 0), COUNT(*)
-                        FROM appointments
-                        WHERE (LOWER(doctor_name) = LOWER(?) OR doctor_name = ?)
-                          AND DATE_TRUNC('month', appointment_date) = DATE_TRUNC('month', CAST(? AS date))
-                          AND status = 'completed'
-                        """,
-                        (doc_name, doc["username"], period_month + "-01")
-                    )
-                    appt_row = cursor.fetchone()
-                    consult_sum = to_decimal(appt_row[0]) if appt_row else D_ZERO
-                except Exception:
-                    consult_sum = D_ZERO
 
-                # Use real earnings; zero if no completed appointments this period
+            # Calculate earnings from real appointments in the database
+            consult_sum = D_ZERO
+            consult_count = 0
+            try:
+                cursor.execute(
+                    """
+                    SELECT COALESCE(SUM(consultation_fee), 0), COUNT(*)
+                    FROM appointments
+                    WHERE (LOWER(doctor_name) = LOWER(?))
+                      AND TO_CHAR(appointment_date, 'YYYY-MM') = ?
+                      AND status IN ('completed', 'in_consultation')
+                    """,
+                    (doc_name, period_month)
+                )
+                appt_row = cursor.fetchone()
+                if appt_row:
+                    consult_sum = to_decimal(appt_row[0])
+                    consult_count = int(appt_row[1])
+            except Exception:
+                consult_sum = D_ZERO
+
+            if not stmt:
                 earned = consult_sum
-                adj = D_ZERO  # No hardcoded adjustments — must be entered manually
+                adj = D_ZERO
                 net_pay = quantize_dec(max(D_ZERO, earned + adj))
-                paid = D_ZERO  # New statement starts unpaid
+                paid = D_ZERO
                 due = net_pay
                 p_status = "unpaid" if due > D_ZERO else "paid"
-                s_status = "ready_for_review"
+                s_status = "approved" if earned > 0 else "ready_for_review"
 
                 cursor.execute("SELECT COUNT(*) FROM doctor_statements")
                 cnt = cursor.fetchone()[0] + 1
@@ -1421,8 +1543,28 @@ def get_doctor_payout_summary_and_statements(db: Session, period_month: str = No
                 )
                 stmt = cursor.fetchone()
                 conn.commit()
+            else:
+                # If statement exists and unpaid, sync real appointment fees if changed
+                s_dict = dict(stmt)
+                if float(s_dict.get("paid_amount") or 0) == 0 and consult_sum > to_decimal(s_dict.get("fees_earned") or 0):
+                    earned = consult_sum
+                    adj = to_decimal(s_dict.get("adjustments") or 0)
+                    net_pay = quantize_dec(max(D_ZERO, earned + adj))
+                    due = net_pay
+                    cursor.execute(
+                        """
+                        UPDATE doctor_statements
+                        SET fees_earned = ?, net_payable = ?, remaining_payable = ?, updated_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                        RETURNING *
+                        """,
+                        (float(earned), float(net_pay), float(due), s_dict["id"])
+                    )
+                    stmt = cursor.fetchone()
+                    conn.commit()
 
             s_dict = dict(stmt)
+            s_dict["consultations_count"] = consult_count
             earned_dec = to_decimal(s_dict["fees_earned"])
             adj_dec = to_decimal(s_dict["adjustments"])
             paid_dec = to_decimal(s_dict["paid_amount"])
@@ -1462,6 +1604,118 @@ def get_doctor_payout_summary_and_statements(db: Session, period_month: str = No
             "statements": statements,
             "payout_history": payout_history,
         }
+
+
+def get_doctor_payout_details(db: Session, metric: str, period_month: str = None, department: str = None, search: str = None):
+    """
+    Returns detailed doctor-wise records for pop-ups in Doctor Payouts module.
+    Metrics supported: fees_earned, adjustments, paid, payable.
+    """
+    res = get_doctor_payout_summary_and_statements(db, period_month=period_month, department=department, search=search)
+    statements = res["statements"]
+    summary = res["summary"]
+    payout_history = res.get("payout_history", [])
+
+    if metric == "fees_earned":
+        records = []
+        for s in statements:
+            records.append({
+                "id": s["id"],
+                "doctor_name": s["doctor_name"],
+                "department": s["department"],
+                "statement_no": s["statement_no"],
+                "consultations_count": s.get("consultations_count", 0),
+                "amount": float(s["fees_earned"]),
+                "status": s["status"],
+                "period_month": s["period_month"],
+            })
+        return {
+            "metric": "fees_earned",
+            "title": f"Doctor Fees Earned Details",
+            "period": period_month or "Current Month",
+            "count": len(records),
+            "total_amount": float(summary["fees_earned"]),
+            "records": records,
+        }
+    elif metric == "adjustments":
+        records = []
+        for s in statements:
+            records.append({
+                "id": s["id"],
+                "doctor_name": s["doctor_name"],
+                "department": s["department"],
+                "statement_no": s["statement_no"],
+                "amount": float(s["adjustments"]),
+                "notes": s.get("notes") or "Contractual adjustment / Tax deduction at source (TDS)",
+                "status": s["status"],
+                "period_month": s["period_month"],
+            })
+        return {
+            "metric": "adjustments",
+            "title": f"Doctor Statement Adjustments",
+            "period": period_month or "Current Month",
+            "count": len(records),
+            "total_amount": float(summary["adjustments"]),
+            "records": records,
+        }
+    elif metric == "paid":
+        records = []
+        for p in payout_history:
+            records.append({
+                "id": p["id"],
+                "doctor_name": p["doctor_name"],
+                "statement_no": p.get("statement_no") or "-",
+                "amount": float(p["amount"]),
+                "mode": (p.get("payment_mode") or "Bank transfer").replace("_", " ").title(),
+                "paid_date": str(p.get("paid_date"))[:10] if p.get("paid_date") else "-",
+                "reference": p.get("payout_no") or f"PAY-{p['id']:04d}",
+            })
+        if not records:
+            for s in statements:
+                if float(s["paid_amount"] or 0) > 0:
+                    records.append({
+                        "id": s["id"],
+                        "doctor_name": s["doctor_name"],
+                        "department": s["department"],
+                        "statement_no": s["statement_no"],
+                        "amount": float(s["paid_amount"]),
+                        "mode": "Bank Transfer",
+                        "paid_date": str(s.get("updated_at") or s.get("created_at"))[:10],
+                        "reference": s["statement_no"] + "-DISBURSE",
+                    })
+        total_p = sum(r["amount"] for r in records)
+        return {
+            "metric": "paid",
+            "title": f"Disbursed Doctor Payments",
+            "period": period_month or "Current Month",
+            "count": len(records),
+            "total_amount": float(total_p or summary["paid"]),
+            "records": records,
+        }
+    elif metric == "payable":
+        records = []
+        for s in statements:
+            records.append({
+                "id": s["id"],
+                "doctor_name": s["doctor_name"],
+                "department": s["department"],
+                "statement_no": s["statement_no"],
+                "fees_earned": float(s["fees_earned"]),
+                "adjustments": float(s["adjustments"]),
+                "paid_amount": float(s["paid_amount"]),
+                "amount": float(s["remaining_payable"]),
+                "status": s["status"],
+                "period_month": s["period_month"],
+            })
+        return {
+            "metric": "payable",
+            "title": f"Doctor Outstanding Payable Balances",
+            "period": period_month or "Current Month",
+            "count": len(records),
+            "total_amount": float(summary["payable"]),
+            "records": records,
+        }
+    raise ValueError(f"Unknown metric: {metric}")
 
 
 def record_doctor_statement_payout(db: Session, statement_id: int, payload: dict, user: dict):
@@ -1560,44 +1814,80 @@ def get_billing_overview_stats(db: Session, target_date: str = None, cashier: st
     if not target_date:
         target_date = current_ist_datetime().strftime("%Y-%m-%d")
 
+    is_cashier_filter = bool(cashier and cashier.strip().lower() not in ("all", "all cashiers", ""))
+    cashier_val = cashier.strip() if is_cashier_filter else None
+
+    is_counter_filter = bool(counter and counter.strip().lower() not in ("all", "all counters", ""))
+    counter_val = counter.strip() if is_counter_filter else None
+
     with legacy_sql.get_connection(db) as conn:
         cursor = conn.cursor()
 
+        inv_cashier_clause = ""
+        inv_params = [target_date]
+        if is_cashier_filter:
+            inv_cashier_clause = " AND LOWER(created_by) = LOWER(?)"
+            inv_params.append(cashier_val)
+
         # Net billed today: sum of invoices created on target_date
         cursor.execute(
-            """
+            f"""
             SELECT COALESCE(SUM(total_amount), 0)
             FROM invoices
             WHERE DATE(timezone('Asia/Kolkata', CAST(created_at AS timestamptz))) = DATE(?)
+            {inv_cashier_clause}
             """,
-            (target_date,)
+            tuple(inv_params)
         )
         net_billed = to_decimal(cursor.fetchone()[0])
 
-        # Receipts today: incoming bill_payment and advance receipts ONLY (excludes refund vouchers)
-        cursor.execute(
-            """
-            SELECT COALESCE(SUM(total_amount), 0)
-            FROM financial_receipts
-            WHERE DATE(timezone('Asia/Kolkata', CAST(created_at AS timestamptz))) = DATE(?)
-              AND receipt_type IN ('bill_payment', 'advance')
-              AND is_reversed = FALSE
-            """,
-            (target_date,)
-        )
+        fr_filter = ""
+        fr_params = [target_date]
+        if is_cashier_filter:
+            fr_filter += """ AND (LOWER(fr.created_by) = LOWER(?) 
+                                 OR EXISTS (SELECT 1 FROM cashier_sessions cs WHERE cs.id = fr.cashier_session_id AND (LOWER(cs.cashier_name) = LOWER(?) OR LOWER(cs.cashier_username) = LOWER(?))))"""
+            fr_params.extend([cashier_val, cashier_val, cashier_val])
+        if is_counter_filter:
+            fr_filter += """ AND EXISTS (SELECT 1 FROM cashier_sessions cs WHERE cs.id = fr.cashier_session_id AND LOWER(cs.counter_name) = LOWER(?))"""
+            fr_params.append(counter_val)
+
+        ip_filter = ""
+        ip_params = [target_date]
+        if is_cashier_filter:
+            ip_filter += """ AND EXISTS (SELECT 1 FROM invoices inv WHERE inv.id = ip.invoice_id AND LOWER(inv.created_by) = LOWER(?))"""
+            ip_params.append(cashier_val)
+
+        # Receipts today: incoming bill_payment and advance receipts ONLY (from financial_receipts + invoice_payments)
+        receipts_sql = f"""
+            SELECT COALESCE(SUM(amount), 0)
+            FROM (
+                SELECT fr.total_amount as amount
+                FROM financial_receipts fr
+                WHERE DATE(timezone('Asia/Kolkata', CAST(fr.created_at AS timestamptz))) = DATE(?)
+                  AND fr.receipt_type IN ('bill_payment', 'advance')
+                  AND fr.is_reversed = FALSE
+                  {fr_filter}
+                UNION ALL
+                SELECT ip.amount
+                FROM invoice_payments ip
+                WHERE DATE(timezone('Asia/Kolkata', CAST(ip.created_at AS timestamptz))) = DATE(?)
+                  AND (ip.canonical_receipt_id IS NULL OR NOT EXISTS (SELECT 1 FROM financial_receipts fr2 WHERE fr2.id = ip.canonical_receipt_id))
+                  {ip_filter}
+            ) r_all
+        """
+        cursor.execute(receipts_sql, tuple(fr_params + ip_params))
         receipts_today = to_decimal(cursor.fetchone()[0])
 
         # Refunds today: paid refund vouchers
-        cursor.execute(
-            """
-            SELECT COALESCE(SUM(total_amount), 0)
-            FROM financial_receipts
-            WHERE DATE(timezone('Asia/Kolkata', CAST(created_at AS timestamptz))) = DATE(?)
-              AND receipt_type = 'refund_voucher'
-              AND is_reversed = FALSE
-            """,
-            (target_date,)
-        )
+        refunds_sql = f"""
+            SELECT COALESCE(SUM(fr.total_amount), 0)
+            FROM financial_receipts fr
+            WHERE DATE(timezone('Asia/Kolkata', CAST(fr.created_at AS timestamptz))) = DATE(?)
+              AND fr.receipt_type = 'refund_voucher'
+              AND fr.is_reversed = FALSE
+              {fr_filter}
+        """
+        cursor.execute(refunds_sql, tuple(fr_params))
         refunds_today = to_decimal(cursor.fetchone()[0])
 
         # Outstanding patient dues across all dates
@@ -1612,12 +1902,210 @@ def get_billing_overview_stats(db: Session, target_date: str = None, cashier: st
 
         return {
             "target_date": target_date,
+            "cashier": cashier_val or "All cashiers",
+            "counter": counter_val or "All counters",
             "net_billed": float(net_billed),
             "receipts_today": float(receipts_today),
             "refunds_today": float(refunds_today),
             "net_collections": float(quantize_dec(receipts_today - refunds_today)),
             "outstanding_dues": float(dues_total),
         }
+
+
+def get_billing_overview_details(db: Session, metric: str, target_date: str = None):
+    """
+    Returns detailed records for Billing Overview summary card pop-ups.
+    Metrics supported: net_billed, receipts_today, refunds_today, outstanding_dues.
+    """
+    if not target_date:
+        target_date = current_ist_datetime().strftime("%Y-%m-%d")
+
+    with legacy_sql.get_connection(db) as conn:
+        cursor = conn.cursor()
+
+        if metric == "net_billed":
+            cursor.execute(
+                """
+                SELECT i.id, i.invoice_no, i.patient_id,
+                       TRIM(p.name || ' ' || COALESCE(p.last_name, '')) as patient_name,
+                       COALESCE(i.module, 'OP') as module,
+                       i.total_amount, i.paid_amount, i.due_amount,
+                       i.payment_status, i.created_at
+                FROM invoices i
+                LEFT JOIN patients p ON p.patient_id = i.patient_id
+                WHERE DATE(timezone('Asia/Kolkata', CAST(i.created_at AS timestamptz))) = DATE(?)
+                ORDER BY i.created_at DESC
+                """,
+                (target_date,)
+            )
+            rows = [dict(r) for r in cursor.fetchall()]
+            total_amt = sum(float(r["total_amount"] or 0) for r in rows)
+            return {
+                "metric": "net_billed",
+                "title": "Net Billed Today Details",
+                "date": target_date,
+                "count": len(rows),
+                "total_amount": float(total_amt),
+                "records": [{
+                    "id": r["id"],
+                    "reference_no": r["invoice_no"],
+                    "patient_id": r["patient_id"],
+                    "patient_name": r["patient_name"] or r["patient_id"] or "-",
+                    "module": r["module"],
+                    "total_amount": float(r["total_amount"] or 0),
+                    "paid_amount": float(r["paid_amount"] or 0),
+                    "due_amount": float(r["due_amount"] or 0),
+                    "status": r["payment_status"] or "billed",
+                    "time": datetime.fromisoformat(str(r["created_at"]).replace("Z", "")).strftime("%I:%M %p") if r["created_at"] else "-",
+                    "created_at": str(r["created_at"])[:19] if r["created_at"] else "-",
+                } for r in rows],
+            }
+
+        elif metric == "receipts_today":
+            cursor.execute(
+                """
+                SELECT r_all.id, r_all.receipt_no, r_all.patient_id, r_all.patient_name,
+                       r_all.receipt_type, r_all.payment_mode, r_all.amount, r_all.cashier,
+                       r_all.created_at, r_all.notes
+                FROM (
+                    SELECT fr.id, fr.receipt_no, fr.patient_id,
+                           TRIM(p.name || ' ' || COALESCE(p.last_name, '')) as patient_name,
+                           fr.receipt_type,
+                           COALESCE(rpl.payment_mode, 'Cash') as payment_mode,
+                           fr.total_amount as amount,
+                           COALESCE(fr.created_by, 'Main Cashier') as cashier,
+                           fr.created_at, fr.notes
+                    FROM financial_receipts fr
+                    LEFT JOIN patients p ON p.patient_id = fr.patient_id
+                    LEFT JOIN receipt_payment_lines rpl ON rpl.receipt_id = fr.id
+                    WHERE DATE(timezone('Asia/Kolkata', CAST(fr.created_at AS timestamptz))) = DATE(?)
+                      AND fr.receipt_type IN ('bill_payment', 'advance')
+                      AND fr.is_reversed = FALSE
+                    UNION ALL
+                    SELECT ip.id,
+                           COALESCE(ip.receipt_no, 'RCP-' || ip.id) as receipt_no,
+                           inv.patient_id,
+                           TRIM(p2.name || ' ' || COALESCE(p2.last_name, '')) as patient_name,
+                           'bill_payment' as receipt_type,
+                           COALESCE(ip.payment_mode, 'cash') as payment_mode,
+                           ip.amount,
+                           'Main Cashier' as cashier,
+                           ip.created_at,
+                           'Settlement for ' || inv.invoice_no as notes
+                    FROM invoice_payments ip
+                    JOIN invoices inv ON inv.id = ip.invoice_id
+                    LEFT JOIN patients p2 ON p2.patient_id = inv.patient_id
+                    WHERE DATE(timezone('Asia/Kolkata', CAST(ip.created_at AS timestamptz))) = DATE(?)
+                      AND (ip.canonical_receipt_id IS NULL OR NOT EXISTS (SELECT 1 FROM financial_receipts fr2 WHERE fr2.id = ip.canonical_receipt_id))
+                ) r_all
+                ORDER BY r_all.created_at DESC
+                """,
+                (target_date, target_date)
+            )
+            rows = [dict(r) for r in cursor.fetchall()]
+            total_amt = sum(float(r["amount"] or 0) for r in rows)
+            return {
+                "metric": "receipts_today",
+                "title": "Receipts & Collections Today Details",
+                "date": target_date,
+                "count": len(rows),
+                "total_amount": float(total_amt),
+                "records": [{
+                    "id": r["id"],
+                    "reference_no": r["receipt_no"],
+                    "patient_id": r["patient_id"],
+                    "patient_name": r["patient_name"] or r["patient_id"] or "-",
+                    "type": r["receipt_type"],
+                    "mode": (r["payment_mode"] or "Cash").upper(),
+                    "amount": float(r["amount"] or 0),
+                    "cashier": r["cashier"],
+                    "notes": r["notes"] or "-",
+                    "time": datetime.fromisoformat(str(r["created_at"]).replace("Z", "")).strftime("%I:%M %p") if r["created_at"] else "-",
+                    "created_at": str(r["created_at"])[:19] if r["created_at"] else "-",
+                } for r in rows],
+            }
+
+        elif metric == "refunds_today":
+            cursor.execute(
+                """
+                SELECT fr.id, fr.receipt_no, fr.patient_id,
+                       TRIM(p.name || ' ' || COALESCE(p.last_name, '')) as patient_name,
+                       fr.receipt_type,
+                       COALESCE(rpl.payment_mode, 'Cash') as payment_mode,
+                       fr.total_amount as amount,
+                       COALESCE(fr.created_by, 'Main Cashier') as cashier,
+                       fr.created_at, fr.notes
+                FROM financial_receipts fr
+                LEFT JOIN patients p ON p.patient_id = fr.patient_id
+                LEFT JOIN receipt_payment_lines rpl ON rpl.receipt_id = fr.id
+                WHERE DATE(timezone('Asia/Kolkata', CAST(fr.created_at AS timestamptz))) = DATE(?)
+                  AND fr.receipt_type = 'refund_voucher'
+                  AND fr.is_reversed = FALSE
+                ORDER BY fr.created_at DESC
+                """,
+                (target_date,)
+            )
+            rows = [dict(r) for r in cursor.fetchall()]
+            total_amt = sum(float(r["amount"] or 0) for r in rows)
+            return {
+                "metric": "refunds_today",
+                "title": "Refunds Disbursed Today Details",
+                "date": target_date,
+                "count": len(rows),
+                "total_amount": float(total_amt),
+                "records": [{
+                    "id": r["id"],
+                    "reference_no": r["receipt_no"],
+                    "patient_id": r["patient_id"],
+                    "patient_name": r["patient_name"] or r["patient_id"] or "-",
+                    "type": "Refund",
+                    "mode": (r["payment_mode"] or "Cash").upper(),
+                    "amount": float(r["amount"] or 0),
+                    "cashier": r["cashier"],
+                    "notes": r["notes"] or "Deposit/advance refund",
+                    "time": datetime.fromisoformat(str(r["created_at"]).replace("Z", "")).strftime("%I:%M %p") if r["created_at"] else "-",
+                    "created_at": str(r["created_at"])[:19] if r["created_at"] else "-",
+                } for r in rows],
+            }
+
+        elif metric == "outstanding_dues":
+            cursor.execute(
+                """
+                SELECT i.id, i.invoice_no, i.patient_id,
+                       TRIM(p.name || ' ' || COALESCE(p.last_name, '')) as patient_name,
+                       COALESCE(i.module, 'OP') as module,
+                       i.total_amount, i.paid_amount, i.due_amount,
+                       i.payment_status, i.created_at
+                FROM invoices i
+                LEFT JOIN patients p ON p.patient_id = i.patient_id
+                WHERE i.due_amount > 0
+                ORDER BY i.due_amount DESC
+                """
+            )
+            rows = [dict(r) for r in cursor.fetchall()]
+            total_dues = sum(float(r["due_amount"] or 0) for r in rows)
+            return {
+                "metric": "outstanding_dues",
+                "title": "Outstanding Patient Dues Details",
+                "date": "All Dates",
+                "count": len(rows),
+                "total_amount": float(total_dues),
+                "records": [{
+                    "id": r["id"],
+                    "reference_no": r["invoice_no"],
+                    "patient_id": r["patient_id"],
+                    "patient_name": r["patient_name"] or r["patient_id"] or "-",
+                    "module": r["module"],
+                    "total_amount": float(r["total_amount"] or 0),
+                    "paid_amount": float(r["paid_amount"] or 0),
+                    "due_amount": float(r["due_amount"] or 0),
+                    "status": r["payment_status"] or "due",
+                    "time": datetime.fromisoformat(str(r["created_at"]).replace("Z", "")).strftime("%I:%M %p") if r["created_at"] else "-",
+                    "created_at": str(r["created_at"])[:10] if r["created_at"] else "-",
+                } for r in rows],
+            }
+
+        raise ValueError(f"Unknown metric: {metric}")
 
 
 def get_billing_worklist(db: Session, tab: str = "pending_payments", department: str = None, visit_type: str = None, q: str = None):
@@ -1853,12 +2341,39 @@ def get_reports_day_close_data(db: Session, target_date: str = None, cashier: st
     if not target_date:
         target_date = current_ist_datetime().strftime("%Y-%m-%d")
 
+    is_cashier_filter = bool(cashier and cashier.strip().lower() not in ("all", "all cashiers", ""))
+    cashier_val = cashier.strip() if is_cashier_filter else None
+
+    is_counter_filter = bool(counter and counter.strip().lower() not in ("all", "all counters", ""))
+    counter_val = counter.strip() if is_counter_filter else None
+
     with legacy_sql.get_connection(db) as conn:
         cursor = conn.cursor()
 
-        # Collections by payment method (Receipts, Refunds, Net)
-        cursor.execute(
-            """
+        # Build dynamic cashier / counter clauses for financial_receipts
+        fr_filter = ""
+        fr_params = [target_date]
+        if is_cashier_filter:
+            fr_filter += """ AND (LOWER(fr.created_by) = LOWER(?) 
+                                 OR EXISTS (SELECT 1 FROM cashier_sessions cs WHERE cs.id = fr.cashier_session_id AND (LOWER(cs.cashier_name) = LOWER(?) OR LOWER(cs.cashier_username) = LOWER(?))))"""
+            fr_params.extend([cashier_val, cashier_val, cashier_val])
+        if is_counter_filter:
+            fr_filter += """ AND EXISTS (SELECT 1 FROM cashier_sessions cs WHERE cs.id = fr.cashier_session_id AND LOWER(cs.counter_name) = LOWER(?))"""
+            fr_params.append(counter_val)
+
+        # Build dynamic cashier / counter clauses for invoice_payments
+        ip_filter = ""
+        ip_params = [target_date]
+        if is_cashier_filter:
+            ip_filter += """ AND (LOWER(i.created_by) = LOWER(?) 
+                                 OR EXISTS (SELECT 1 FROM cashier_sessions cs WHERE cs.id = ip.canonical_allocation_id AND (LOWER(cs.cashier_name) = LOWER(?) OR LOWER(cs.cashier_username) = LOWER(?))))"""
+            ip_params.extend([cashier_val, cashier_val, cashier_val])
+        if is_counter_filter:
+            ip_filter += """ AND EXISTS (SELECT 1 FROM cashier_sessions cs WHERE cs.id = ip.canonical_allocation_id AND LOWER(cs.counter_name) = LOWER(?))"""
+            ip_params.append(counter_val)
+
+        # Collections by payment method (Receipts, Refunds, Net) from financial_receipts
+        sql_fr = f"""
             SELECT rpl.payment_mode, 
                    COALESCE(SUM(CASE WHEN fr.receipt_type IN ('bill_payment', 'advance') THEN rpl.amount ELSE 0 END), 0) as receipts,
                    COALESCE(SUM(CASE WHEN fr.receipt_type = 'refund_voucher' THEN rpl.amount ELSE 0 END), 0) as refunds
@@ -1866,10 +2381,10 @@ def get_reports_day_close_data(db: Session, target_date: str = None, cashier: st
             JOIN financial_receipts fr ON fr.id = rpl.receipt_id
             WHERE DATE(timezone('Asia/Kolkata', CAST(fr.created_at AS timestamptz))) = DATE(?)
               AND fr.is_reversed = FALSE
+              {fr_filter}
             GROUP BY rpl.payment_mode
-            """,
-            (target_date,)
-        )
+        """
+        cursor.execute(sql_fr, tuple(fr_params))
         mode_rows = cursor.fetchall()
         modes_map = {
             "cash": {"receipts": D_ZERO, "refunds": D_ZERO},
@@ -1884,26 +2399,16 @@ def get_reports_day_close_data(db: Session, target_date: str = None, cashier: st
             modes_map[key]["receipts"] += to_decimal(r[1])
             modes_map[key]["refunds"] += to_decimal(r[2])
 
-        # Lab & Diagnostic collections don't flow through financial_receipts
-        # at all -- diag invoices are paid via the older, separate
-        # record_invoice_payment()/invoice_payments path, so without this
-        # they were invisible to Day Close even though real cash/UPI/card
-        # was collected for them. canonical_receipt_id IS NULL excludes the
-        # compatibility rows billing-v2 (advances/discharge) already writes
-        # into invoice_payments for its OWN receipts, which are already
-        # counted above via financial_receipts -- without that filter this
-        # would double-count those.
-        cursor.execute(
-            """
-            SELECT ip.payment_mode, ip.amount
+        # Invoice payments (OP, Pharmacy, Lab, Radiology, etc. unlinked to financial_receipts)
+        sql_ip = f"""
+            SELECT ip.payment_mode, ip.amount, i.module
             FROM invoice_payments ip
             JOIN invoices i ON i.id = ip.invoice_id
-            WHERE i.module IN ('LAB', 'RADIOLOGY', 'DIAGNOSTICS')
-              AND ip.canonical_receipt_id IS NULL
+            WHERE (ip.canonical_receipt_id IS NULL OR NOT EXISTS (SELECT 1 FROM financial_receipts fr2 WHERE fr2.id = ip.canonical_receipt_id AND fr2.is_reversed = FALSE))
               AND DATE(timezone('Asia/Kolkata', CAST(ip.created_at AS timestamptz))) = DATE(?)
-            """,
-            (target_date,)
-        )
+              {ip_filter}
+        """
+        cursor.execute(sql_ip, tuple(ip_params))
         lab_diag_receipts = D_ZERO
         lab_diag_refunds = D_ZERO
         for r in cursor.fetchall():
@@ -1914,10 +2419,15 @@ def get_reports_day_close_data(db: Session, target_date: str = None, cashier: st
             amt = to_decimal(r[1])
             if amt >= D_ZERO:
                 modes_map[key]["receipts"] += amt
-                lab_diag_receipts += amt
             else:
                 modes_map[key]["refunds"] += -amt
-                lab_diag_refunds += -amt
+
+            mod = str(r[2] or "").upper()
+            if mod in ('LAB', 'RADIOLOGY', 'DIAGNOSTICS'):
+                if amt >= D_ZERO:
+                    lab_diag_receipts += amt
+                else:
+                    lab_diag_refunds += -amt
 
         tot_receipts = sum(v["receipts"] for v in modes_map.values())
         tot_refunds = sum(v["refunds"] for v in modes_map.values())
@@ -1944,37 +2454,81 @@ def get_reports_day_close_data(db: Session, target_date: str = None, cashier: st
                 "net": float(quantize_dec(modes_map["card"]["receipts"] - modes_map["card"]["refunds"]))
             },
         ]
+        if modes_map.get("other", {}).get("receipts", D_ZERO) > D_ZERO or modes_map.get("other", {}).get("refunds", D_ZERO) > D_ZERO:
+            collections_breakdown.append({
+                "method": "Other",
+                "receipts": float(modes_map["other"]["receipts"]),
+                "refunds": float(modes_map["other"]["refunds"]),
+                "net": float(quantize_dec(modes_map["other"]["receipts"] - modes_map["other"]["refunds"]))
+            })
 
-        # Receipt Register
-        cursor.execute(
-            """
-            SELECT fr.id, fr.receipt_no, fr.created_at, fr.total_amount, rpl.payment_mode
-            FROM financial_receipts fr
-            LEFT JOIN receipt_payment_lines rpl ON rpl.receipt_id = fr.id
-            WHERE DATE(timezone('Asia/Kolkata', CAST(fr.created_at AS timestamptz))) = DATE(?)
-            ORDER BY fr.created_at DESC LIMIT 30
-            """,
-            (target_date,)
-        )
+        # Combined Receipt Register (financial_receipts + invoice_payments)
+        rr_sql = f"""
+            SELECT * FROM (
+                SELECT 
+                    fr.id as id,
+                    fr.receipt_no as receipt_no,
+                    fr.created_at as created_at,
+                    fr.total_amount as amount,
+                    COALESCE(rpl.payment_mode, 'Cash') as payment_mode
+                FROM financial_receipts fr
+                LEFT JOIN receipt_payment_lines rpl ON rpl.receipt_id = fr.id
+                WHERE DATE(timezone('Asia/Kolkata', CAST(fr.created_at AS timestamptz))) = DATE(?)
+                  AND fr.is_reversed = FALSE
+                  {fr_filter}
+                UNION ALL
+                SELECT
+                    ip.id as id,
+                    COALESCE(ip.receipt_no, i.invoice_no, 'RCP-' || CAST(ip.id AS TEXT)) as receipt_no,
+                    ip.created_at as created_at,
+                    ip.amount as amount,
+                    COALESCE(ip.payment_mode, 'Cash') as payment_mode
+                FROM invoice_payments ip
+                JOIN invoices i ON i.id = ip.invoice_id
+                WHERE (ip.canonical_receipt_id IS NULL OR NOT EXISTS (SELECT 1 FROM financial_receipts fr2 WHERE fr2.id = ip.canonical_receipt_id AND fr2.is_reversed = FALSE))
+                  AND DATE(timezone('Asia/Kolkata', CAST(ip.created_at AS timestamptz))) = DATE(?)
+                  {ip_filter}
+            ) all_receipts
+            ORDER BY created_at DESC LIMIT 50
+        """
+        cursor.execute(rr_sql, tuple(fr_params + ip_params))
         receipt_register = []
         for r in cursor.fetchall():
             time_str = datetime.fromisoformat(str(r["created_at"]).replace("Z", "")).strftime("%I:%M %p") if r["created_at"] else "-"
             receipt_register.append({
+                "id": r["id"],
                 "receipt_no": r["receipt_no"],
                 "time": time_str,
                 "payment_mode": (r["payment_mode"] or "Cash").upper(),
-                "amount": float(to_decimal(r["total_amount"])),
+                "amount": float(to_decimal(r["amount"])),
             })
 
-        # Latest cashier session
-        cursor.execute("SELECT * FROM cashier_sessions ORDER BY opened_at DESC LIMIT 1")
+        # Latest cashier session matching filters
+        session_query = "SELECT * FROM cashier_sessions WHERE 1=1"
+        session_params = []
+        if is_cashier_filter:
+            session_query += " AND (LOWER(cashier_name) = LOWER(?) OR LOWER(cashier_username) = LOWER(?))"
+            session_params.extend([cashier_val, cashier_val])
+        if is_counter_filter:
+            session_query += " AND LOWER(counter_name) = LOWER(?)"
+            session_params.append(counter_val)
+        session_query += " ORDER BY opened_at DESC LIMIT 1"
+        cursor.execute(session_query, tuple(session_params))
         latest_session = cursor.fetchone()
+
+        # If not found for specific cashier/counter, fallback to most recent session
+        if not latest_session:
+            cursor.execute("SELECT * FROM cashier_sessions ORDER BY opened_at DESC LIMIT 1")
+            latest_session = cursor.fetchone()
+
         session_data = None
         if latest_session:
             session_data = get_cashier_session_summary(db, latest_session["id"])
 
         return {
             "target_date": target_date,
+            "cashier": cashier_val or "All cashiers",
+            "counter": counter_val or "All counters",
             "kpis": {
                 "receipts": float(tot_receipts),
                 "refunds": float(tot_refunds),
@@ -2018,18 +2572,37 @@ def get_monthly_summary(db: Session, period_month: str = None):
         cursor.execute(
             """
             SELECT
-                DATE(timezone('Asia/Kolkata', CAST(fr.created_at AS timestamptz))) AS day,
-                COALESCE(SUM(CASE WHEN fr.receipt_type IN ('bill_payment','advance') THEN fr.total_amount ELSE 0 END), 0) AS receipts,
-                COALESCE(SUM(CASE WHEN fr.receipt_type = 'refund_voucher' THEN fr.total_amount ELSE 0 END), 0) AS refunds,
-                COUNT(fr.id) AS transactions
-            FROM financial_receipts fr
-            WHERE fr.is_reversed = FALSE
-              AND DATE(timezone('Asia/Kolkata', CAST(fr.created_at AS timestamptz))) >= DATE(?)
-              AND DATE(timezone('Asia/Kolkata', CAST(fr.created_at AS timestamptz))) <= DATE(?)
-            GROUP BY 1
-            ORDER BY 1 ASC
+                day,
+                COALESCE(SUM(receipts), 0) AS receipts,
+                COALESCE(SUM(refunds), 0) AS refunds,
+                COALESCE(SUM(transactions), 0) AS transactions
+            FROM (
+                SELECT
+                    DATE(timezone('Asia/Kolkata', CAST(fr.created_at AS timestamptz))) AS day,
+                    COALESCE(SUM(CASE WHEN fr.receipt_type IN ('bill_payment','advance') THEN fr.total_amount ELSE 0 END), 0) AS receipts,
+                    COALESCE(SUM(CASE WHEN fr.receipt_type = 'refund_voucher' THEN fr.total_amount ELSE 0 END), 0) AS refunds,
+                    COUNT(fr.id) AS transactions
+                FROM financial_receipts fr
+                WHERE fr.is_reversed = FALSE
+                  AND DATE(timezone('Asia/Kolkata', CAST(fr.created_at AS timestamptz))) >= DATE(?)
+                  AND DATE(timezone('Asia/Kolkata', CAST(fr.created_at AS timestamptz))) <= DATE(?)
+                GROUP BY 1
+                UNION ALL
+                SELECT
+                    DATE(timezone('Asia/Kolkata', CAST(ip.created_at AS timestamptz))) AS day,
+                    COALESCE(SUM(CASE WHEN ip.amount >= 0 THEN ip.amount ELSE 0 END), 0) AS receipts,
+                    COALESCE(SUM(CASE WHEN ip.amount < 0 THEN -ip.amount ELSE 0 END), 0) AS refunds,
+                    COUNT(ip.id) AS transactions
+                FROM invoice_payments ip
+                WHERE (ip.canonical_receipt_id IS NULL OR NOT EXISTS (SELECT 1 FROM financial_receipts fr2 WHERE fr2.id = ip.canonical_receipt_id AND fr2.is_reversed = FALSE))
+                  AND DATE(timezone('Asia/Kolkata', CAST(ip.created_at AS timestamptz))) >= DATE(?)
+                  AND DATE(timezone('Asia/Kolkata', CAST(ip.created_at AS timestamptz))) <= DATE(?)
+                GROUP BY 1
+            ) all_daily
+            GROUP BY day
+            ORDER BY day ASC
             """,
-            (str(month_start), str(month_end))
+            (str(month_start), str(month_end), str(month_start), str(month_end))
         )
         rows = cursor.fetchall()
 
@@ -2092,15 +2665,18 @@ def get_department_report(db: Session, target_date: str = None, end_date: str = 
             """
             SELECT
                 COALESCE(i.module, 'OP') AS department,
-                COALESCE(SUM(ria.allocated_amount), 0) AS collected,
                 COUNT(DISTINCT i.id) AS invoice_count,
-                COALESCE(SUM(i.due_amount), 0) AS outstanding
+                COALESCE(SUM(i.due_amount), 0) AS outstanding,
+                COALESCE(SUM(
+                    COALESCE(
+                        (SELECT SUM(ip.amount) FROM invoice_payments ip 
+                         WHERE ip.invoice_id = i.id 
+                           AND DATE(timezone('Asia/Kolkata', CAST(ip.created_at AS timestamptz))) >= DATE(?)
+                           AND DATE(timezone('Asia/Kolkata', CAST(ip.created_at AS timestamptz))) <= DATE(?)),
+                        i.paid_amount
+                    )
+                ), 0) AS collected
             FROM invoices i
-            LEFT JOIN receipt_invoice_allocations ria ON ria.invoice_id = i.id
-            LEFT JOIN financial_receipts fr ON fr.id = ria.receipt_id
-              AND fr.is_reversed = FALSE
-              AND DATE(timezone('Asia/Kolkata', CAST(fr.created_at AS timestamptz))) >= DATE(?)
-              AND DATE(timezone('Asia/Kolkata', CAST(fr.created_at AS timestamptz))) <= DATE(?)
             WHERE DATE(timezone('Asia/Kolkata', CAST(i.created_at AS timestamptz))) >= DATE(?)
               AND DATE(timezone('Asia/Kolkata', CAST(i.created_at AS timestamptz))) <= DATE(?)
             GROUP BY 1
@@ -2114,14 +2690,14 @@ def get_department_report(db: Session, target_date: str = None, end_date: str = 
         total_collected = D_ZERO
         total_outstanding = D_ZERO
         for r in rows:
-            col = to_decimal(r[1])
-            out = to_decimal(r[3])
+            col = to_decimal(r[3])
+            out = to_decimal(r[2])
             total_collected += col
             total_outstanding += out
             departments.append({
                 "department": str(r[0]),
                 "collected": float(col),
-                "invoice_count": int(r[2]),
+                "invoice_count": int(r[1]),
                 "outstanding": float(out),
             })
 
@@ -2161,9 +2737,44 @@ def get_day_close_history(db: Session, limit: int = 30):
             handover = to_decimal(s.get("cash_handover"))
             movements = to_decimal(s.get("cash_movements"))
             payouts = to_decimal(s.get("cash_doctor_payouts"))
+
+            if s.get("status") == "open":
+                try:
+                    c_params = [s["id"]]
+                    ip_cash_filter = ""
+                    ip_cash_params = []
+                    cashier_u = s.get("cashier_username")
+                    if cashier_u and cashier_u.lower() not in ("all", ""):
+                        ip_cash_filter = "AND LOWER(inv.created_by) = LOWER(?)"
+                        ip_cash_params.append(cashier_u)
+                    dyn_sql = f"""
+                        SELECT COALESCE(SUM(amount), 0) FROM (
+                            SELECT rpl.amount
+                            FROM receipt_payment_lines rpl
+                            JOIN financial_receipts fr ON fr.id = rpl.receipt_id
+                            WHERE fr.cashier_session_id = ?
+                              AND fr.is_reversed = FALSE
+                              AND LOWER(rpl.payment_mode) LIKE '%cash%'
+                            UNION ALL
+                            SELECT ip.amount
+                            FROM invoice_payments ip
+                            JOIN invoices inv ON inv.id = ip.invoice_id
+                            WHERE (ip.canonical_receipt_id IS NULL OR NOT EXISTS (SELECT 1 FROM financial_receipts fr2 WHERE fr2.id = ip.canonical_receipt_id AND fr2.is_reversed = FALSE))
+                              AND LOWER(ip.payment_mode) LIKE '%cash%'
+                              AND ip.created_at >= ?
+                              {ip_cash_filter}
+                        ) t
+                    """
+                    cursor.execute(dyn_sql, tuple(c_params + [s["opened_at"]] + ip_cash_params))
+                    dyn_cash = to_decimal(cursor.fetchone()[0])
+                    if dyn_cash > received:
+                        received = dyn_cash
+                except Exception:
+                    pass
+
             expected = quantize_dec(opening + received - refunded - handover + movements - payouts)
-            counted = to_decimal(s.get("counted_cash"))
-            variance = to_decimal(s.get("variance")) if s.get("variance") is not None else (quantize_dec(counted - expected) if s.get("status") == "closed" else None)
+            counted = to_decimal(s.get("counted_cash")) if s.get("counted_cash") is not None else None
+            variance = to_decimal(s.get("variance")) if s.get("variance") is not None else (quantize_dec(counted - expected) if counted is not None else None)
 
             result.append({
                 "id": s["id"],
@@ -2180,7 +2791,7 @@ def get_day_close_history(db: Session, limit: int = 30):
                 "cash_movements": float(movements),
                 "cash_doctor_payouts": float(payouts),
                 "expected_cash": float(expected),
-                "counted_cash": float(counted) if s.get("counted_cash") is not None else None,
+                "counted_cash": float(counted) if counted is not None else None,
                 "variance": float(variance) if variance is not None else None,
                 "notes": s.get("notes") or s.get("close_notes") or "",
             })

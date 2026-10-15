@@ -5,6 +5,7 @@ import type { Notice } from "../../types";
 import { Button, Modal } from "../../components/ui";
 import { printViaIframe } from "../../lib/printViaIframe";
 import { buildPrintDocumentHtml } from "../../lib/printTemplates";
+import { useDropdownOptions } from "../../lib/dropdownService";
 import "./billingTheme.css";
 
 type Props = {
@@ -25,67 +26,69 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // Centralized Dropdown Options
+  const { options: departmentOptions } = useDropdownOptions("departments", [
+    { value: "General Medicine", label: "General Medicine" },
+    { value: "Orthopaedics", label: "Orthopaedics" },
+    { value: "Cardiology", label: "Cardiology" },
+    { value: "Paediatrics", label: "Paediatrics" },
+  ]);
+  const { options: paymentModeOptions } = useDropdownOptions("payment_modes", [
+    { value: "Bank transfer", label: "Bank Transfer (NEFT/RTGS)" },
+    { value: "Cheque", label: "Cheque" },
+    { value: "Cash", label: "Cash" },
+    { value: "UPI", label: "UPI / QR Code" },
+  ]);
+
   const [summary, setSummary] = useState({
-    fees_earned: 25000,
-    adjustments: -1000,
-    paid: 10000,
-    payable: 14000,
+    fees_earned: 0,
+    adjustments: 0,
+    paid: 0,
+    payable: 0,
   });
 
-  const [statements, setStatements] = useState<any[]>([
-    {
-      id: 1,
-      statement_no: "ST-0093",
-      doctor_name: "Dr. S. Rao",
-      department: "General Medicine",
-      fees_earned: 15000,
-      adjustments: -500,
-      paid_amount: 5000,
-      remaining_payable: 9500,
-      status: "Ready for review",
-      period_month: "September 2026",
-    },
-    {
-      id: 2,
-      statement_no: "ST-0094",
-      doctor_name: "Dr. P. Reddy",
-      department: "Orthopaedics",
-      fees_earned: 10000,
-      adjustments: -500,
-      net_payable: 9500,
-      paid_amount: 5000,
-      remaining_payable: 4500,
-      status: "Approved",
-      period_month: "September 2026",
-    },
-  ]);
-
-  const [payoutHistory, setPayoutHistory] = useState<any[]>([
-    {
-      id: 1,
-      payout_no: "PAY-0037",
-      doctor_name: "Dr. P. Reddy",
-      paid_date: "15 Sep 2026",
-      payment_mode: "Bank transfer",
-      amount: 5000,
-    },
-    {
-      id: 2,
-      payout_no: "PAY-0036",
-      doctor_name: "Dr. S. Rao",
-      paid_date: "15 Sep 2026",
-      payment_mode: "Bank transfer",
-      amount: 5000,
-    },
-  ]);
+  const [statements, setStatements] = useState<any[]>([]);
+  const [payoutHistory, setPayoutHistory] = useState<any[]>([]);
 
   // Selected statement for right panel
   const [selectedStatement, setSelectedStatement] = useState<any>(null);
-  const [payoutAmount, setPayoutAmount] = useState<string>("4500");
+  const [payoutAmount, setPayoutAmount] = useState<string>("0");
   const [payoutMode, setPayoutMode] = useState<string>("Bank transfer");
   const [payoutRef, setPayoutRef] = useState<string>("");
   const [paymentDate, setPaymentDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
   const [submittingPayout, setSubmittingPayout] = useState(false);
+
+  // Summary Card Details Pop-up Modal State (Issue 3)
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [detailsMetric, setDetailsMetric] = useState<string | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsFilterQuery, setDetailsFilterQuery] = useState("");
+  const [detailsData, setDetailsData] = useState<{
+    metric: string;
+    title: string;
+    period: string;
+    count: number;
+    total_amount: number;
+    records: any[];
+  } | null>(null);
+
+  const handleOpenDetails = async (metric: string) => {
+    setDetailsMetric(metric);
+    setDetailsModalOpen(true);
+    setDetailsLoading(true);
+    setDetailsFilterQuery("");
+    try {
+      const deptParam = department && department !== "All departments" ? `&department=${encodeURIComponent(department)}` : "";
+      const qParam = searchQuery.trim() ? `&q=${encodeURIComponent(searchQuery.trim())}` : "";
+      const res = await apiFetch(`/api/billing/doctor-payouts/details?metric=${metric}&month=${periodMonth}${deptParam}${qParam}`);
+      if (res) setDetailsData(res);
+    } catch (err: any) {
+      reportError(setNotice, err);
+      setNotice({ type: "error", message: err.message || "Failed to load doctor payout details." });
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
 
   const loadDoctorStatements = async () => {
     setLoading(true);
@@ -95,23 +98,26 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
       const qParam = searchQuery.trim() ? `&q=${encodeURIComponent(searchQuery.trim())}` : "";
       const res = await apiFetch(`/api/billing/doctor-payouts/summary?month=${periodMonth}${deptParam}${qParam}`);
       if (res) {
-        if (res.summary && (res.summary.fees_earned > 0 || res.summary.payable > 0)) {
+        if (res.summary) {
           setSummary({
-            fees_earned: res.summary.fees_earned || 25000,
-            adjustments: res.summary.adjustments || -1000,
-            paid: res.summary.paid || 10000,
-            payable: res.summary.payable || 14000,
+            fees_earned: Number(res.summary.fees_earned || 0),
+            adjustments: Number(res.summary.adjustments || 0),
+            paid: Number(res.summary.paid || 0),
+            payable: Number(res.summary.payable || 0),
           });
         }
-        if (res.statements && res.statements.length > 0) {
+        if (Array.isArray(res.statements)) {
           setStatements(res.statements);
-          setSelectedStatement(res.statements[0]);
-          setPayoutAmount(String(res.statements[0].remaining_payable || 0));
-        } else {
-          // Keep Dr. P. Reddy selected as visual reference
-          setSelectedStatement(statements[1] || statements[0]);
+          if (res.statements.length > 0) {
+            const approvedOne = res.statements.find((s: any) => String(s.status).toLowerCase() === "approved") || res.statements[0];
+            setSelectedStatement(approvedOne);
+            setPayoutAmount(String(approvedOne.remaining_payable || 0));
+          } else {
+            setSelectedStatement(null);
+            setPayoutAmount("0");
+          }
         }
-        if (res.payout_history && res.payout_history.length > 0) {
+        if (Array.isArray(res.payout_history)) {
           setPayoutHistory(res.payout_history);
         }
       }
@@ -122,18 +128,6 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
       setLoading(false);
     }
   };
-
-  useEffect(() => {
-    loadDoctorStatements();
-  }, [periodMonth, department]);
-
-  useEffect(() => {
-    if (!selectedStatement && statements.length > 0) {
-      const approvedOne = statements.find((s) => s.status === "Approved") || statements[0];
-      setSelectedStatement(approvedOne);
-      setPayoutAmount(String(approvedOne.remaining_payable || 4500));
-    }
-  }, [statements]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -283,10 +277,11 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
           className="billing-filter-select"
         >
           <option value="All departments">All departments</option>
-          <option value="General Medicine">General Medicine</option>
-          <option value="Orthopaedics">Orthopaedics</option>
-          <option value="Cardiology">Cardiology</option>
-          <option value="Paediatrics">Paediatrics</option>
+          {departmentOptions.map((opt) => (
+            <option key={opt.value} value={opt.value}>
+              {opt.label}
+            </option>
+          ))}
         </select>
 
         {/* Doctor Search Box */}
@@ -317,7 +312,14 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
       {/* 4. Four KPI Summary Cards */}
       <div className="billing-kpi-grid-4">
         {/* Fees earned */}
-        <div className="billing-kpi-card">
+        <div
+          className="billing-kpi-card clickable"
+          role="button"
+          tabIndex={0}
+          onClick={() => handleOpenDetails("fees_earned")}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpenDetails("fees_earned"); } }}
+          title="Click to view doctor-wise Fees Earned records"
+        >
           <div className="billing-kpi-icon-wrap" style={{ background: "#f0fdf4", color: "#16a34a" }}>
             <span style={{ fontSize: "1.2rem", fontWeight: 700 }}>₹</span>
           </div>
@@ -328,7 +330,14 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
         </div>
 
         {/* Adjustments */}
-        <div className="billing-kpi-card">
+        <div
+          className="billing-kpi-card clickable"
+          role="button"
+          tabIndex={0}
+          onClick={() => handleOpenDetails("adjustments")}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpenDetails("adjustments"); } }}
+          title="Click to view doctor-wise Adjustments & TDS records"
+        >
           <div className="billing-kpi-icon-wrap" style={{ background: "#fff7ed", color: "#ea580c" }}>
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
               <circle cx="12" cy="12" r="10" />
@@ -344,7 +353,14 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
         </div>
 
         {/* Paid */}
-        <div className="billing-kpi-card">
+        <div
+          className="billing-kpi-card clickable"
+          role="button"
+          tabIndex={0}
+          onClick={() => handleOpenDetails("paid")}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpenDetails("paid"); } }}
+          title="Click to view doctor-wise Paid disbursements"
+        >
           <div className="billing-kpi-icon-wrap" style={{ background: "#eff6ff", color: "#2563eb" }}>
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
               <rect x="2" y="5" width="20" height="14" rx="2" />
@@ -358,7 +374,14 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
         </div>
 
         {/* Payable */}
-        <div className="billing-kpi-card">
+        <div
+          className="billing-kpi-card clickable"
+          role="button"
+          tabIndex={0}
+          onClick={() => handleOpenDetails("payable")}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpenDetails("payable"); } }}
+          title="Click to view doctor-wise Outstanding Payable balances"
+        >
           <div className="billing-kpi-icon-wrap" style={{ background: "#faf5ff", color: "#9333ea" }}>
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -506,10 +529,11 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
                     value={payoutMode}
                     onChange={(e) => setPayoutMode(e.target.value)}
                   >
-                    <option value="Bank transfer">Bank transfer</option>
-                    <option value="Cash">Cash</option>
-                    <option value="Cheque">Cheque</option>
-                    <option value="UPI">UPI</option>
+                    {paymentModeOptions.map((opt) => (
+                      <option key={opt.value} value={opt.value}>
+                        {opt.label}
+                      </option>
+                    ))}
                   </select>
                 </div>
 
@@ -614,6 +638,214 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
           </table>
         </div>
       </div>
+
+      {/* 6. Doctor Payout Details Pop-up Modal (Issue 3) */}
+      <Modal
+        open={detailsModalOpen}
+        onClose={() => setDetailsModalOpen(false)}
+        title={detailsData?.title || "Doctor Payout Details"}
+        description={`Doctor-wise breakdown for period: ${periodMonth}${department && department !== "All departments" ? ` · ${department}` : ""}`}
+        className="billing-details-modal"
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          {/* Top Meta Bar */}
+          <div className="billing-details-meta-bar">
+            <div className="billing-details-summary-stats">
+              <div className="billing-details-stat-item">
+                <span className="billing-details-stat-label">Doctors Count</span>
+                <span className="billing-details-stat-value">{detailsData?.count ?? 0}</span>
+              </div>
+              <div className="billing-details-stat-item">
+                <span className="billing-details-stat-label">
+                  {detailsMetric === "adjustments" ? "Total Deductions / TDS" : "Total Amount"}
+                </span>
+                <span
+                  className="billing-details-stat-value"
+                  style={{
+                    color:
+                      detailsMetric === "adjustments"
+                        ? "#ea580c"
+                        : detailsMetric === "payable"
+                        ? "#9333ea"
+                        : detailsMetric === "paid"
+                        ? "#2563eb"
+                        : "#16a34a",
+                  }}
+                >
+                  {detailsMetric === "adjustments" ? "-₹" : "₹"}
+                  {fmt(Math.abs(detailsData?.total_amount ?? 0))}
+                </span>
+              </div>
+            </div>
+
+            <div className="billing-details-filter-box">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#94a3b8" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Filter doctors or statements..."
+                value={detailsFilterQuery}
+                onChange={(e) => setDetailsFilterQuery(e.target.value)}
+              />
+              {detailsFilterQuery && (
+                <button
+                  type="button"
+                  style={{ border: "none", background: "transparent", cursor: "pointer", color: "#94a3b8", padding: 0 }}
+                  onClick={() => setDetailsFilterQuery("")}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Table */}
+          {detailsLoading ? (
+            <div style={{ padding: "40px", textAlign: "center", color: "#64748b" }}>
+              <div className="loading-spinner" style={{ margin: "0 auto 12px" }}></div>
+              Loading doctor payout details...
+            </div>
+          ) : !detailsData?.records || detailsData.records.length === 0 ? (
+            <div style={{ padding: "36px", textAlign: "center", color: "#94a3b8", background: "#f8fafc", borderRadius: "8px" }}>
+              No doctor payout records found for {periodMonth}.
+            </div>
+          ) : (() => {
+            const query = detailsFilterQuery.trim().toLowerCase();
+            const filtered = detailsData.records.filter((r: any) => {
+              if (!query) return true;
+              return (
+                (r.doctor_name && r.doctor_name.toLowerCase().includes(query)) ||
+                (r.department && r.department.toLowerCase().includes(query)) ||
+                (r.statement_no && r.statement_no.toLowerCase().includes(query)) ||
+                (r.mode && r.mode.toLowerCase().includes(query)) ||
+                (r.reference && r.reference.toLowerCase().includes(query)) ||
+                (r.status && r.status.toLowerCase().includes(query))
+              );
+            });
+
+            if (filtered.length === 0) {
+              return (
+                <div style={{ padding: "24px", textAlign: "center", color: "#94a3b8" }}>
+                  No matching doctors for "{detailsFilterQuery}".
+                </div>
+              );
+            }
+
+            return (
+              <div className="billing-details-table-wrap">
+                <table className="billing-details-table">
+                  <thead>
+                    <tr>
+                      <th>Doctor Name</th>
+                      <th>Department</th>
+                      <th>Statement / Ref</th>
+                      {detailsMetric === "fees_earned" && <th style={{ textAlign: "center" }}>Consultations</th>}
+                      {detailsMetric === "adjustments" && <th>Adjustment Reason / TDS</th>}
+                      {detailsMetric === "paid" && <th>Payment Mode</th>}
+                      {detailsMetric === "paid" && <th>Disbursed Date</th>}
+                      <th style={{ textAlign: "right" }}>
+                        {detailsMetric === "fees_earned"
+                          ? "Fees Earned (₹)"
+                          : detailsMetric === "adjustments"
+                          ? "Adjustment (₹)"
+                          : detailsMetric === "paid"
+                          ? "Disbursed Amount (₹)"
+                          : "Outstanding Payable (₹)"}
+                      </th>
+                      {detailsMetric === "payable" && <th style={{ textAlign: "right" }}>Earned / Paid</th>}
+                      <th>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((r: any, idx: number) => (
+                      <tr key={r.id || idx}>
+                        <td style={{ fontWeight: 600, color: "#0f172a" }}>
+                          {r.doctor_name}
+                        </td>
+                        <td style={{ color: "#475569" }}>
+                          {r.department || "-"}
+                        </td>
+                        <td style={{ fontSize: "0.75rem", fontWeight: 500, color: "#64748b" }}>
+                          {r.statement_no || r.reference || "-"}
+                        </td>
+                        {detailsMetric === "fees_earned" && (
+                          <td style={{ textAlign: "center" }}>
+                            <span className="billing-table-badge badge-blue">
+                              {r.consultations_count ?? 0} OP visits
+                            </span>
+                          </td>
+                        )}
+                        {detailsMetric === "adjustments" && (
+                          <td style={{ fontSize: "0.8125rem", color: "#64748b" }}>
+                            {r.notes || "Contractual adjustment / TDS"}
+                          </td>
+                        )}
+                        {detailsMetric === "paid" && (
+                          <td>
+                            <span className="billing-table-badge badge-gray">{r.mode}</span>
+                          </td>
+                        )}
+                        {detailsMetric === "paid" && (
+                          <td style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                            {r.paid_date || "-"}
+                          </td>
+                        )}
+                        <td
+                          style={{
+                            textAlign: "right",
+                            fontWeight: 700,
+                            color:
+                              detailsMetric === "adjustments"
+                                ? "#ea580c"
+                                : detailsMetric === "payable"
+                                ? "#9333ea"
+                                : detailsMetric === "paid"
+                                ? "#2563eb"
+                                : "#16a34a",
+                          }}
+                        >
+                          {detailsMetric === "adjustments" ? "-₹" : "₹"}
+                          {fmt(Math.abs(r.amount))}
+                        </td>
+                        {detailsMetric === "payable" && (
+                          <td style={{ textAlign: "right", fontSize: "0.75rem", color: "#64748b" }}>
+                            ₹{fmt(r.fees_earned)} earned / ₹{fmt(r.paid_amount)} paid
+                          </td>
+                        )}
+                        <td>
+                          <span
+                            className={`billing-table-badge ${
+                              String(r.status).toLowerCase() === "approved"
+                                ? "badge-green"
+                                : String(r.status).toLowerCase() === "disbursed"
+                                ? "badge-blue"
+                                : "badge-orange"
+                            }`}
+                          >
+                            {r.status || "Ready for review"}
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+
+          {/* Modal Footer */}
+          <div className="billing-details-footer">
+            <span style={{ fontSize: "0.8125rem", color: "#64748b" }}>
+              Professional fees calculated based on hospital contractual terms and appointment attendance.
+            </span>
+            <Button variant="primary" onClick={() => setDetailsModalOpen(false)}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

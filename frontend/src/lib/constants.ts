@@ -60,7 +60,6 @@ export const NAV_ITEMS: NavItem[] = [
   // 7. Billing & Accounts Department (Just below Lab & Diagnostics)
   { id: "billing-overview", label: "Overview", group: "billing", module: "billing", permission: "billing.read", deniedHint: "You do not have permission to access Billing." },
   { id: "billing-patient-bills", label: "Patient Bills & Payments", group: "billing", module: "billing", permission: "billing.read", deniedHint: "You do not have permission to access Billing." },
-  { id: "billing-advances-refunds", label: "Advances & Refunds", group: "billing", module: "billing", permission: "billing.read", deniedHint: "You do not have permission to access Billing." },
   { id: "billing-doctor-payouts", label: "Doctor Payouts", group: "billing", module: "finance", permission: "accounts.read", deniedHint: "You do not have permission to access Doctor Payouts." },
   { id: "billing-reports-day-close", label: "Reports & Day Close", group: "billing", module: "reports", permission: "reports.read", deniedHint: "You do not have permission to access Reports." },
   { id: "billing-module-collections", label: "Revenue Reports", group: "billing", module: "billing", permission: "billing.read", hidden: true },
@@ -89,7 +88,7 @@ const MODULE_CUSTOM_INFO: Partial<Record<ModuleId, { label: string; description:
   },
   billing: {
     label: "Billing & Accounts Department",
-    description: "Access to Overview, Patient Bills, IP Discharge, Advances & Refunds, Doctor Payouts, and Day Close.",
+    description: "Access to Overview, Patient Bills, IP Discharge, Doctor Payouts, and Day Close.",
   },
 };
 
@@ -181,7 +180,6 @@ export const PAGE_MODULE_MAP: Record<string, ModuleId> = {
   billing: "billing",
   "billing-overview": "billing",
   "billing-patient-bills": "billing",
-  "billing-advances-refunds": "billing",
   "billing-doctor-payouts": "finance",
   "billing-reports-day-close": "reports",
   "billing-module-collections": "billing",

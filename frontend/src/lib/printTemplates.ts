@@ -87,10 +87,9 @@ export function buildPrintLabelsHtml(opts: {
 }) {
   const printedAt = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
   const labelStyle = `
-    @page { size: A4 portrait; margin: 10mm; }
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #0f172a; }
-    .label-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8mm; }
+    .label-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 8mm; align-content: start !important; align-items: start !important; }
     .label { border: 1.5px dashed #94a3b8; border-radius: 6px; padding: 10px 12px; }
     .label-hospital { font-size: 10px; font-weight: 800; color: #062f56; text-transform: uppercase; letter-spacing: 0.04em; }
     .label-medicine { font-size: 15px; font-weight: 800; margin: 4px 0; color: #0f172a; }

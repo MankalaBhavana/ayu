@@ -258,6 +258,7 @@ export default function DashboardPage({
   const [profileOpen, setProfileOpen] = useState(false);
   const [todayPatientsOpen, setTodayPatientsOpen] = useState(false);
   const [revenuePopup, setRevenuePopup] = useState<"today" | "monthly" | "pharmacy" | "lab" | null>(null);
+  const [exportingPopup, setExportingPopup] = useState(false);
   const [viewPatient, setViewPatient] = useState<Patient | null>(null);
   const dashboardProfileRef = useRef<HTMLDivElement | null>(null);
   const currentDateLabel = new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(parseIsoDate(dashboardDate));
@@ -360,7 +361,7 @@ export default function DashboardPage({
     { metric: dashboardDateIsToday ? "Today's Registrations" : "Registrations", value: selectedDateRegistrationCount, remarks: dashboardDateIsToday ? "New patient registrations today" : `New registrations for ${currentDateLabel}` },
     { metric: dashboardDateIsToday ? "Today's Revenue" : "Revenue", value: todayRevenue, remarks: dashboardDateIsToday ? "Live invoice total for today" : `Live invoice total for ${currentDateLabel}` },
     { metric: "Monthly Revenue", value: monthlyRevenue, remarks: "Live invoice total for this month" },
-    { metric: "Pharmacy Revenue", value: pharmacyIncome, remarks: dashboardDateIsToday ? "Today's pharmacy sales" : `Pharmacy sales for ${currentDateLabel}` },
+    { metric: "Today's Pharmacy Sales", value: pharmacyIncome, remarks: dashboardDateIsToday ? "Today's pharmacy sales" : `Pharmacy sales for ${currentDateLabel}` },
     { metric: "Lab Revenue", value: diagIncome, remarks: dashboardDateIsToday ? "Today's diagnostics" : `Diagnostics for ${currentDateLabel}` },
   ];
 
@@ -386,7 +387,7 @@ export default function DashboardPage({
 
   const revenueSnapshotData = [
     { label: dashboardDateIsToday ? "Today Revenue" : "Revenue", icon: "🏥", value: todayRevenue },
-    { label: "Pharmacy Sales", icon: "💊", value: pharmacyIncome },
+    { label: "Today's Pharmacy Sales", icon: "💊", value: pharmacyIncome },
     { label: "Lab & Diagnostic Billing", icon: "🧪", value: diagIncome },
     { label: "Monthly Revenue", icon: "📅", value: monthlyRevenue },
     { label: "Pending Payments", icon: "⚠️", value: dueRevenue },
@@ -462,7 +463,7 @@ export default function DashboardPage({
     }
     if (revenuePopup === "pharmacy") {
       return [
-        { module: "Pharmacy Sales", amount: pharmacyIncome },
+        { module: "Today's Pharmacy Sales", amount: pharmacyIncome },
         { module: "Pharmacy Monthly Sales", amount: monthlyPharmacyIncome },
       ];
     }
@@ -508,7 +509,7 @@ export default function DashboardPage({
       : revenuePopup === "lab"
         ? "Lab Revenue Details"
         : revenuePopup === "pharmacy"
-          ? "Pharmacy Revenue Details"
+          ? "Today's Pharmacy Sales Details"
           : "Monthly Revenue Details";
   const revenuePopupPdfTitle = revenuePopup === "today"
     ? "Today's Revenue"
@@ -516,80 +517,142 @@ export default function DashboardPage({
       ? "Monthly Revenue"
       : revenuePopupTitle;
 
-  const downloadRevenuePopupPdf = () => {
-    if (!revenuePopup) return;
-    const printedAt = new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
-    const html = `
-      <!doctype html>
-      <html>
-        <head>
-          <title>${safeDashboardPrintText(revenuePopupPdfTitle)}</title>
-          <style>
-            @page { size: A4 portrait; margin: 14mm; }
-            * { box-sizing: border-box; }
-            body { margin: 0; color: #12344c; font-family: Arial, Helvetica, sans-serif; background: #fff; }
-            .pdf { border: 1px solid #dbeafe; border-radius: 12px; overflow: hidden; }
-            .print-header {
-              display: grid;
-              grid-template-columns: 64px minmax(0, 1fr) auto;
-              align-items: center;
-              gap: 10px;
-              padding: 14px 16px 12px;
-              background: #eef7ff;
-              border-bottom: 2px solid #111827;
-            }
-            .print-logo { width: 64px; height: 50px; object-fit: contain; object-position: left center; display: block; }
-            .print-brand-title { margin: 0 0 2px; font-size: 18px; font-weight: 800; color: #062f56; line-height: 1.1; }
-            .print-title-block { text-align: right; }
-            .print-title-block p { margin: 2px 0; color: #60758a; font-size: 9px; }
-            .print-report-title { margin: 5px 0 0; color: #1d4ed8; font-size: 13px; line-height: 1.2; }
-            /* Content */
-            .content { padding: 22px; }
-            .cards { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-bottom: 18px; }
-            .card { background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px; padding: 14px; }
-            .card span, th { color: #64748b; font-size: 11px; font-weight: 800; text-transform: uppercase; }
-            .card strong { display: block; margin-top: 8px; color: #0f172a; font-size: 20px; }
-            table { width: 100%; border-collapse: collapse; }
-            th, td { border: 1px solid #e2e8f0; padding: 11px; text-align: left; font-size: 13px; }
-            th { background: #eff6ff; color: #1d4ed8; }
-            .total { display: flex; justify-content: space-between; margin-top: 16px; padding: 14px; color: #1d4ed8; background: #eff6ff; border-radius: 8px; font-weight: 900; }
-          </style>
-        </head>
-        <body>
-          <main class="pdf">
-            <header class="print-header">
-              <img class="print-logo" src="${PRINT_BRAND_HEADER_DATA_URI}" alt="Ayu Polyclinic" />
-              <div>
-                <p class="print-brand-title">Ayu Polyclinic</p>
-                <h1 class="print-report-title">${safeDashboardPrintText(revenuePopupPdfTitle)}</h1>
-              </div>
-              <div class="print-title-block">
-                <p>${safeDashboardPrintText(currentDateLabel)}</p>
-                <p>Generated: ${safeDashboardPrintText(printedAt)}</p>
-              </div>
-            </header>
-            <section class="content">
-              <div class="cards">
-                <div class="card"><span>TOTAL</span><strong>${safeDashboardPrintText(formatCurrency(revenuePopupTotal))}</strong></div>
-                <div class="card"><span>Collected</span><strong>${safeDashboardPrintText(formatCurrency(revenuePopupCollected))}</strong></div>
-                <div class="card"><span>Outstanding</span><strong>${safeDashboardPrintText(formatCurrency(revenuePopupOutstanding))}</strong></div>
-              </div>
-              <table>
-                <thead><tr><th>Module</th><th>Amount</th></tr></thead>
-                <tbody>${revenuePopupRows.map((row) => `<tr><td>${safeDashboardPrintText(row.module)}</td><td>${safeDashboardPrintText(formatCurrency(row.amount))}</td></tr>`).join("")}</tbody>
-              </table>
-              <div class="total"><span>${safeDashboardPrintText(revenuePopupPdfTitle)}</span><span>${safeDashboardPrintText(formatCurrency(revenuePopupTotal))}</span></div>
-            </section>
-          </main>
-        </body>
-      </html>
-    `;
-    printViaIframe(html, "__hospai_dash_print_frame__", {
-      suppressBrowserHeadersAndFooters: true,
-      preserveDocumentHeader: true,
-      footerAtBottom: true,
-      includeSignature: false,
-    });
+  const buildRevenuePopupPdfPayload = (): StandardPdfPayload => {
+    return {
+      title: revenuePopupTitle,
+      subtitle: `Hospital Revenue Summary for ${currentDateLabel}`,
+      filename: revenuePopupPdfTitle.replace(/[^A-Za-z0-9_-]+/g, "_"),
+      brand_logo: "ayu",
+      include_signature: false,
+      include_doctor_details: false,
+      operator_name: user?.full_name || user?.username || "Ayu Polyclinic System",
+      sections: [
+        {
+          title: "Revenue Overview",
+          headers: ["Metric", "Amount"],
+          rows: [
+            ["Total Revenue", formatCurrency(revenuePopupTotal)],
+            ["Collected Amount", formatCurrency(revenuePopupCollected)],
+            ["Outstanding Amount", formatCurrency(revenuePopupOutstanding)],
+          ],
+        },
+        {
+          title: "Module Breakdown",
+          headers: ["Module / Head", "Amount"],
+          rows: revenuePopupRows.map((r) => [r.module, formatCurrency(r.amount)]),
+        },
+      ],
+      totals: {
+        grand_total: formatCurrency(revenuePopupTotal),
+        amount_received: formatCurrency(revenuePopupCollected),
+        balance: formatCurrency(revenuePopupOutstanding),
+      },
+    };
+  };
+
+  const downloadRevenuePopupPdf = async () => {
+    if (!revenuePopup || exportingPopup) return;
+    setExportingPopup(true);
+    try {
+      const payload = buildRevenuePopupPdfPayload();
+      const { blob, filename } = await generatePDFBlob(payload);
+      downloadPDF(blob, filename);
+      setNotice?.({ type: "success", message: `${revenuePopupPdfTitle} PDF downloaded successfully.` });
+    } catch (err) {
+      console.error("Revenue PDF export failed:", err);
+      window.alert(err instanceof Error ? err.message : "Unable to generate revenue PDF.");
+    } finally {
+      setExportingPopup(false);
+    }
+  };
+
+  const handlePrintRevenuePopupPdf = async () => {
+    if (!revenuePopup || exportingPopup) return;
+    setExportingPopup(true);
+    try {
+      const payload = buildRevenuePopupPdfPayload();
+      const { blob } = await generatePDFBlob(payload);
+      printPDF(blob);
+    } catch (err) {
+      console.error("Revenue PDF print failed:", err);
+      window.alert(err instanceof Error ? err.message : "Unable to print revenue PDF.");
+    } finally {
+      setExportingPopup(false);
+    }
+  };
+
+  const buildRegistrationsPopupPdfPayload = (): StandardPdfPayload => {
+    const title = dashboardDateIsToday ? "Today's Registrations" : `Registrations - ${currentDateLabel}`;
+    return {
+      title,
+      subtitle: `Patient Registration Summary for ${currentDateLabel}`,
+      filename: `Patient_Registrations_${dashboardDate}`,
+      brand_logo: "ayu",
+      include_signature: false,
+      include_doctor_details: false,
+      operator_name: user?.full_name || user?.username || "Ayu Polyclinic System",
+      sections: [
+        {
+          title: "Registration Metrics",
+          headers: ["Category", "Count"],
+          rows: [
+            ["New Registrations", String(newRegistrationsCount)],
+            ["Revisited Patients", String(revisitedPatientsCount)],
+            ["Total Active Registrations", String(selectedDateRegistrationCount)],
+          ],
+        },
+        {
+          title: "Registered Patients List",
+          headers: ["UHID / Patient ID", "Patient Name", "Visit Type", "Age / Gender", "Phone"],
+          rows: patientsForDashboardDate.length > 0
+            ? patientsForDashboardDate.map((p) => {
+                const isRevisit = patientCreatedIso(p) !== dashboardDate;
+                return [
+                  p.patient_id,
+                  patientDisplayName(p),
+                  isRevisit ? "Revisit" : "New Registration",
+                  patientAgeGender(p),
+                  p.phone || "Phone not added",
+                ];
+              })
+            : [["No patient registrations found for this date", "-", "-", "-", "-"]],
+        },
+      ],
+      totals: {
+        grand_total: `${selectedDateRegistrationCount} Patients`,
+      },
+    };
+  };
+
+  const downloadRegistrationsPopupPdf = async () => {
+    if (exportingPopup) return;
+    setExportingPopup(true);
+    try {
+      const payload = buildRegistrationsPopupPdfPayload();
+      const { blob, filename } = await generatePDFBlob(payload);
+      downloadPDF(blob, filename);
+      setNotice?.({ type: "success", message: "Patient Registrations PDF downloaded successfully." });
+    } catch (err) {
+      console.error("Registration PDF export failed:", err);
+      window.alert(err instanceof Error ? err.message : "Unable to generate registration PDF.");
+    } finally {
+      setExportingPopup(false);
+    }
+  };
+
+  const handlePrintRegistrationsPopupPdf = async () => {
+    if (exportingPopup) return;
+    setExportingPopup(true);
+    try {
+      const payload = buildRegistrationsPopupPdfPayload();
+      const { blob } = await generatePDFBlob(payload);
+      printPDF(blob);
+    } catch (err) {
+      console.error("Registration PDF print failed:", err);
+      window.alert(err instanceof Error ? err.message : "Unable to print registration PDF.");
+    } finally {
+      setExportingPopup(false);
+    }
   };
 
 
@@ -693,7 +756,7 @@ export default function DashboardPage({
         />
         <KpiCard
           icon={<svg viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z" /><path d="m8.5 8.5 7 7" /></svg>}
-          label="Pharmacy Revenue"
+          label="Today's Pharmacy Sales"
           value={formatCurrency(pharmacyIncome)}
           sub={dashboardDateIsToday ? "Today's dispensing" : `Pharmacy for ${currentDateLabel}`}
           iconBg="linear-gradient(135deg,#0d9488,#0f766e)"
@@ -834,9 +897,14 @@ export default function DashboardPage({
             </div>
           ))}
         </div>
-        <div className="hosp-revenue-pop-actions">
+        <div className="hosp-revenue-pop-actions" style={{ display: "flex", justifyContent: "flex-end", gap: "8px" }}>
           <Button variant="ghost" onClick={() => setRevenuePopup(null)}>Close</Button>
-          <Button onClick={downloadRevenuePopupPdf}>Download PDF</Button>
+          <Button variant="secondary" onClick={() => void handlePrintRevenuePopupPdf()} disabled={exportingPopup}>
+            <span style={{ marginRight: 6 }}>🖨️</span> Print
+          </Button>
+          <Button onClick={() => void downloadRevenuePopupPdf()} disabled={exportingPopup}>
+            <span style={{ marginRight: 6 }}>📥</span> {exportingPopup ? "Generating..." : "Download PDF"}
+          </Button>
         </div>
       </Modal>
 
@@ -921,6 +989,19 @@ export default function DashboardPage({
             })}
           </div>
         )}
+        <div className="hosp-patient-pop-actions" style={{ display: "flex", justifyContent: "flex-end", gap: "8px", marginTop: "16px" }}>
+          <Button variant="ghost" onClick={() => setTodayPatientsOpen(false)}>Close</Button>
+          {patientsForDashboardDate.length > 0 && (
+            <>
+              <Button variant="secondary" onClick={() => void handlePrintRegistrationsPopupPdf()} disabled={exportingPopup}>
+                <span style={{ marginRight: 6 }}>🖨️</span> Print
+              </Button>
+              <Button onClick={() => void downloadRegistrationsPopupPdf()} disabled={exportingPopup}>
+                <span style={{ marginRight: 6 }}>📥</span> {exportingPopup ? "Generating..." : "Download PDF"}
+              </Button>
+            </>
+          )}
+        </div>
       </Modal>
 
       <Modal

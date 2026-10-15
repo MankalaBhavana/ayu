@@ -1967,34 +1967,31 @@ def get_all_employees(db, hospital_id=None):
 
 def get_employee(db, employee_id=None, username=None, hospital_id=None):
     scoped_hospital_id = hospital_id or resolve_hospital_id(db)
+    target = str(employee_id or username or "").strip()
+    if not target:
+        return None
     with get_connection(db) as conn:
         cursor = conn.cursor()
-        if employee_id:
-            cursor.execute(
-                """
-                SELECT id, username, role, job_role, full_name, email, phone, department,
-                       employee_id, date_joined, status, address, emergency_contact, created_at, access_role, user_type, module_access
-                FROM users WHERE employee_id = ? AND hospital_id = ?
+        cursor.execute(
+            """
+            SELECT id, username, role, job_role, full_name, email, phone, department,
+                   employee_id, date_joined, status, address, emergency_contact, created_at, access_role, user_type, module_access
+            FROM users 
+            WHERE (employee_id = ? OR username = ? OR CAST(id AS TEXT) = ?) 
+              AND hospital_id = ?
+            LIMIT 1
             """,
-                (employee_id, scoped_hospital_id),
-            )
-        elif username:
-            cursor.execute(
-                """
-                SELECT id, username, role, job_role, full_name, email, phone, department,
-                       employee_id, date_joined, status, address, emergency_contact, created_at, access_role, user_type, module_access
-                FROM users WHERE username = ? AND hospital_id = ?
-            """,
-                (username, scoped_hospital_id),
-            )
-        else:
-            return None
+            (target, target, target, scoped_hospital_id),
+        )
         return cursor.fetchone()
 
 
 
 def update_employee(db, employee_id, data, hospital_id=None):
     scoped_hospital_id = hospital_id or resolve_hospital_id(db)
+    target = str(employee_id or "").strip()
+    if not target:
+        return False
     with get_connection(db) as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -2002,7 +1999,7 @@ def update_employee(db, employee_id, data, hospital_id=None):
             UPDATE users SET full_name=?, email=?, phone=?, department=?,
                            status=?, address=?, emergency_contact=?, job_role=?, access_role=COALESCE(?, access_role),
                            user_type=COALESCE(?, user_type), module_access=COALESCE(?, module_access)
-            WHERE employee_id=? AND hospital_id=?
+            WHERE (employee_id = ? OR username = ? OR CAST(id AS TEXT) = ?) AND hospital_id = ?
         """,
             (
                 data.get("full_name"),
@@ -2016,7 +2013,9 @@ def update_employee(db, employee_id, data, hospital_id=None):
                 data.get("access_role"),
                 data.get("user_type"),
                 json.dumps(data["module_access"], separators=(",", ":")) if "module_access" in data else None,
-                employee_id,
+                target,
+                target,
+                target,
                 scoped_hospital_id,
             ),
         )
@@ -2027,11 +2026,14 @@ def update_employee(db, employee_id, data, hospital_id=None):
 
 def deactivate_employee(db, employee_id, hospital_id=None):
     scoped_hospital_id = hospital_id or resolve_hospital_id(db)
+    target = str(employee_id or "").strip()
+    if not target:
+        return False
     with get_connection(db) as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE users SET status='inactive' WHERE employee_id=? AND hospital_id=?",
-            (employee_id, scoped_hospital_id),
+            "UPDATE users SET status='inactive' WHERE (employee_id = ? OR username = ? OR CAST(id AS TEXT) = ?) AND hospital_id = ?",
+            (target, target, target, scoped_hospital_id),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -2040,11 +2042,14 @@ def deactivate_employee(db, employee_id, hospital_id=None):
 
 def activate_employee(db, employee_id, hospital_id=None):
     scoped_hospital_id = hospital_id or resolve_hospital_id(db)
+    target = str(employee_id or "").strip()
+    if not target:
+        return False
     with get_connection(db) as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "UPDATE users SET status='active' WHERE employee_id=? AND hospital_id=?",
-            (employee_id, scoped_hospital_id),
+            "UPDATE users SET status='active' WHERE (employee_id = ? OR username = ? OR CAST(id AS TEXT) = ?) AND hospital_id = ?",
+            (target, target, target, scoped_hospital_id),
         )
         conn.commit()
         return cursor.rowcount > 0
@@ -2053,20 +2058,45 @@ def activate_employee(db, employee_id, hospital_id=None):
 
 def delete_employee(db, employee_id, hospital_id=None):
     scoped_hospital_id = hospital_id or resolve_hospital_id(db)
+    target = str(employee_id or "").strip()
+    if not target:
+        return False
     with get_connection(db) as conn:
         cursor = conn.cursor()
         cursor.execute(
-            "SELECT id FROM users WHERE employee_id=? AND hospital_id=?",
-            (employee_id, scoped_hospital_id),
+            """
+            SELECT id, username, employee_id 
+            FROM users 
+            WHERE (employee_id = ? OR username = ? OR CAST(id AS TEXT) = ?)
+              AND hospital_id = ?
+            LIMIT 1
+            """,
+            (target, target, target, scoped_hospital_id),
         )
         row = cursor.fetchone()
         if row:
             user_id = row[0]
-            cursor.execute("DELETE FROM sessions WHERE user_id=?", (user_id,))
-            cursor.execute(
-                "DELETE FROM users WHERE id=?",
-                (user_id,),
-            )
+            # 1. Delete user sessions
+            cursor.execute("DELETE FROM sessions WHERE user_id = ?", (user_id,))
+
+            # 2. Delete doctor statement lines & doctor statements referencing this user
+            try:
+                cursor.execute(
+                    "DELETE FROM doctor_statement_lines WHERE statement_id IN (SELECT id FROM doctor_statements WHERE doctor_id = ?)",
+                    (user_id,)
+                )
+                cursor.execute("DELETE FROM doctor_statements WHERE doctor_id = ?", (user_id,))
+            except Exception:
+                pass
+
+            # 3. Delete doctor agreements referencing this user
+            try:
+                cursor.execute("DELETE FROM doctor_agreements WHERE doctor_id = ?", (user_id,))
+            except Exception:
+                pass
+
+            # 4. Delete the user record
+            cursor.execute("DELETE FROM users WHERE id = ?", (user_id,))
             conn.commit()
             return True
         return False
@@ -2209,19 +2239,15 @@ def create_appointment(db, data):
         is_revisit = bool(data.get("allow_revisit")) or str(data.get("visit_type", "")).strip().lower() in ("re-visit", "revisit", "follow-up", "follow_up")
         if patient_id:
             cursor.execute(
-                "SELECT id, status FROM appointments WHERE patient_id = ? AND DATE(appointment_date) = DATE(?) AND status IN ('scheduled', 'checked_in', 'in_consultation') LIMIT 1",
+                "SELECT id, status, token_no FROM appointments WHERE patient_id = ? AND DATE(appointment_date) = DATE(?) AND status IN ('scheduled', 'checked_in', 'in_consultation', 'waiting', 'arrived') LIMIT 1",
                 (patient_id, appointment_day),
             )
             active_appointment = cursor.fetchone()
             if active_appointment:
-                if is_revisit:
-                    cursor.execute(
-                        "UPDATE appointments SET status = 'completed' WHERE id = ?",
-                        (active_appointment["id"],),
-                    )
-                else:
-                    status_display = active_appointment["status"].replace("_", " ").title()
-                    raise ValueError(f"Patient already has an active consultation token for this date (Status: {status_display}). Please complete or cancel the existing consultation first.")
+                raw_st = str(active_appointment["status"] or "waiting").lower()
+                status_display = "In Consultation" if raw_st in ("in_consultation", "consulting") else "In Queue"
+                token_display = f" (Token #{active_appointment['token_no']})" if active_appointment.get("token_no") else ""
+                raise ValueError(f"Patient is already in queue{token_display} (Status: {status_display}). Please complete the existing consultation before creating a re-visit.")
 
         if doctor_name:
             cursor.execute(
@@ -2330,13 +2356,15 @@ def create_op_appointment_with_invoice(db, payload, consultation_fee, username):
                 return recent_duplicate["id"], recent_duplicate["token_no"], None, None
 
             cursor.execute(
-                "SELECT id, status FROM appointments WHERE patient_id = ? AND DATE(appointment_date) = ? AND status IN ('scheduled', 'checked_in', 'in_consultation') LIMIT 1",
+                "SELECT id, status, token_no FROM appointments WHERE patient_id = ? AND DATE(appointment_date) = DATE(?) AND status IN ('scheduled', 'checked_in', 'in_consultation', 'waiting', 'arrived') LIMIT 1",
                 (patient_id, appointment_day)
             )
             active_appointment = cursor.fetchone()
             if active_appointment:
-                status_display = active_appointment["status"].replace("_", " ").title()
-                raise ValueError(f"Patient already has an active queue entry for this date (Status: {status_display}). Please complete or cancel the existing consultation first.")
+                raw_st = str(active_appointment["status"] or "waiting").lower()
+                status_display = "In Consultation" if raw_st in ("in_consultation", "consulting") else "In Queue"
+                token_display = f" (Token #{active_appointment['token_no']})" if active_appointment.get("token_no") else ""
+                raise ValueError(f"Patient is already in queue{token_display} (Status: {status_display}). Please complete or cancel the existing consultation first.")
 
         if doctor_name:
             cursor.execute(
@@ -6001,6 +6029,9 @@ def create_pharmacy_dispense(db, data, username):
 
         sale_ids = []
         total_amount = 0.0
+        total_subtotal = 0.0
+        total_tax = 0.0
+        total_discount = 0.0
         invoice_id = None
         invoice_no = None
         shortfalls = []
@@ -6093,15 +6124,41 @@ def create_pharmacy_dispense(db, data, username):
             if dispensed_qty <= 0:
                 continue
 
-            amount = dispensed_qty * unit_price
-            total_amount += amount
+            base_line_amount = round(dispensed_qty * unit_price, 2)
+
+            # Line discount
+            disc_pct = float(line.get("discount_percent") or 0)
+            if disc_pct > 0:
+                line_discount = round(base_line_amount * (disc_pct / 100.0), 2)
+            elif line.get("discount") is not None and qty_needed > 0:
+                line_discount = round(float(line.get("discount") or 0) * (dispensed_qty / float(qty_needed)), 2)
+            else:
+                line_discount = 0.0
+
+            # Line tax / GST
+            gst_pct = float(line.get("gst_rate") or line.get("tax_rate") or 0)
+            if gst_pct > 0:
+                line_tax = round((base_line_amount - line_discount) * (gst_pct / 100.0), 2)
+            elif line.get("tax") is not None and qty_needed > 0:
+                line_tax = round(float(line.get("tax") or 0) * (dispensed_qty / float(qty_needed)), 2)
+            else:
+                line_tax = 0.0
+
+            # Net line amount including GST after discount
+            net_line_amount = round(base_line_amount - line_discount + line_tax, 2)
+
+            total_subtotal += base_line_amount
+            total_discount += line_discount
+            total_tax += line_tax
+            total_amount += net_line_amount
+
             item_stock_source = stock_source
             cursor.execute(
                 """
                 INSERT INTO pharmacy_sales (patient_id, prescription_ref, medicine_name, quantity, unit_price, amount, payment_mode, stock_source, admission_id, indent_id, billing_type)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (patient_id, str(prescription_id) if prescription_id else None, medicine_name, dispensed_qty, unit_price, amount, payment_mode, item_stock_source, admission_id, indent_id, billing_type),
+                (patient_id, str(prescription_id) if prescription_id else None, medicine_name, dispensed_qty, unit_price, net_line_amount, payment_mode, item_stock_source, admission_id, indent_id, billing_type),
             )
             sale_id = cursor.lastrowid
             sale_ids.append(sale_id)
@@ -6135,6 +6192,21 @@ def create_pharmacy_dispense(db, data, username):
                 raise ValueError(f"This medication order has been cancelled and cannot be dispensed ({names}).")
             raise ValueError("Insufficient stock available in hospital inventory for the requested items.")
 
+        total_subtotal = round(total_subtotal, 2)
+        total_discount = round(total_discount, 2)
+        total_tax = round(total_tax, 2)
+        total_amount = round(total_amount, 2)
+
+        # Align with client totals if no shortfalls occurred
+        if not shortfalls and data.get("total_amount") is not None and float(data.get("total_amount") or 0) > 0:
+            total_amount = round(float(data.get("total_amount")), 2)
+        if not shortfalls and data.get("tax") is not None:
+            total_tax = round(float(data.get("tax")), 2)
+        if not shortfalls and data.get("discount") is not None:
+            total_discount = round(float(data.get("discount")), 2)
+        if not shortfalls and data.get("subtotal") is not None:
+            total_subtotal = round(float(data.get("subtotal")), 2)
+
         claim_id = None
         is_insurance = False
         # Only generate an immediate invoice for OPD; IPD and Emergency Account run on patient account settled at discharge / encounter close
@@ -6158,7 +6230,7 @@ def create_pharmacy_dispense(db, data, username):
                         advance_amount, refunded_amount
                     ) VALUES (?, ?, 'PHARMACY', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (invoice_no, patient_id, None, "Sri Raksha Hospital", insurer_name, total_amount, 0, 0, total_amount, 0, total_amount, "due", username, 0, 0),
+                    (invoice_no, patient_id, None, "Sri Raksha Hospital", insurer_name, total_subtotal, total_tax, total_discount, total_amount, 0, total_amount, "due", username, 0, 0),
                 )
                 invoice_id = cursor.lastrowid
                 for sale_id in sale_ids:
@@ -6188,7 +6260,7 @@ def create_pharmacy_dispense(db, data, username):
                         advance_amount, refunded_amount
                     ) VALUES (?, ?, 'PHARMACY', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (invoice_no, patient_id, None, "Sri Raksha Hospital", ref_src, total_amount, 0, 0, total_amount, total_amount, 0, "paid", username, 0, 0),
+                    (invoice_no, patient_id, None, "Sri Raksha Hospital", ref_src, total_subtotal, total_tax, total_discount, total_amount, total_amount, 0, "paid", username, 0, 0),
                 )
                 invoice_id = cursor.lastrowid
                 cursor.execute(
@@ -6957,9 +7029,11 @@ def get_pharmacy_summary(db):
         cursor.execute("""
             SELECT ps.id, ps.patient_id, TRIM(p.name || ' ' || COALESCE(p.last_name, '')) AS patient_name, ps.medicine_name, ps.quantity,
                    ps.unit_price, ps.amount, ps.billing_type, ps.payment_mode, ps.sold_at,
-                   ps.invoice_id, ps.admission_id
+                   ps.invoice_id, ps.admission_id,
+                   COALESCE(inv.total_amount, ps.amount) AS invoice_total
             FROM pharmacy_sales ps
             LEFT JOIN patients p ON p.patient_id = ps.patient_id
+            LEFT JOIN invoices inv ON inv.id = ps.invoice_id
             ORDER BY ps.sold_at DESC
             LIMIT 15
         """)
@@ -6979,6 +7053,11 @@ def get_pharmacy_summary(db):
 
             ref = f"SALE-{r['id']}" if not r["invoice_id"] else f"INV-{r['invoice_id']}"
             sold_time_str = str(r["sold_at"])[:16] if r["sold_at"] else ""
+            
+            amount_val = float(r["amount"] or 0)
+            if amount_val == 0 and r["invoice_id"] and r.get("invoice_total") is not None:
+                amount_val = float(r["invoice_total"] or 0)
+
             recent_transactions.append({
                 "reference": ref,
                 "patient_name": r["patient_name"] or (r["patient_id"] or "Walk-in"),
@@ -6986,7 +7065,7 @@ def get_pharmacy_summary(db):
                 "type": tx_type,
                 "medicine_name": r["medicine_name"],
                 "medicine_count": 1,
-                "amount": float(r["amount"] or 0),
+                "amount": amount_val,
                 "payment_status": pay_status,
                 "user": "Pharmacist",
                 "date_time": sold_time_str,
@@ -7050,14 +7129,15 @@ def get_pharmacy_summary(db):
 def create_purchase_request(db, data, username):
     pr_no = f"PR-{datetime.now().strftime('%Y%m%d%H%M%S')}-{datetime.now().microsecond:06d}"
     pref_supplier = data.get("preferred_supplier_id") or data.get("supplier_id")
+    supplier_phone = data.get("supplier_phone") or data.get("phone")
     with get_connection(db) as conn:
         cursor = conn.cursor()
         cursor.execute(
             """
-            INSERT INTO purchase_requests (pr_no, requested_by, status, priority, notes, preferred_supplier_id, supplier_id)
-            VALUES (?, ?, 'pending', ?, ?, ?, ?)
+            INSERT INTO purchase_requests (pr_no, requested_by, status, priority, notes, preferred_supplier_id, supplier_id, supplier_phone)
+            VALUES (?, ?, 'pending', ?, ?, ?, ?, ?)
             """,
-            (pr_no, username, data.get("priority", "normal"), data.get("notes"), pref_supplier, pref_supplier),
+            (pr_no, username, data.get("priority", "normal"), data.get("notes"), pref_supplier, pref_supplier, supplier_phone),
         )
         pr_id = cursor.lastrowid
         for item in data.get("items", []):
@@ -7065,8 +7145,8 @@ def create_purchase_request(db, data, username):
             cursor.execute(
                 """
                 INSERT INTO purchase_request_items (
-                    pr_id, medicine_id, medicine_name, current_stock, min_level, required_qty, estimated_unit_cost, notes
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    pr_id, medicine_id, medicine_name, current_stock, min_level, required_qty, estimated_unit_cost, notes, strength_form, unit
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     pr_id,
@@ -7077,6 +7157,8 @@ def create_purchase_request(db, data, username):
                     int(qty),
                     float(item.get("estimated_unit_cost", 0) or 0),
                     item.get("notes"),
+                    item.get("strength_form"),
+                    item.get("unit"),
                 ),
             )
         conn.commit()
@@ -7090,7 +7172,7 @@ def list_purchase_requests(db, status=None):
         if status:
             cursor.execute(
                 """
-                SELECT pr.*, s.supplier_name
+                SELECT pr.*, s.supplier_name, COALESCE(pr.supplier_phone, s.phone) AS supplier_phone
                 FROM purchase_requests pr
                 LEFT JOIN pharmacy_suppliers s ON COALESCE(pr.preferred_supplier_id, pr.supplier_id) = s.id
                 WHERE pr.status = ?
@@ -7101,7 +7183,7 @@ def list_purchase_requests(db, status=None):
         else:
             cursor.execute(
                 """
-                SELECT pr.*, s.supplier_name
+                SELECT pr.*, s.supplier_name, COALESCE(pr.supplier_phone, s.phone) AS supplier_phone
                 FROM purchase_requests pr
                 LEFT JOIN pharmacy_suppliers s ON COALESCE(pr.preferred_supplier_id, pr.supplier_id) = s.id
                 ORDER BY pr.created_at DESC

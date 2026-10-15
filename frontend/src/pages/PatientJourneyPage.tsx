@@ -203,6 +203,7 @@ export default function PatientJourneyPage({ setNotice, onNavigate, selectedPati
       filename: `Patient_Journey_${journey.patient.patient_id}`,
       brand_logo: "ayu",
       include_signature: false,
+      include_doctor_details: false,
       operator_name: "Ayu Polyclinic System",
       patient_info: {
         patient_name: journey.patient.name, patient_id: journey.patient.patient_id,

@@ -26,6 +26,67 @@ const UNIT_TYPES = [
   "Other",
 ];
 
+const DEFAULT_MEDICINES = [
+  "Amoxicillin",
+  "Paracetamol",
+  "Cetirizine",
+  "Azithromycin",
+  "Pantoprazole",
+  "Metformin",
+  "Atorvastatin",
+  "Ciprofloxacin",
+  "Ibuprofen",
+  "Omeprazole",
+  "Cough Syrup",
+  "ORS Sachet",
+  "Dextrose Normal Saline (DNS)",
+  "Normal Saline (NS 0.9%)",
+];
+
+const STRENGTH_FORM_OPTIONS = [
+  "500 mg / Capsules",
+  "650 mg / Tablets",
+  "10 mg / Tablets",
+  "500 mg / Tablets",
+  "250 mg / Tablets",
+  "100 mg / Tablets",
+  "200 mg / Tablets",
+  "5 mg / Tablets",
+  "20 mg / Tablets",
+  "40 mg / Tablets",
+  "250 mg / 5ml / Syrup",
+  "100 ml / Syrup",
+  "1 g / Injection",
+  "500 mg / Injection",
+  "20 g / Ointment",
+  "100 mcg / Inhaler",
+];
+
+const PR_UNIT_OPTIONS = [
+  "Strips",
+  "Tablets",
+  "Capsules",
+  "Bottles",
+  "Vials",
+  "Boxes",
+  "Ampoules",
+  "Tubes",
+  "Inhalers",
+  "Units",
+];
+
+export type PrLineItem = {
+  medicine_name: string;
+  strength_form: string;
+  quantity: number | string;
+  unit: string;
+  notes: string;
+};
+
+const INITIAL_PR_ITEMS: PrLineItem[] = [
+  { medicine_name: "", strength_form: "", quantity: "", unit: "", notes: "" },
+];
+
 type Supplier = {
   id: number;
   supplier_name: string;
@@ -51,7 +112,8 @@ type PurchaseRequest = {
   preferred_supplier_id?: number;
   supplier_id?: number;
   supplier_name?: string;
-  items?: { medicine_name: string; required_qty?: number; quantity?: number; estimated_unit_cost?: number }[];
+  supplier_phone?: string;
+  items?: { medicine_name: string; required_qty?: number; quantity?: number; estimated_unit_cost?: number; strength_form?: string; unit?: string; notes?: string }[];
 };
 
 type PurchaseOrder = {
@@ -107,12 +169,18 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
 
   // New PR Modal State
   const [newPrModalOpen, setNewPrModalOpen] = useState(false);
-  const [prMedicine, setPrMedicine] = useState("");
-  const [prQty, setPrQty] = useState<number>(50);
+  const [prItems, setPrItems] = useState<PrLineItem[]>(INITIAL_PR_ITEMS);
   const [prUrgency, setPrUrgency] = useState<string>("normal");
   const [prNotes, setPrNotes] = useState<string>("");
   const [prSupplierId, setPrSupplierId] = useState<number | null>(null);
+  const [prSupplierPhone, setPrSupplierPhone] = useState<string>("");
   const [submittingPr, setSubmittingPr] = useState(false);
+  const [prModalError, setPrModalError] = useState<string | null>(null);
+  const [latestPrShareUrl, setLatestPrShareUrl] = useState<string | null>(null);
+  const [latestPrNo, setLatestPrNo] = useState<string | null>(null);
+  const [latestPrText, setLatestPrText] = useState<string | null>(null);
+  const [copiedPrBanner, setCopiedPrBanner] = useState(false);
+  const [latestPrDirectPhoneUrl, setLatestPrDirectPhoneUrl] = useState<string | null>(null);
 
   // Approve / Reject PR Modal State
   const [prDecisionTarget, setPrDecisionTarget] = useState<PurchaseRequest | null>(null);
@@ -159,7 +227,9 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
         apiFetch<{ medicines: MedicineMaster[] }>("/api/pharmacy/medicines"),
       ]);
 
-      if (supRes?.suppliers) setSuppliers(supRes.suppliers);
+      if (supRes?.suppliers) {
+        setSuppliers(supRes.suppliers);
+      }
       if (prRes?.purchase_requests) setPurchaseRequests(prRes.purchase_requests);
       if (poRes?.purchase_orders) setPurchaseOrders(poRes.purchase_orders);
       if (grnRes?.goods_receipts) setGoodsReceipts(grnRes.goods_receipts);
@@ -169,6 +239,45 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleOpenNewPrModal = () => {
+    setPrSupplierId(null);
+    setPrSupplierPhone("");
+    setPrUrgency("normal");
+    setPrNotes("");
+    setPrItems([{ medicine_name: "", strength_form: "", quantity: "", unit: "", notes: "" }]);
+    setPrModalError(null);
+    setNewPrModalOpen(true);
+  };
+
+  const totalMedicines = prItems.filter((i) => i.medicine_name.trim() !== "").length;
+  const totalUnits = prItems.reduce((acc, i) => acc + (parseInt(String(i.quantity)) || 0), 0);
+
+  const allMedicineOptions = useMemo(() => {
+    const masterNames = medicinesMaster.map((m) => m.name.trim()).filter(Boolean);
+    const combined = Array.from(new Set([...DEFAULT_MEDICINES, ...masterNames]));
+    return combined.sort((a, b) => a.localeCompare(b));
+  }, [medicinesMaster]);
+
+  const handleAddPrItem = () => {
+    setPrItems((prev) => [
+      ...prev,
+      { medicine_name: "", strength_form: "", quantity: "", unit: "", notes: "" },
+    ]);
+  };
+
+  const handleRemovePrItem = (idx: number) => {
+    if (prItems.length <= 1) return;
+    setPrItems((prev) => prev.filter((_, i) => i !== idx));
+  };
+
+  const handleUpdatePrItem = (idx: number, field: keyof PrLineItem, value: any) => {
+    setPrItems((prev) => {
+      const updated = [...prev];
+      updated[idx] = { ...updated[idx], [field]: value };
+      return updated;
+    });
   };
 
   useEffect(() => {
@@ -308,30 +417,265 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
     }
   };
 
+  // Helper to format WhatsApp requisition message text
+  const buildPrWhatsAppMessage = (
+    prNo: string,
+    items: { medicine_name: string; strength_form?: string; quantity?: number | string; required_qty?: number | string; unit?: string; notes?: string }[],
+    priority: string,
+    supplierName?: string,
+    phone?: string,
+    notes?: string
+  ): string => {
+    const validItems = items.filter((it) => (it.medicine_name || "").trim() !== "");
+    const totalQty = validItems.reduce((acc, it) => acc + (parseInt(String(it.quantity ?? it.required_qty ?? 0)) || 0), 0);
+
+    const itemLines = validItems
+      .map((it, idx) => {
+        const qtyVal = it.quantity ?? it.required_qty ?? 1;
+        const unitVal = it.unit || "Units";
+        const formVal = it.strength_form ? ` (${it.strength_form})` : "";
+        const noteVal = it.notes ? ` [${it.notes}]` : "";
+        return `${idx + 1}. *${it.medicine_name}*${formVal} - ${qtyVal} ${unitVal}${noteVal}`;
+      })
+      .join("\n");
+
+    const phoneStr = (phone || "").trim();
+
+    return [
+      `*PURCHASE REQUEST: ${prNo}*`,
+      `🏥 *Hospital Pharmacy Requisition*`,
+      `--------------------------------`,
+      `*Supplier:* ${supplierName || "Valued Supplier"}${phoneStr ? ` (📱 ${phoneStr})` : ""}`,
+      `*Urgency:* ${priority.toUpperCase()}`,
+      `--------------------------------`,
+      `*Medicine Items (${validItems.length} medicines • ${totalQty} total units):*`,
+      itemLines || "No items listed",
+      `--------------------------------`,
+      notes ? `*Clinical Remarks / Reason:* ${notes}\n--------------------------------` : "",
+      `Please confirm stock availability and send quotation / dispatch timeline.`,
+      `Thank you!`,
+    ]
+      .filter(Boolean)
+      .join("\n");
+  };
+
+  // Helper to construct WhatsApp URL:
+  // By default, opens WhatsApp chat directly (https://api.whatsapp.com/send?text=...)
+  // so if a contact is not saved in contacts, WhatsApp will not block with
+  // "The number isn't on WhatsApp" - it opens WhatsApp chat to select the recipient.
+  const getWhatsAppPrUrl = (
+    prNo: string,
+    items: { medicine_name: string; strength_form?: string; quantity?: number | string; required_qty?: number | string; unit?: string; notes?: string }[],
+    priority: string,
+    supplierName?: string,
+    phone?: string,
+    notes?: string,
+    useDirectPhone: boolean = false
+  ) => {
+    const message = buildPrWhatsAppMessage(prNo, items, priority, supplierName, phone, notes);
+    const encoded = encodeURIComponent(message);
+
+    if (useDirectPhone && phone) {
+      let cleanDigits = phone.replace(/[^0-9]/g, "");
+      if (cleanDigits.startsWith("0")) {
+        cleanDigits = cleanDigits.replace(/^0+/, "");
+      }
+      const finalPhone = cleanDigits.length === 10 ? `91${cleanDigits}` : cleanDigits;
+      if (finalPhone) {
+        return `https://api.whatsapp.com/send?phone=${finalPhone}&text=${encoded}`;
+      }
+    }
+
+    return `https://api.whatsapp.com/send?text=${encoded}`;
+  };
+
+  // Helper to share Purchase Request via WhatsApp - opens WhatsApp chat directly
+  const sharePrViaWhatsApp = (
+    prNo: string,
+    items: { medicine_name: string; strength_form?: string; quantity?: number | string; required_qty?: number | string; unit?: string; notes?: string }[],
+    priority: string,
+    supplierName?: string,
+    phone?: string,
+    notes?: string
+  ) => {
+    const message = buildPrWhatsAppMessage(prNo, items, priority, supplierName, phone, notes);
+    const waUrl = getWhatsAppPrUrl(prNo, items, priority, supplierName, phone, notes, false);
+
+    // Copy requisition text to clipboard so it's always ready to paste
+    try {
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(message);
+      }
+    } catch (e) {
+      console.warn("Clipboard copy failed:", e);
+    }
+
+    setNotice({
+      type: "success",
+      message: `Opening WhatsApp chat for PR ${prNo}. Requisition text copied to clipboard!`,
+    });
+
+    const opened = window.open(waUrl, "_blank", "noopener,noreferrer");
+    if (!opened) {
+      window.location.href = waUrl;
+    }
+  };
+
   // Submit Purchase Request
-  const handleCreatePr = async () => {
-    if (!prMedicine.trim()) {
-      setNotice({ type: "warning", message: "Medicine name is required." });
+  const handleCreatePr = async (shareOnWhatsApp: boolean = false) => {
+    setPrModalError(null);
+
+    if (!prSupplierId) {
+      const msg = "Supplier name is mandatory. Please select a supplier.";
+      setPrModalError(msg);
+      setNotice({ type: "warning", message: msg });
       return;
     }
+
+    const validItems = prItems.filter((it) => it.medicine_name.trim() !== "");
+    if (validItems.length === 0) {
+      const msg = "At least one medicine with a valid name is required.";
+      setPrModalError(msg);
+      setNotice({ type: "warning", message: msg });
+      return;
+    }
+
+    for (const item of validItems) {
+      const q = parseInt(String(item.quantity));
+      if (isNaN(q) || q <= 0) {
+        const msg = `Please enter a valid quantity for ${item.medicine_name}.`;
+        setPrModalError(msg);
+        setNotice({ type: "warning", message: msg });
+        return;
+      }
+    }
+
+    // Pre-open blank tab synchronously during user click gesture to avoid browser popup blockers!
+    let waWindow: Window | null = null;
+    if (shareOnWhatsApp) {
+      try {
+        waWindow = window.open("about:blank", "_blank");
+        if (waWindow) {
+          waWindow.document.write(`
+            <!DOCTYPE html>
+            <html>
+              <head><title>Opening WhatsApp...</title></head>
+              <body style="font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f0fdf4;">
+                <div style="text-align: center; padding: 2rem; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); max-width: 380px;">
+                  <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">💬</div>
+                  <h3 style="color: #166534; margin: 0 0 0.5rem 0;">Opening WhatsApp Chat...</h3>
+                  <p style="color: #64748b; font-size: 0.88rem; margin: 0;">Submitting Purchase Request and loading WhatsApp chat.</p>
+                </div>
+              </body>
+            </html>
+          `);
+        }
+      } catch (err) {
+        console.warn("Unable to pre-open window for WhatsApp:", err);
+      }
+    }
+
     setSubmittingPr(true);
     try {
-      await apiFetch("/api/pharmacy/purchase-requests", {
+      const res = await apiFetch<{ pr_id: number; pr_no: string }>("/api/pharmacy/purchase-requests", {
         method: "POST",
         body: JSON.stringify({
           priority: prUrgency,
           notes: prNotes,
           preferred_supplier_id: prSupplierId,
           supplier_id: prSupplierId,
-          items: [{ medicine_name: prMedicine, required_qty: prQty, quantity: prQty }],
+          supplier_phone: prSupplierPhone.trim(),
+          items: validItems.map((it) => ({
+            medicine_name: it.medicine_name.trim(),
+            strength_form: it.strength_form,
+            required_qty: parseInt(String(it.quantity)) || 1,
+            quantity: parseInt(String(it.quantity)) || 1,
+            unit: it.unit,
+            notes: it.notes,
+          })),
         }),
       });
-      setNotice({ type: "success", message: "Purchase Request submitted for approval." });
+
+      const selectedSupplier = suppliers.find((s) => s.id === prSupplierId);
+      const supplierName = selectedSupplier?.supplier_name || "Supplier";
+      const prNo = res?.pr_no || `PR-${Date.now()}`;
+
+      const message = buildPrWhatsAppMessage(
+        prNo,
+        validItems,
+        prUrgency,
+        supplierName,
+        prSupplierPhone.trim(),
+        prNotes
+      );
+      const waChatUrl = getWhatsAppPrUrl(
+        prNo,
+        validItems,
+        prUrgency,
+        supplierName,
+        prSupplierPhone.trim(),
+        prNotes,
+        false
+      );
+      const waDirectUrl = prSupplierPhone.trim()
+        ? getWhatsAppPrUrl(
+            prNo,
+            validItems,
+            prUrgency,
+            supplierName,
+            prSupplierPhone.trim(),
+            prNotes,
+            true
+          )
+        : null;
+
+      // Copy requisition text to clipboard automatically
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(message);
+        }
+      } catch (clipErr) {
+        console.warn("Clipboard write failed:", clipErr);
+      }
+
+      if (shareOnWhatsApp) {
+        setLatestPrShareUrl(waChatUrl);
+        setLatestPrNo(prNo);
+        setLatestPrText(message);
+        setLatestPrDirectPhoneUrl(waDirectUrl);
+
+        if (waWindow && !waWindow.closed) {
+          waWindow.location.href = waChatUrl;
+        } else {
+          // If popup window was blocked, trigger link directly
+          const link = document.createElement("a");
+          link.href = waChatUrl;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+        }
+      }
+
+      setNotice({
+        type: "success",
+        message: shareOnWhatsApp
+          ? `Purchase Request ${prNo} submitted! WhatsApp chat opened and requisition copied to clipboard.`
+          : `Purchase Request ${prNo} submitted for approval.`,
+      });
       setNewPrModalOpen(false);
-      setPrMedicine("");
       setPrSupplierId(null);
+      setPrSupplierPhone("");
+      setPrItems(INITIAL_PR_ITEMS);
+      setPrUrgency("normal");
+      setPrNotes("");
+      setPrModalError(null);
       void loadData();
     } catch (err) {
+      if (waWindow && !waWindow.closed) {
+        waWindow.close();
+      }
       reportError(setNotice, err as any, "Failed to create PR");
     } finally {
       setSubmittingPr(false);
@@ -395,7 +739,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
             type="button"
             className="primary"
             style={{ background: "#00828a", borderColor: "#00828a" }}
-            onClick={() => setNewPrModalOpen(true)}
+            onClick={handleOpenNewPrModal}
           >
             + New Purchase Request
           </Button>
@@ -791,6 +1135,104 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
       {/* 3. PURCHASE REQUESTS (PR) */}
       {activeTab === "pr" && (
         <div style={{ background: "#ffffff", borderRadius: "10px", padding: "1.25rem", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
+          {latestPrShareUrl && (
+            <div
+              style={{
+                background: "#dcfce7",
+                border: "1px solid #86efac",
+                borderRadius: "8px",
+                padding: "0.75rem 1rem",
+                marginBottom: "1rem",
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+                flexWrap: "wrap",
+                gap: "0.5rem",
+              }}
+            >
+              <div style={{ fontSize: "0.88rem", color: "#166534", fontWeight: 600 }}>
+                ✓ Purchase Request <strong>{latestPrNo}</strong> submitted! WhatsApp chat ready.
+              </div>
+              <div style={{ display: "flex", gap: "0.5rem", alignItems: "center", flexWrap: "wrap" }}>
+                <a
+                  href={latestPrShareUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  style={{
+                    background: "#25D366",
+                    color: "white",
+                    padding: "6px 14px",
+                    borderRadius: "6px",
+                    textDecoration: "none",
+                    fontSize: "0.82rem",
+                    fontWeight: 700,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "0.35rem",
+                  }}
+                  title="Opens WhatsApp chat picker so you can send to any contact or supplier"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor">
+                    <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
+                  </svg>
+                  Open WhatsApp Chat ↗
+                </a>
+                {latestPrDirectPhoneUrl && (
+                  <a
+                    href={latestPrDirectPhoneUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      background: "#15803d",
+                      color: "white",
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      textDecoration: "none",
+                      fontSize: "0.82rem",
+                      fontWeight: 600,
+                    }}
+                    title="Direct WhatsApp link to the entered supplier phone"
+                  >
+                    📱 Direct Link ↗
+                  </a>
+                )}
+                {latestPrText && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(latestPrText);
+                      setCopiedPrBanner(true);
+                      setTimeout(() => setCopiedPrBanner(false), 2000);
+                    }}
+                    style={{
+                      background: "#ffffff",
+                      border: "1px solid #86efac",
+                      color: "#166534",
+                      padding: "6px 12px",
+                      borderRadius: "6px",
+                      cursor: "pointer",
+                      fontSize: "0.82rem",
+                      fontWeight: 600,
+                    }}
+                  >
+                    {copiedPrBanner ? "✓ Copied!" : "📋 Copy PR Text"}
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setLatestPrShareUrl(null);
+                    setLatestPrText(null);
+                    setLatestPrDirectPhoneUrl(null);
+                  }}
+                  style={{ background: "transparent", border: "none", cursor: "pointer", color: "#166534", fontWeight: 700, fontSize: "1rem" }}
+                  title="Dismiss"
+                >
+                  ✕
+                </button>
+              </div>
+            </div>
+          )}
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1rem" }}>
             <h3 style={{ margin: 0, fontSize: "1.1rem", fontWeight: 700, color: "#0f172a" }}>
               Purchase Requests (Internal Requisitions)
@@ -799,7 +1241,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
               type="button"
               className="primary"
               style={{ background: "#00828a", borderColor: "#00828a" }}
-              onClick={() => setNewPrModalOpen(true)}
+              onClick={handleOpenNewPrModal}
             >
               + New PR
             </Button>
@@ -823,7 +1265,10 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
               <tbody>
                 {purchaseRequests.map((pr) => {
                   const isPending = pr.status === "pending";
-                  const supplierName = pr.supplier_name || suppliers.find((s) => s.id === (pr.preferred_supplier_id || pr.supplier_id))?.supplier_name;
+                  const matchedSupplier = suppliers.find((s) => s.id === (pr.preferred_supplier_id || pr.supplier_id));
+                  const supplierName = pr.supplier_name || matchedSupplier?.supplier_name;
+                  const supplierPhone = pr.supplier_phone || matchedSupplier?.phone;
+                  const prItemsList = pr.items && pr.items.length > 0 ? pr.items : [{ medicine_name: "Supplies", quantity: 1 }];
                   return (
                     <tr key={pr.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "0.5rem", fontWeight: 700, color: "#00828a" }}>{pr.pr_no}</td>
@@ -831,7 +1276,12 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                         {pr.items && pr.items.length > 0 ? (
                           pr.items.map((it, idx) => (
                             <div key={idx} style={{ color: "#0f172a", fontWeight: 600 }}>
-                              {it.medicine_name}
+                              {it.medicine_name}{" "}
+                              {it.strength_form ? (
+                                <span style={{ color: "#64748b", fontWeight: 400, fontSize: "0.78rem" }}>
+                                  ({it.strength_form})
+                                </span>
+                              ) : null}
                             </div>
                           ))
                         ) : (
@@ -842,7 +1292,12 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                         {pr.items && pr.items.length > 0 ? (
                           pr.items.map((it, idx) => (
                             <div key={idx} style={{ color: "#0f172a", fontWeight: 600 }}>
-                              {it.required_qty ?? (it as any).quantity ?? 1}
+                              {it.required_qty ?? (it as any).quantity ?? 1}{" "}
+                              {it.unit ? (
+                                <span style={{ color: "#64748b", fontWeight: 400, fontSize: "0.78rem" }}>
+                                  {it.unit}
+                                </span>
+                              ) : null}
                             </div>
                           ))
                         ) : (
@@ -851,7 +1306,14 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                       </td>
                       <td style={{ padding: "0.5rem" }}>
                         {supplierName ? (
-                          <span style={{ fontWeight: 600, color: "#1e293b" }}>{supplierName}</span>
+                          <div>
+                            <span style={{ fontWeight: 600, color: "#1e293b" }}>{supplierName}</span>
+                            {supplierPhone && (
+                              <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                                📱 {supplierPhone}
+                              </div>
+                            )}
+                          </div>
                         ) : (
                           <span style={{ color: "#94a3b8" }}>-</span>
                         )}
@@ -877,28 +1339,58 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                         {pr.created_at ? new Date(pr.created_at).toLocaleDateString() : "-"}
                       </td>
                       <td style={{ padding: "0.5rem", textAlign: "right" }}>
-                        {isPending ? (
-                          <div style={{ display: "inline-flex", gap: "0.4rem" }}>
-                            <Button
-                              type="button"
-                              className="primary"
-                              style={{ padding: "3px 10px", fontSize: "0.78rem", background: "#16a34a", borderColor: "#16a34a" }}
-                              onClick={() => openPrDecision(pr, "approve")}
-                            >
-                              Approve
-                            </Button>
-                            <Button
-                              type="button"
-                              variant="secondary"
-                              style={{ padding: "3px 10px", fontSize: "0.78rem", color: "#dc2626", borderColor: "#fca5a5" }}
-                              onClick={() => openPrDecision(pr, "reject")}
-                            >
-                              Reject
-                            </Button>
-                          </div>
-                        ) : (
-                          <span style={{ fontSize: "0.78rem", color: "#94a3b8" }}>-</span>
-                        )}
+                        <div style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
+                          <Button
+                            type="button"
+                            title="Share PR via WhatsApp"
+                            style={{
+                              padding: "3px 8px",
+                              fontSize: "0.78rem",
+                              background: "#25D366",
+                              borderColor: "#25D366",
+                              color: "#ffffff",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              gap: "0.25rem",
+                              fontWeight: 600,
+                            }}
+                            onClick={() =>
+                              sharePrViaWhatsApp(
+                                pr.pr_no,
+                                prItemsList,
+                                pr.priority,
+                                supplierName,
+                                supplierPhone,
+                                pr.notes
+                              )
+                            }
+                          >
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                              <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
+                            </svg>
+                            WhatsApp
+                          </Button>
+                          {isPending && (
+                            <>
+                              <Button
+                                type="button"
+                                className="primary"
+                                style={{ padding: "3px 10px", fontSize: "0.78rem", background: "#16a34a", borderColor: "#16a34a" }}
+                                onClick={() => openPrDecision(pr, "approve")}
+                              >
+                                Approve
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="secondary"
+                                style={{ padding: "3px 10px", fontSize: "0.78rem", color: "#dc2626", borderColor: "#fca5a5" }}
+                                onClick={() => openPrDecision(pr, "reject")}
+                              >
+                                Reject
+                              </Button>
+                            </>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );
@@ -1078,44 +1570,184 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
 
       {/* New PR Modal */}
       {newPrModalOpen && (
-        <Modal open={newPrModalOpen} onClose={() => setNewPrModalOpen(false)}>
-          <div style={{ padding: "1.5rem", maxWidth: "500px" }}>
-            <h3 style={{ margin: "0 0 0.5rem 0", color: "#0f172a" }}>New Purchase Request</h3>
-            <p style={{ margin: "0 0 1rem 0", fontSize: "0.85rem", color: "#64748b" }}>
-              Requisition medicine supplies. Converted to PO upon pharmacy approval.
-            </p>
-
-            <div style={{ marginBottom: "1rem" }}>
-              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
-                Medicine Name *:
-              </label>
-              <Input
-                value={prMedicine}
-                onChange={(e) => setPrMedicine(e.target.value)}
-                placeholder="e.g. Amoxicillin 500mg"
-              />
+        <Modal
+          open={newPrModalOpen}
+          onClose={() => {
+            setNewPrModalOpen(false);
+            setPrModalError(null);
+          }}
+          hideHeader
+          className="ui-modal-wide"
+        >
+          <div style={{ padding: "1.75rem", maxWidth: "980px", margin: "0 auto", color: "#0f172a" }}>
+            {/* Header */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "14px",
+                paddingBottom: "18px",
+                borderBottom: "1px solid #e2e8f0",
+                marginBottom: "22px",
+              }}
+            >
+              <div
+                style={{
+                  width: "44px",
+                  height: "44px",
+                  borderRadius: "10px",
+                  background: "#2563eb",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#ffffff",
+                  boxShadow: "0 4px 8px rgba(37, 99, 235, 0.25)",
+                  flexShrink: 0,
+                }}
+              >
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M19 14v4a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v2" />
+                  <path d="M9 3h6" />
+                  <path d="M10 3v4" />
+                  <path d="M14 3v4" />
+                  <line x1="12" y1="12" x2="12" y2="16" />
+                  <line x1="10" y1="14" x2="14" y2="14" />
+                </svg>
+              </div>
+              <div style={{ flex: 1 }}>
+                <h2 style={{ margin: 0, fontSize: "1.25rem", fontWeight: 700, color: "#0f172a", letterSpacing: "-0.01em" }}>
+                  New Purchase Request
+                </h2>
+                <p style={{ margin: "4px 0 0 0", fontSize: "0.85rem", color: "#64748b" }}>
+                  Add one medicine or build a bulk order for your supplier.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setNewPrModalOpen(false)}
+                style={{
+                  background: "transparent",
+                  border: "none",
+                  color: "#94a3b8",
+                  fontSize: "1.3rem",
+                  cursor: "pointer",
+                  padding: "4px 8px",
+                  borderRadius: "6px",
+                  lineHeight: 1,
+                }}
+                title="Close"
+              >
+                ✕
+              </button>
             </div>
 
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem", marginBottom: "1rem" }}>
-              <div>
-                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
-                  Required Quantity:
-                </label>
-                <Input
-                  type="number"
-                  min={1}
-                  value={prQty ?? ""}
-                  placeholder="1"
-                  onChange={(e) => setPrQty(e.target.value === "" ? ("" as any) : Math.max(1, parseInt(e.target.value) || 1))}
-                />
+            {prModalError && (
+              <div
+                style={{
+                  background: "#fee2e2",
+                  border: "1px solid #fca5a5",
+                  color: "#991b1b",
+                  padding: "0.6rem 0.85rem",
+                  borderRadius: "8px",
+                  fontSize: "0.85rem",
+                  marginBottom: "1.25rem",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "0.5rem",
+                  fontWeight: 500,
+                }}
+              >
+                <span>⚠️</span>
+                <span>{prModalError}</span>
               </div>
+            )}
+
+            {/* Top 3 Controls Row */}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "16px", marginBottom: "20px" }}>
+              {/* Supplier Name */}
               <div>
-                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
-                  Urgency:
+                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                  Supplier Name *
                 </label>
                 <select
                   className="ui-input"
-                  style={{ width: "100%", padding: "0.45rem", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                  style={{
+                    width: "100%",
+                    height: "40px",
+                    padding: "0 10px",
+                    borderRadius: "8px",
+                    border: prModalError && !prSupplierId ? "1.5px solid #ef4444" : "1px solid #cbd5e1",
+                    backgroundColor: "#ffffff",
+                    fontSize: "0.88rem",
+                    color: "#1e293b",
+                    fontWeight: 500,
+                  }}
+                  value={prSupplierId || ""}
+                  onChange={(e) => {
+                    const sId = e.target.value ? parseInt(e.target.value) : null;
+                    setPrSupplierId(sId);
+                    if (prModalError) setPrModalError(null);
+                    const selected = suppliers.find((s) => s.id === sId);
+                    if (selected?.phone) {
+                      setPrSupplierPhone(selected.phone);
+                    } else {
+                      setPrSupplierPhone("");
+                    }
+                  }}
+                >
+                  <option value="">Select Supplier</option>
+                  {suppliers.map((s) => (
+                    <option key={s.id} value={s.id}>
+                      {s.supplier_name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Supplier Mobile Number */}
+              <div>
+                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                  Supplier Mobile Number
+                </label>
+                <input
+                  type="text"
+                  className="ui-input"
+                  style={{
+                    width: "100%",
+                    height: "40px",
+                    padding: "0 12px",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    backgroundColor: "#ffffff",
+                    fontSize: "0.88rem",
+                    color: "#1e293b",
+                  }}
+                  placeholder="e.g. 9876543210 (Optional)"
+                  value={prSupplierPhone}
+                  onChange={(e) => {
+                    setPrSupplierPhone(e.target.value);
+                    if (prModalError) setPrModalError(null);
+                  }}
+                />
+              </div>
+
+              {/* Urgency */}
+              <div>
+                <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                  Urgency
+                </label>
+                <select
+                  className="ui-input"
+                  style={{
+                    width: "100%",
+                    height: "40px",
+                    padding: "0 10px",
+                    borderRadius: "8px",
+                    border: "1px solid #cbd5e1",
+                    backgroundColor: "#ffffff",
+                    fontSize: "0.88rem",
+                    color: "#1e293b",
+                  }}
                   value={prUrgency}
                   onChange={(e) => setPrUrgency(e.target.value)}
                 >
@@ -1126,47 +1758,324 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
               </div>
             </div>
 
-            <div style={{ marginBottom: "1rem" }}>
-              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
-                Supplier Name (optional):
-              </label>
-              <select
-                className="ui-input"
-                style={{ width: "100%", padding: "0.45rem", borderRadius: "6px", border: "1px solid #cbd5e1" }}
-                value={prSupplierId || ""}
-                onChange={(e) => setPrSupplierId(e.target.value ? parseInt(e.target.value) : null)}
-              >
-                <option value="">-- Select Supplier (optional) --</option>
-                {suppliers.map((s) => (
-                  <option key={s.id} value={s.id}>{s.supplier_name}</option>
-                ))}
-              </select>
+            {/* Medicine Items Section */}
+            <div
+              style={{
+                border: "1px solid #e2e8f0",
+                borderRadius: "12px",
+                backgroundColor: "#ffffff",
+                padding: "16px",
+                marginBottom: "20px",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+                <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                  <span style={{ display: "inline-flex", alignItems: "center", color: "#2563eb" }}>
+                    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="m10.5 20.5 10-10a4.95 4.95 0 1 0-7-7l-10 10a4.95 4.95 0 1 0 7 7Z" />
+                      <path d="m8.5 8.5 7 7" />
+                    </svg>
+                  </span>
+                  <h3 style={{ margin: 0, fontSize: "0.98rem", fontWeight: 700, color: "#0f172a" }}>
+                    Medicine Items
+                  </h3>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleAddPrItem}
+                  style={{
+                    background: "#2563eb",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "8px",
+                    padding: "7px 14px",
+                    fontSize: "0.84rem",
+                    fontWeight: 600,
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                    cursor: "pointer",
+                  }}
+                >
+                  <span style={{ fontSize: "1rem", lineHeight: 1 }}>+</span> Add Medicine
+                </button>
+              </div>
+
+              {/* Table */}
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+                  <thead>
+                    <tr style={{ textAlign: "left", color: "#64748b", borderBottom: "1px solid #f1f5f9" }}>
+                      <th style={{ padding: "8px 6px", width: "36px", textAlign: "center", fontWeight: 600 }}>#</th>
+                      <th style={{ padding: "8px 8px", width: "24%", fontWeight: 600 }}>Medicine Name *</th>
+                      <th style={{ padding: "8px 8px", width: "21%", fontWeight: 600 }}>Strength / Form</th>
+                      <th style={{ padding: "8px 8px", width: "11%", fontWeight: 600 }}>Quantity *</th>
+                      <th style={{ padding: "8px 8px", width: "15%", fontWeight: 600 }}>Unit</th>
+                      <th style={{ padding: "8px 8px", width: "23%", fontWeight: 600 }}>Notes</th>
+                      <th style={{ padding: "8px 6px", width: "40px", textAlign: "center", fontWeight: 600 }}>Action</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {prItems.map((item, idx) => (
+                      <tr key={idx} style={{ borderBottom: "1px solid #f8fafc" }}>
+                        <td style={{ padding: "8px 6px", textAlign: "center", fontWeight: 600, color: "#334155" }}>
+                          {idx + 1}
+                        </td>
+                        <td style={{ padding: "8px 8px" }}>
+                          <select
+                            className="ui-input"
+                            style={{
+                              width: "100%",
+                              height: "38px",
+                              borderRadius: "8px",
+                              border: "1px solid #cbd5e1",
+                              backgroundColor: "#ffffff",
+                              padding: "0 8px",
+                              fontSize: "0.85rem",
+                              color: "#0f172a",
+                            }}
+                            value={item.medicine_name}
+                            onChange={(e) => handleUpdatePrItem(idx, "medicine_name", e.target.value)}
+                          >
+                            <option value="">Select Medicine</option>
+                            {allMedicineOptions.map((med) => (
+                              <option key={med} value={med}>{med}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ padding: "8px 8px" }}>
+                          <select
+                            className="ui-input"
+                            style={{
+                              width: "100%",
+                              height: "38px",
+                              borderRadius: "8px",
+                              border: "1px solid #cbd5e1",
+                              backgroundColor: "#ffffff",
+                              padding: "0 8px",
+                              fontSize: "0.85rem",
+                              color: "#0f172a",
+                            }}
+                            value={item.strength_form}
+                            onChange={(e) => handleUpdatePrItem(idx, "strength_form", e.target.value)}
+                          >
+                            <option value="">Select Form</option>
+                            {STRENGTH_FORM_OPTIONS.map((sf) => (
+                              <option key={sf} value={sf}>{sf}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ padding: "8px 8px" }}>
+                          <input
+                            type="number"
+                            min={1}
+                            placeholder="e.g. 50"
+                            className="ui-input"
+                            style={{
+                              width: "100%",
+                              height: "38px",
+                              borderRadius: "8px",
+                              border: "1px solid #cbd5e1",
+                              backgroundColor: "#ffffff",
+                              padding: "0 8px",
+                              fontSize: "0.85rem",
+                              color: "#0f172a",
+                              textAlign: "center",
+                            }}
+                            value={item.quantity}
+                            onChange={(e) => handleUpdatePrItem(idx, "quantity", e.target.value)}
+                          />
+                        </td>
+                        <td style={{ padding: "8px 8px" }}>
+                          <select
+                            className="ui-input"
+                            style={{
+                              width: "100%",
+                              height: "38px",
+                              borderRadius: "8px",
+                              border: "1px solid #cbd5e1",
+                              backgroundColor: "#ffffff",
+                              padding: "0 8px",
+                              fontSize: "0.85rem",
+                              color: "#0f172a",
+                            }}
+                            value={item.unit}
+                            onChange={(e) => handleUpdatePrItem(idx, "unit", e.target.value)}
+                          >
+                            <option value="">Select Unit</option>
+                            {PR_UNIT_OPTIONS.map((u) => (
+                              <option key={u} value={u}>{u}</option>
+                            ))}
+                          </select>
+                        </td>
+                        <td style={{ padding: "8px 8px" }}>
+                          <input
+                            type="text"
+                            className="ui-input"
+                            style={{
+                              width: "100%",
+                              height: "38px",
+                              borderRadius: "8px",
+                              border: "1px solid #cbd5e1",
+                              backgroundColor: "#ffffff",
+                              padding: "0 10px",
+                              fontSize: "0.85rem",
+                              color: "#0f172a",
+                            }}
+                            placeholder="e.g. Brand preferred"
+                            value={item.notes}
+                            onChange={(e) => handleUpdatePrItem(idx, "notes", e.target.value)}
+                          />
+                        </td>
+                        <td style={{ padding: "8px 6px", textAlign: "center" }}>
+                          <button
+                            type="button"
+                            onClick={() => handleRemovePrItem(idx)}
+                            disabled={prItems.length <= 1}
+                            title={prItems.length <= 1 ? "At least one item required" : "Delete medicine"}
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              cursor: prItems.length <= 1 ? "not-allowed" : "pointer",
+                              color: prItems.length <= 1 ? "#cbd5e1" : "#ef4444",
+                              padding: "6px",
+                              borderRadius: "6px",
+                              display: "inline-flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                            }}
+                          >
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                              <path d="M3 6h18" />
+                              <path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6" />
+                              <path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2" />
+                              <line x1="10" y1="11" x2="10" y2="17" />
+                              <line x1="14" y1="11" x2="14" y2="17" />
+                            </svg>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* Card Footer: Add another medicine + dynamic summary */}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "14px", flexWrap: "wrap", gap: "10px" }}>
+                <button
+                  type="button"
+                  onClick={handleAddPrItem}
+                  style={{
+                    border: "1.5px solid #2563eb",
+                    color: "#2563eb",
+                    background: "#ffffff",
+                    borderRadius: "9999px",
+                    padding: "6px 16px",
+                    fontSize: "0.82rem",
+                    fontWeight: 600,
+                    cursor: "pointer",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "6px",
+                  }}
+                >
+                  <span style={{ fontSize: "1rem", lineHeight: 1 }}>+</span> Add another medicine
+                </button>
+
+                <div style={{ color: "#64748b", fontSize: "0.85rem", fontWeight: 500 }}>
+                  {totalMedicines} medicines • {totalUnits} total units
+                </div>
+              </div>
             </div>
 
-            <div style={{ marginBottom: "1.25rem" }}>
-              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
-                Clinical Remarks / Reason:
+            {/* Clinical Remarks / Reason */}
+            <div style={{ marginBottom: "24px" }}>
+              <label style={{ display: "block", fontSize: "0.82rem", fontWeight: 600, color: "#334155", marginBottom: "6px" }}>
+                Clinical Remarks / Reason
               </label>
-              <Input
+              <textarea
+                className="ui-input"
+                rows={3}
+                style={{
+                  width: "100%",
+                  padding: "10px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #cbd5e1",
+                  backgroundColor: "#ffffff",
+                  fontSize: "0.88rem",
+                  color: "#0f172a",
+                  resize: "vertical",
+                  fontFamily: "inherit",
+                }}
+                placeholder="e.g. Current stock below reorder level..."
                 value={prNotes}
                 onChange={(e) => setPrNotes(e.target.value)}
-                placeholder="e.g. Current stock below reorder level..."
               />
             </div>
 
-            <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
-              <Button type="button" variant="secondary" onClick={() => setNewPrModalOpen(false)}>
-                Cancel
-              </Button>
-              <Button
+            {/* Footer Buttons */}
+            <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
+              <button
                 type="button"
-                className="primary"
-                style={{ background: "#00828a", borderColor: "#00828a" }}
+                onClick={() => setNewPrModalOpen(false)}
+                style={{
+                  background: "#ffffff",
+                  border: "1px solid #cbd5e1",
+                  color: "#334155",
+                  borderRadius: "8px",
+                  padding: "9px 20px",
+                  fontWeight: 600,
+                  fontSize: "0.88rem",
+                  cursor: "pointer",
+                }}
+              >
+                Cancel
+              </button>
+
+              <button
+                type="button"
                 disabled={submittingPr}
-                onClick={handleCreatePr}
+                onClick={() => handleCreatePr(false)}
+                style={{
+                  background: "#2563eb",
+                  border: "1px solid #2563eb",
+                  color: "#ffffff",
+                  borderRadius: "8px",
+                  padding: "9px 22px",
+                  fontWeight: 600,
+                  fontSize: "0.88rem",
+                  cursor: submittingPr ? "not-allowed" : "pointer",
+                  opacity: submittingPr ? 0.7 : 1,
+                }}
               >
                 {submittingPr ? "Submitting..." : "Submit Requisition"}
-              </Button>
+              </button>
+
+              <button
+                type="button"
+                disabled={submittingPr}
+                onClick={() => handleCreatePr(true)}
+                style={{
+                  background: "#ffffff",
+                  border: "1.5px solid #22c55e",
+                  color: "#0f172a",
+                  borderRadius: "8px",
+                  padding: "9px 20px",
+                  fontWeight: 600,
+                  fontSize: "0.88rem",
+                  cursor: submittingPr ? "not-allowed" : "pointer",
+                  opacity: submittingPr ? 0.7 : 1,
+                  display: "inline-flex",
+                  alignItems: "center",
+                  gap: "8px",
+                }}
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="#22c55e">
+                  <path d="M.057 24l1.687-6.163c-1.041-1.804-1.588-3.849-1.587-5.946.003-6.556 5.338-11.891 11.893-11.891 3.181.001 6.167 1.24 8.413 3.488 2.245 2.248 3.481 5.236 3.48 8.414-.003 6.557-5.338 11.892-11.893 11.892-1.99-.001-3.951-.5-5.688-1.448l-6.305 1.654zm6.597-3.807c1.676.995 3.276 1.591 5.392 1.592 5.448 0 9.886-4.434 9.889-9.885.002-5.462-4.415-9.89-9.881-9.892-5.452 0-9.887 4.434-9.889 9.884-.001 2.225.651 3.891 1.746 5.634l-.999 3.648 3.742-.981zm11.387-5.464c-.074-.124-.272-.198-.57-.347-.297-.149-1.758-.868-2.031-.967-.272-.099-.47-.149-.669.149-.198.297-.768.967-.941 1.165-.173.198-.347.223-.644.074-.297-.149-1.255-.462-2.39-1.475-.883-.788-1.48-1.761-1.653-2.059-.173-.297-.018-.458.13-.606.134-.133.297-.347.446-.521.151-.172.2-.296.3-.495.099-.198.05-.372-.025-.521-.075-.148-.669-1.611-.916-2.206-.242-.579-.487-.501-.669-.51l-.57-.01c-.198 0-.52.074-.792.372s-1.04 1.016-1.04 2.479 1.065 2.876 1.213 3.074c.149.198 2.095 3.2 5.076 4.487.709.306 1.263.489 1.694.626.712.226 1.36.194 1.872.118.571-.085 1.758-.719 2.006-1.413.248-.695.248-1.29.173-1.414z" />
+                </svg>
+                Submit & Share with Supplier on WhatsApp
+              </button>
             </div>
           </div>
         </Modal>

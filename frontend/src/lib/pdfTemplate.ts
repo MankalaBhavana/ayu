@@ -75,20 +75,22 @@ export function renderAyuPdfHeaderHtml(options?: PdfHeaderOptions): string {
  *  - Right: "Page 1 of 1" (italic grey)
  */
 export function renderAyuPdfFooterHtml(pageText = "Page 1 of 1", includeSignature = true): string {
-  const signatureSpacing = includeSignature ? "margin:4mm 0 0;padding-top:5mm;" : "margin:0;padding-top:0;";
+  const signatureSpacing = "margin:0;padding-top:0;";
   const signatureHtml = includeSignature
-    ? `<div style="position:absolute;top:0;right:0;width:58mm;text-align:center;color:#1d4289;font-size:8px;font-weight:800;">
-        <div style="width:100%;border-top:1px solid #1d4289;margin-bottom:3px;"></div>
-        <span style="letter-spacing:0.6px;">SIGNATURE</span>
+    ? `<div style="display:flex;justify-content:flex-end;width:100%;margin:0 0 2mm 0;box-sizing:border-box;">
+        <div style="width:33.3%;text-align:center;color:#1d4289;">
+          <div style="width:100%;border-top:1px solid #1d4289;margin-bottom:3px;"></div>
+          <span style="font-size:8pt;font-weight:800;letter-spacing:0.6px;">SIGNATURE</span>
+        </div>
       </div>`
     : "";
   return `
     <div class="ayu-shared-footer-shell" aria-label="${escapeHtml(pageText)}" style="width:100%;position:relative;${signatureSpacing}font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;clear:both;break-inside:avoid;">
       ${signatureHtml}
-      <div style="border-top:0.35mm solid #1d4289;border-bottom:0.35mm solid #1d4289;padding:1.5mm 0;">
-        <img src="${PRINT_FOOTER_IMAGE_DATA_URI}" alt="Ayu Polyclinic services, address, phone and email" style="display:block;width:100%;max-width:100%;height:auto;object-fit:contain;object-position:center bottom;" />
+      <div style="width:100%;border-top:1px solid #1d4289;border-bottom:1px solid #1d4289;padding:1.5mm 0;box-sizing:border-box;margin:0;">
+        <img src="${PRINT_FOOTER_IMAGE_DATA_URI}" alt="Ayu Polyclinic services, address, phone and email" style="display:block;width:100%;max-width:100%;height:auto;object-fit:contain;margin:0;" />
       </div>
-      <div class="ayu-shared-footer-powered" style="text-align:center;font-size:8.5pt;color:#1e567a;font-family:Arial,Helvetica,sans-serif;font-weight:500;margin-top:2mm;letter-spacing:0.2px;">Powered by HospAI</div>
+      <div class="ayu-shared-footer-powered" style="text-align:center;font-size:8.5pt;color:#1e567a;font-family:Arial,Helvetica,sans-serif;font-weight:500;margin-top:2.5mm;letter-spacing:0.2px;">Powered by HospAI</div>
     </div>
   `;
 }

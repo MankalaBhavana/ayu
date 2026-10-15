@@ -10,9 +10,10 @@ type ModalProps = {
   description?: string;
   children: ReactNode;
   className?: string;
+  hideHeader?: boolean;
 };
 
-export default function Modal({ open, onClose, title, description, children, className }: ModalProps) {
+export default function Modal({ open, onClose, title, description, children, className, hideHeader }: ModalProps) {
   useEffect(() => {
     if (!open) return;
     const onKeyDown = (event: KeyboardEvent) => {
@@ -27,15 +28,17 @@ export default function Modal({ open, onClose, title, description, children, cla
   return (
     <div className="ui-modal-overlay" role="dialog" aria-modal="true" onClick={onClose}>
       <div className={cn("ui-modal", className)} onClick={(event) => event.stopPropagation()}>
-        <div className="ui-modal-header">
-          <div>
-            {title ? <h3 className="ui-modal-title">{title}</h3> : null}
-            {description ? <p className="ui-modal-description">{description}</p> : null}
+        {!hideHeader && (
+          <div className="ui-modal-header">
+            <div>
+              {title ? <h3 className="ui-modal-title">{title}</h3> : null}
+              {description ? <p className="ui-modal-description">{description}</p> : null}
+            </div>
+            <Button variant="ghost" className="ui-modal-close" onClick={onClose} aria-label="Close modal">
+              x
+            </Button>
           </div>
-          <Button variant="ghost" className="ui-modal-close" onClick={onClose} aria-label="Close modal">
-            x
-          </Button>
-        </div>
+        )}
         <div className="ui-modal-content">{children}</div>
       </div>
     </div>

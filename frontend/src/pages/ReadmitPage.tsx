@@ -45,6 +45,13 @@ type DoctorSchedule = {
 
 type OcrResultMap = Record<string, { text?: string; file?: File }>;
 
+type QueueCheckResult = {
+  status: string;
+  token?: string | number;
+  doctor?: string;
+  department?: string;
+};
+
 const IMAGE_NAME_PATTERN = /\.(png|jpe?g|webp|bmp|gif|tiff?|heic|heif)$/i;
 const ACTIVE_READMIT_STATUSES = new Set(["In Queue", "In Consultation"]);
 const FOLLOW_UP_PAYMENT_MODES = ["Cash", "UPI", "Card"];
@@ -130,6 +137,24 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
   const [previousDocuments, setPreviousDocuments] = useState<DocumentItem[]>([]);
   const [previousDocumentsLoading, setPreviousDocumentsLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [todayAppointments, setTodayAppointments] = useState<Array<any>>([]);
+
+  const getTodayIso = () => {
+    const d = new Date();
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  };
+
+  const loadTodayAppointments = async () => {
+    try {
+      const data = await apiFetch<{ appointments?: Array<any> }>(`/api/appointments?date=${getTodayIso()}`);
+      setTodayAppointments(data?.appointments || []);
+    } catch {
+      setTodayAppointments([]);
+    }
+  };
 
   const normalizeProfile = (patient: Patient): ProfileUpdates => {
     let sys = "";
@@ -176,6 +201,7 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
     };
     void loadPatients();
     void loadDepartments();
+    void loadTodayAppointments();
   }, [setNotice]);
 
   useEffect(() => {
@@ -307,7 +333,48 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
     }
   };
 
+  const getActiveQueueEntry = (patientId?: string): QueueCheckResult | null => {
+    if (!patientId) return null;
+    const cleanId = String(patientId).trim().toLowerCase();
+
+    // 1. Live appointments from backend
+    const found = todayAppointments.find((a) => {
+      if (String(a.patient_id || "").trim().toLowerCase() !== cleanId) return false;
+      const s = String(a.status || "").toLowerCase().trim();
+      return ["scheduled", "checked_in", "in_consultation", "waiting", "arrived", "in queue", "queue"].includes(s);
+    });
+
+    if (found) {
+      const rawStatus = String(found.status || "").toLowerCase();
+      const statusLabel = ["in_consultation", "consulting"].includes(rawStatus)
+        ? "In Consultation"
+        : "In Queue";
+      return {
+        status: statusLabel,
+        token: found.token_no != null ? found.token_no : undefined,
+        doctor: found.doctor_name || undefined,
+        department: found.department || undefined,
+      };
+    }
+
+    // 2. Local storage queue check
+    const localEntry = getActiveReadmitEntry(patientId);
+    if (localEntry) {
+      return {
+        status: String(localEntry.status || "In Queue"),
+        token: localEntry.token,
+        doctor: localEntry.doctor,
+        department: localEntry.department,
+      };
+    }
+
+    return null;
+  };
+
+  const activePatientQueueEntry = activePatient ? getActiveQueueEntry(activePatient.patient_id) : null;
+
   const handleSelect = async (patient: Patient) => {
+    void loadTodayAppointments();
     setActivePatient(patient);
     setNotes("");
     setDocFiles({});
@@ -566,6 +633,17 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
 
   const handleReadmit = async () => {
     if (!activePatient) return;
+
+    // Guard: Prevent re-visiting if patient is already in queue
+    const queueStatus = getActiveQueueEntry(activePatient.patient_id);
+    if (queueStatus) {
+      setNotice({
+        type: "warning",
+        message: `Patient is already in queue (Status: ${queueStatus.status}${queueStatus.token ? `, Token #${queueStatus.token}` : ""}). Please complete the existing consultation before creating a re-visit.`,
+      });
+      return;
+    }
+
     setSubmitting(true);
     const validationErrors: Record<string, string> = {};
     const feeValue = String(reviewFee).trim();
@@ -660,6 +738,7 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
       setPreviousDocuments([]);
       onSelect({ ...activePatient, ...profileUpdates, admission_id: data.admission_id });
       await onReadmitComplete?.(activePatient.patient_id);
+      void loadTodayAppointments();
       if (onNavigate) {
         onNavigate("op-queue-management");
       }
@@ -696,6 +775,7 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
           </TableHead>
           {results.map((patient) => {
             const expanded = activePatient?.patient_id === patient.patient_id;
+            const patientQueueEntry = getActiveQueueEntry(patient.patient_id);
             return (
               <Fragment key={patient.patient_id}>
                 <TableRow 
@@ -710,7 +790,26 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
                   }}
                 >
                   <TableCell>
-                    {[patient.name, patient.middle_name, patient.last_name].filter(Boolean).join(" ").trim() || patient.patient_id}
+                    <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
+                      <span>{[patient.name, patient.middle_name, patient.last_name].filter(Boolean).join(" ").trim() || patient.patient_id}</span>
+                      {patientQueueEntry && (
+                        <span
+                          className="status-pill status-pill-warning"
+                          style={{
+                            fontSize: "11px",
+                            padding: "2px 8px",
+                            borderRadius: "12px",
+                            backgroundColor: "#fef3c7",
+                            color: "#92400e",
+                            border: "1px solid #fcd34d",
+                            fontWeight: 600,
+                            whiteSpace: "nowrap"
+                          }}
+                        >
+                          In Queue ({patientQueueEntry.status})
+                        </span>
+                      )}
+                    </div>
                   </TableCell>
                   <TableCell>{patient.patient_id}</TableCell>
                   <TableCell>{patient.age || "-"}</TableCell>
@@ -719,16 +818,46 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
                   <TableCell>{formatDateTimeIST(patient.created_at || patient.registration_date || patient.created_on)}</TableCell>
                   <TableCell className="row-actions">
                     <Button
-                      variant={expanded ? "ghost" : "primary"}
+                      variant={expanded ? "ghost" : (patientQueueEntry ? "secondary" : "primary")}
                       size="sm"
                     >
-                      {expanded ? "Hide" : "Re-visit"}
+                      {expanded ? "Hide" : (patientQueueEntry ? "In Queue" : "Re-visit")}
                     </Button>
                   </TableCell>
                 </TableRow>
                 {expanded && activePatient && (
                   <div className="table-row-expand">
                     <div className="readmit-form">
+                      {activePatientQueueEntry && (
+                        <div
+                          className="queue-warning-banner"
+                          style={{
+                            display: "flex",
+                            alignItems: "flex-start",
+                            gap: "12px",
+                            padding: "12px 16px",
+                            backgroundColor: "#fffbeb",
+                            border: "1px solid #f59e0b",
+                            borderRadius: "8px",
+                            color: "#92400e",
+                            marginBottom: "16px",
+                          }}
+                        >
+                          <span style={{ fontSize: "20px", lineHeight: "1" }}>⚠️</span>
+                          <div>
+                            <div style={{ fontWeight: 700, fontSize: "14px", marginBottom: "2px" }}>
+                              Patient is already in queue
+                            </div>
+                            <div style={{ fontSize: "12.5px", lineHeight: "1.4" }}>
+                              This patient is already waiting in the OP Queue
+                              {activePatientQueueEntry.token ? ` with Token #${activePatientQueueEntry.token}` : ""} 
+                              {activePatientQueueEntry.doctor ? ` for Dr. ${activePatientQueueEntry.doctor}` : ""} 
+                              &nbsp;(Status: <b>{activePatientQueueEntry.status}</b>). 
+                              Please complete or cancel the existing consultation before creating a re-visit.
+                            </div>
+                          </div>
+                        </div>
+                      )}
                       <h4>
                         Re-visiting: {activePatient.name} {activePatient.last_name} ({activePatient.patient_id})
                       </h4>
@@ -895,16 +1024,26 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
                         </Label>
                       </div>
 
-                      <div className="queue-note">
-                        After confirmation, this patient will be added directly to <b>OP Queue Management</b> with visit type <b>Re-visit</b>.
+                      <div className="queue-note" style={activePatientQueueEntry ? { color: "#b45309", fontWeight: 600 } : undefined}>
+                        {activePatientQueueEntry ? (
+                          <>⚠️ Patient is already in queue (Status: {activePatientQueueEntry.status}). Cannot add a new re-visit token until the existing consultation is completed or cancelled.</>
+                        ) : (
+                          <>After confirmation, this patient will be added directly to <b>OP Queue Management</b> with visit type <b>Re-visit</b>.</>
+                        )}
                       </div>
 
                       <div className="readmit-actions">
                         <Button variant="secondary" onClick={printConfirmation} disabled={!activePatient}>
                           Print Confirmation
                         </Button>
-                        <Button variant="primary" onClick={() => void handleReadmit()} disabled={submitting}>
-                          {submitting ? "Submitting..." : "Confirm Re-visit"}
+                        <Button
+                          variant={activePatientQueueEntry ? "secondary" : "primary"}
+                          onClick={() => void handleReadmit()}
+                          disabled={submitting || Boolean(activePatientQueueEntry)}
+                          style={activePatientQueueEntry ? { cursor: "not-allowed", opacity: 0.65 } : undefined}
+                          title={activePatientQueueEntry ? "Patient is already in queue. Cannot re-visit until current consultation is completed." : undefined}
+                        >
+                          {activePatientQueueEntry ? "Patient is already in queue" : (submitting ? "Submitting..." : "Confirm Re-visit")}
                         </Button>
                       </div>
                     </div>

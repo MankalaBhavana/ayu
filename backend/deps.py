@@ -49,6 +49,22 @@ class require_permissions:
         return user
 
 
+class require_any_permission:
+    """FastAPI dependency factory that passes if user has ANY of the specified permissions."""
+
+    def __init__(self, *permissions: str):
+        self.permissions = permissions
+
+    def __call__(self, user: dict = Depends(get_current_user)) -> dict:
+        user_permissions = security.resolve_user_permissions(user)
+        if not any(p in user_permissions for p in self.permissions):
+            raise HTTPException(
+                status_code=403,
+                detail={"error": "Forbidden", "required_any_permissions": list(self.permissions)},
+            )
+        return user
+
+
 def validate_hospital_code(value: str) -> str:
     import re
     code = (value or "").strip().lower()

@@ -5,6 +5,14 @@ import type { Notice } from "../../types";
 import { Modal } from "../../components/ui";
 import { printViaIframe } from "../../lib/printViaIframe";
 import { buildPrintDocumentHtml } from "../../lib/printTemplates";
+import {
+  useDropdownOptions,
+  createDropdownOption,
+  updateDropdownOption,
+  deleteDropdownOption,
+  fetchDropdownsByCategory,
+  DropdownOption,
+} from "../../lib/dropdownService";
 import "./billingTheme.css";
 
 type Props = {
@@ -26,8 +34,108 @@ const currentDate = () => new Date().toISOString().slice(0, 10);
 export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
   const [targetDate, setTargetDate] = useState(currentDate);
   const [selectedCashier, setSelectedCashier] = useState("All cashiers");
-  const [selectedCounter, setSelectedCounter] = useState("Counter 1 - Main OPD");
+  const [selectedCounter, setSelectedCounter] = useState("All counters");
   const [activeTab, setActiveTab] = useState<Tab>("daily");
+
+  const { options: cashierOptions, reload: reloadCashiers } = useDropdownOptions("cashiers", [
+    { value: "Ramesh Kumar", label: "Ramesh Kumar" },
+    { value: "Admin Cashier", label: "Admin Cashier" },
+    { value: "Priya Sharma", label: "Priya Sharma" },
+    { value: "K. Rajesh", label: "K. Rajesh" },
+  ]);
+  const { options: counterOptions } = useDropdownOptions("counters", [
+    { value: "Main Billing Counter", label: "Main Billing Counter" },
+    { value: "Counter 1 - Main OPD", label: "Counter 1 - Main OPD" },
+    { value: "Counter 2 - Pharmacy & Diagnostics", label: "Counter 2 - Pharmacy & Diagnostics" },
+  ]);
+
+  // Manage Cashiers modal states
+  const [manageCashiersOpen, setManageCashiersOpen] = useState(false);
+  const [allCashiers, setAllCashiers] = useState<DropdownOption[]>([]);
+  const [cashierLoading, setCashierLoading] = useState(false);
+  const [newCashierName, setNewCashierName] = useState("");
+  const [editingCashierId, setEditingCashierId] = useState<number | null>(null);
+  const [editCashierName, setEditCashierName] = useState("");
+  const [cashierActionMsg, setCashierActionMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  const loadManageCashiers = async () => {
+    setCashierLoading(true);
+    setCashierActionMsg(null);
+    try {
+      const data = await fetchDropdownsByCategory("cashiers", false);
+      setAllCashiers(data);
+    } catch {
+      setCashierActionMsg({ type: "error", text: "Failed to load cashier records." });
+    } finally {
+      setCashierLoading(false);
+    }
+  };
+
+  const handleAddCashier = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCashierName.trim()) return;
+    try {
+      await createDropdownOption({
+        category: "cashiers",
+        value: newCashierName.trim(),
+        label: newCashierName.trim(),
+      });
+      setNewCashierName("");
+      setCashierActionMsg({ type: "success", text: `Cashier '${newCashierName.trim()}' added successfully.` });
+      await loadManageCashiers();
+      reloadCashiers();
+    } catch (err: any) {
+      setCashierActionMsg({ type: "error", text: err.message || "Failed to add cashier." });
+    }
+  };
+
+  const handleUpdateCashier = async (id: number) => {
+    if (!editCashierName.trim()) return;
+    try {
+      await updateDropdownOption(id, {
+        value: editCashierName.trim(),
+        label: editCashierName.trim(),
+      });
+      setEditingCashierId(null);
+      setEditCashierName("");
+      setCashierActionMsg({ type: "success", text: "Cashier updated successfully." });
+      await loadManageCashiers();
+      reloadCashiers();
+    } catch (err: any) {
+      setCashierActionMsg({ type: "error", text: err.message || "Failed to update cashier." });
+    }
+  };
+
+  const handleToggleCashierActive = async (cashier: DropdownOption) => {
+    try {
+      await updateDropdownOption(cashier.id, {
+        is_active: !cashier.is_active,
+      });
+      setCashierActionMsg({
+        type: "success",
+        text: `Cashier '${cashier.label}' marked as ${!cashier.is_active ? "active" : "inactive"}.`,
+      });
+      await loadManageCashiers();
+      reloadCashiers();
+    } catch (err: any) {
+      setCashierActionMsg({ type: "error", text: err.message || "Failed to update status." });
+    }
+  };
+
+  const handleDeleteCashier = async (id: number, name: string) => {
+    if (!window.confirm(`Are you sure you want to remove cashier '${name}'? Existing transaction records will be preserved.`)) return;
+    try {
+      const res = await deleteDropdownOption(id);
+      setCashierActionMsg({ type: "success", text: res.message || `Cashier '${name}' removed.` });
+      if (selectedCashier === name) {
+        setSelectedCashier("All cashiers");
+      }
+      await loadManageCashiers();
+      reloadCashiers();
+    } catch (err: any) {
+      setCashierActionMsg({ type: "error", text: err.message || "Failed to delete cashier." });
+    }
+  };
 
   // Daily Data
   const [loading, setLoading] = useState(true);
@@ -69,7 +177,14 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
     setLoading(true);
     setError(null);
     try {
-      const res = await apiFetch(`/api/billing/reports/data?date=${targetDate}`);
+      const params = new URLSearchParams({ date: targetDate });
+      if (selectedCashier && selectedCashier !== "All cashiers") {
+        params.set("cashier", selectedCashier);
+      }
+      if (selectedCounter && selectedCounter !== "All counters") {
+        params.set("counter", selectedCounter);
+      }
+      const res = await apiFetch(`/api/billing/reports/data?${params.toString()}`);
       if (res) {
         setReportData(res);
         if (res.session && res.session.status === "open") {
@@ -117,7 +232,8 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
     setHistoryLoading(true);
     try {
       const res = await apiFetch("/api/billing/reports/day-close-history?limit=30");
-      setHistoryData(Array.isArray(res) ? res : []);
+      const list = Array.isArray(res) ? res : (Array.isArray(res?.sessions) ? res.sessions : []);
+      setHistoryData(list);
     } catch (err: any) {
       reportError(setNotice, err);
       setNotice({ type: "error", message: err.message || "Failed to load day close history." });
@@ -128,7 +244,7 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
 
   useEffect(() => {
     loadDailyData();
-  }, [targetDate]);
+  }, [targetDate, selectedCashier, selectedCounter]);
 
   useEffect(() => {
     if (activeTab === "department") loadDeptData();
@@ -368,99 +484,21 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
           <p>Review collections and reconcile cashier sessions.</p>
         </div>
 
-        <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: "8px" }}>
-          {/* Top Row: Date, Cashier, Counter */}
-          <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
-            {/* Date Picker */}
-            <div className="billing-date-dropdown">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2">
-                <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
-                <line x1="16" y1="2" x2="16" y2="6" />
-                <line x1="8" y1="2" x2="8" y2="6" />
-                <line x1="3" y1="10" x2="21" y2="10" />
-              </svg>
-              <input
-                type="date"
-                value={targetDate}
-                onChange={(e) => setTargetDate(e.target.value)}
-                title="Select report date"
-              />
-            </div>
-
-            {/* Cashier Select */}
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span style={{ fontSize: "12px", color: "#64748b", fontWeight: 500 }}>Cashier</span>
-              <select
-                className="billing-filter-select"
-                value={selectedCashier}
-                onChange={(e) => setSelectedCashier(e.target.value)}
-              >
-                <option>All cashiers</option>
-                <option>Ramesh Kumar</option>
-                <option>Admin Cashier</option>
-                <option>Priya Sharma</option>
-                <option>K. Rajesh</option>
-              </select>
-            </div>
-
-            {/* Counter Select */}
-            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span style={{ fontSize: "12px", color: "#64748b", fontWeight: 500 }}>Counter</span>
-              <select
-                className="billing-filter-select"
-                value={selectedCounter}
-                onChange={(e) => setSelectedCounter(e.target.value)}
-              >
-                <option>Main Billing</option>
-                <option>Counter 1 - Main OPD</option>
-                <option>Counter 2 - Pharmacy & Diagnostics</option>
-              </select>
-            </div>
-          </div>
-
-          {/* Bottom Row: Action Buttons */}
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
-            <button
-              type="button"
-              className="billing-btn-teal"
-              onClick={loadDailyData}
-              style={{ padding: "6px 14px", fontSize: "13px" }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
-                <line x1="4" y1="6" x2="20" y2="6" />
-                <line x1="7" y1="12" x2="17" y2="12" />
-                <line x1="10" y1="18" x2="14" y2="18" />
-              </svg>
-              Apply filters
-            </button>
-
-            <button
-              type="button"
-              className="billing-btn-outline"
-              onClick={() => window.open(`/api/billing/reports/export?date=${targetDate}`, "_blank")}
-              style={{ padding: "6px 12px", fontSize: "13px" }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-                <polyline points="7 10 12 15 17 10" />
-                <line x1="12" y1="15" x2="12" y2="3" />
-              </svg>
-              Export
-            </button>
-
-            <button
-              type="button"
-              className="billing-btn-outline"
-              onClick={printDayClose}
-              style={{ padding: "6px 12px", fontSize: "13px" }}
-            >
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                <polyline points="6 9 6 2 18 2 18 9" />
-                <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
-                <rect x="6" y="14" width="12" height="8" />
-              </svg>
-              Print
-            </button>
+        <div className="billing-header-actions" style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+          {/* Date Picker */}
+          <div className="billing-date-dropdown">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2">
+              <rect x="3" y="4" width="18" height="18" rx="2" ry="2" />
+              <line x1="16" y1="2" x2="16" y2="6" />
+              <line x1="8" y1="2" x2="8" y2="6" />
+              <line x1="3" y1="10" x2="21" y2="10" />
+            </svg>
+            <input
+              type="date"
+              value={targetDate}
+              onChange={(e) => setTargetDate(e.target.value)}
+              title="Select report date"
+            />
           </div>
         </div>
       </div>
@@ -834,11 +872,15 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
                         <div style={{ background: "#f8fafc", borderRadius: "8px", padding: "10px 12px", border: "1px solid #e2e8f0", fontSize: "0.85rem" }}>
                           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
                             <span style={{ color: "#64748b" }}>Cashier:</span>
-                            <span style={{ fontWeight: 600, color: "#0f172a" }}>{selectedCashier}</span>
+                            <span style={{ fontWeight: 600, color: "#0f172a" }}>
+                              {selectedCashier !== "All cashiers" ? selectedCashier : (sess.cashier_name || "All cashiers")}
+                            </span>
                           </div>
                           <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "4px" }}>
                             <span style={{ color: "#64748b" }}>Counter:</span>
-                            <span style={{ fontWeight: 600, color: "#0f172a" }}>{selectedCounter}</span>
+                            <span style={{ fontWeight: 600, color: "#0f172a" }}>
+                              {selectedCounter !== "All counters" ? selectedCounter : (sess.counter_name || "All counters")}
+                            </span>
                           </div>
                           <div style={{ display: "flex", justifyContent: "space-between" }}>
                             <span style={{ color: "#64748b" }}>Shift Opened:</span>
@@ -1417,6 +1459,204 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
                 disabled={closingShift}
               >
                 {closingShift ? "Closing shift..." : "Confirm & Finalise Close"}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* MODAL: MANAGE CASHIERS */}
+      {manageCashiersOpen && (
+        <Modal
+          open={manageCashiersOpen}
+          title="Manage Cashier Records"
+          onClose={() => {
+            setManageCashiersOpen(false);
+            setEditingCashierId(null);
+            setCashierActionMsg(null);
+          }}
+        >
+          <div style={{ padding: "0.5rem 0", maxHeight: "70vh", overflowY: "auto" }}>
+            <p style={{ fontSize: "0.875rem", color: "#64748b", margin: "0 0 1rem" }}>
+              Configure designated billing cashiers and counter operators. Deactivating an entry preserves all past financial receipts and audit histories.
+            </p>
+
+            {cashierActionMsg && (
+              <div
+                style={{
+                  padding: "8px 12px",
+                  borderRadius: "6px",
+                  fontSize: "0.85rem",
+                  marginBottom: "1rem",
+                  background: cashierActionMsg.type === "success" ? "#f0fdf4" : "#fef2f2",
+                  border: `1px solid ${cashierActionMsg.type === "success" ? "#bbf7d0" : "#fecaca"}`,
+                  color: cashierActionMsg.type === "success" ? "#166534" : "#991b1b",
+                }}
+              >
+                {cashierActionMsg.text}
+              </div>
+            )}
+
+            {/* Quick Add Form */}
+            <form onSubmit={handleAddCashier} style={{ display: "flex", gap: "8px", marginBottom: "1.25rem" }}>
+              <input
+                type="text"
+                placeholder="Enter new cashier name or operator reference..."
+                value={newCashierName}
+                onChange={(e) => setNewCashierName(e.target.value)}
+                style={{
+                  flex: 1,
+                  padding: "8px 12px",
+                  fontSize: "0.875rem",
+                  border: "1px solid #cbd5e1",
+                  borderRadius: "6px",
+                  outline: "none",
+                }}
+              />
+              <button
+                type="submit"
+                className="billing-btn-teal"
+                style={{ whiteSpace: "nowrap", padding: "8px 16px", fontSize: "0.875rem" }}
+              >
+                + Add Cashier
+              </button>
+            </form>
+
+            {/* Cashiers List */}
+            {cashierLoading ? (
+              <div style={{ padding: "20px", textAlign: "center", color: "#64748b" }}>Loading cashiers...</div>
+            ) : allCashiers.length === 0 ? (
+              <div style={{ padding: "20px", textAlign: "center", color: "#94a3b8" }}>No cashiers configured yet.</div>
+            ) : (
+              <div style={{ border: "1px solid #e2e8f0", borderRadius: "8px", overflow: "hidden" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.85rem" }}>
+                  <thead>
+                    <tr style={{ background: "#f8fafc", borderBottom: "1px solid #e2e8f0", textAlign: "left", color: "#64748b" }}>
+                      <th style={{ padding: "10px 12px", fontWeight: 600 }}>Cashier Name</th>
+                      <th style={{ padding: "10px 12px", fontWeight: 600, width: "90px" }}>Status</th>
+                      <th style={{ padding: "10px 12px", fontWeight: 600, textAlign: "right", width: "200px" }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {allCashiers.map((c) => {
+                      const isEditing = editingCashierId === c.id;
+                      return (
+                        <tr key={c.id} style={{ borderBottom: "1px solid #f1f5f9", background: c.is_active ? "#ffffff" : "#f8fafc" }}>
+                          <td style={{ padding: "8px 12px" }}>
+                            {isEditing ? (
+                              <input
+                                type="text"
+                                value={editCashierName}
+                                onChange={(e) => setEditCashierName(e.target.value)}
+                                style={{
+                                  width: "100%",
+                                  padding: "4px 8px",
+                                  fontSize: "0.85rem",
+                                  border: "1px solid #3b82f6",
+                                  borderRadius: "4px",
+                                }}
+                                autoFocus
+                              />
+                            ) : (
+                              <span style={{ fontWeight: 600, color: c.is_active ? "#0f172a" : "#94a3b8" }}>
+                                {c.label || c.value}
+                              </span>
+                            )}
+                          </td>
+                          <td style={{ padding: "8px 12px" }}>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "2px 8px",
+                                borderRadius: "9999px",
+                                fontSize: "11px",
+                                fontWeight: 600,
+                                background: c.is_active ? "#dcfce7" : "#f1f5f9",
+                                color: c.is_active ? "#15803d" : "#64748b",
+                              }}
+                            >
+                              {c.is_active ? "Active" : "Inactive"}
+                            </span>
+                          </td>
+                          <td style={{ padding: "8px 12px", textAlign: "right" }}>
+                            {isEditing ? (
+                              <div style={{ display: "inline-flex", gap: "6px" }}>
+                                <button
+                                  type="button"
+                                  className="billing-btn-teal"
+                                  style={{ padding: "2px 8px", fontSize: "11px" }}
+                                  onClick={() => handleUpdateCashier(c.id)}
+                                >
+                                  Save
+                                </button>
+                                <button
+                                  type="button"
+                                  className="billing-btn-outline"
+                                  style={{ padding: "2px 8px", fontSize: "11px" }}
+                                  onClick={() => setEditingCashierId(null)}
+                                >
+                                  Cancel
+                                </button>
+                              </div>
+                            ) : (
+                              <div style={{ display: "inline-flex", gap: "6px", alignItems: "center" }}>
+                                <button
+                                  type="button"
+                                  className="billing-btn-outline"
+                                  style={{ padding: "2px 8px", fontSize: "11px" }}
+                                  onClick={() => {
+                                    setEditingCashierId(c.id);
+                                    setEditCashierName(c.label || c.value);
+                                  }}
+                                  title="Edit cashier name"
+                                >
+                                  Edit
+                                </button>
+                                <button
+                                  type="button"
+                                  className="billing-btn-outline"
+                                  style={{
+                                    padding: "2px 8px",
+                                    fontSize: "11px",
+                                    color: c.is_active ? "#b45309" : "#15803d",
+                                    borderColor: c.is_active ? "#fde68a" : "#bbf7d0",
+                                  }}
+                                  onClick={() => handleToggleCashierActive(c)}
+                                  title={c.is_active ? "Deactivate cashier" : "Activate cashier"}
+                                >
+                                  {c.is_active ? "Deactivate" : "Activate"}
+                                </button>
+                                <button
+                                  type="button"
+                                  className="billing-btn-outline"
+                                  style={{ padding: "2px 8px", fontSize: "11px", color: "#dc2626", borderColor: "#fecaca" }}
+                                  onClick={() => handleDeleteCashier(c.id, c.label || c.value)}
+                                  title="Remove cashier entry"
+                                >
+                                  Remove
+                                </button>
+                              </div>
+                            )}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            <div style={{ display: "flex", justifyContent: "flex-end", marginTop: "1.25rem" }}>
+              <button
+                type="button"
+                className="billing-btn-outline"
+                onClick={() => {
+                  setManageCashiersOpen(false);
+                  setEditingCashierId(null);
+                  setCashierActionMsg(null);
+                }}
+              >
+                Done
               </button>
             </div>
           </div>

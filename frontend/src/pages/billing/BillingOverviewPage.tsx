@@ -5,6 +5,7 @@ import type { Notice } from "../../types";
 import { Button, Modal } from "../../components/ui";
 import { printViaIframe } from "../../lib/printViaIframe";
 import { buildPrintDocumentHtml } from "../../lib/printTemplates";
+import { useDropdownOptions } from "../../lib/dropdownService";
 import "./billingTheme.css";
 
 type Props = {
@@ -52,6 +53,20 @@ export default function BillingOverviewPage({ setNotice, onNavigate }: Props) {
     recent_receipts: [],
   });
 
+  // Centralized Dropdown Options
+  const { options: departmentOptions } = useDropdownOptions("departments", [
+    { value: "OP", label: "Outpatient (OP)" },
+    { value: "Pharmacy", label: "Pharmacy" },
+    { value: "Laboratory", label: "Laboratory" },
+    { value: "Imaging / Radiology", label: "Imaging / Radiology" },
+  ]);
+  const { options: visitTypeOptions } = useDropdownOptions("visit_types", [
+    { value: "OP", label: "OP Visits" },
+    { value: "Follow-up", label: "Follow-up" },
+    { value: "Review", label: "Review" },
+    { value: "Re-visit", label: "Re-visit" },
+  ]);
+
   // Modal states
   const [openSessionModal, setOpenSessionModal] = useState(false);
   const [openFloat, setOpenFloat] = useState("2000");
@@ -61,6 +76,36 @@ export default function BillingOverviewPage({ setNotice, onNavigate }: Props) {
   const [closeSessionModal, setCloseSessionModal] = useState(false);
   const [countedCash, setCountedCash] = useState("");
   const [closingNotes, setClosingNotes] = useState("");
+
+  // Summary Card Details Pop-up Modal State (Issue 2)
+  const [detailsModalOpen, setDetailsModalOpen] = useState(false);
+  const [detailsMetric, setDetailsMetric] = useState<string | null>(null);
+  const [detailsLoading, setDetailsLoading] = useState(false);
+  const [detailsFilterQuery, setDetailsFilterQuery] = useState("");
+  const [detailsData, setDetailsData] = useState<{
+    metric: string;
+    title: string;
+    date: string;
+    count: number;
+    total_amount: number;
+    records: any[];
+  } | null>(null);
+
+  const handleOpenDetails = async (metric: string) => {
+    setDetailsMetric(metric);
+    setDetailsModalOpen(true);
+    setDetailsLoading(true);
+    setDetailsFilterQuery("");
+    try {
+      const res = await apiFetch(`/api/billing/overview-details?metric=${metric}&date=${targetDate}`);
+      if (res) setDetailsData(res);
+    } catch (err: any) {
+      reportError(setNotice, err);
+      setNotice({ type: "error", message: err.message || "Failed to load detailed records." });
+    } finally {
+      setDetailsLoading(false);
+    }
+  };
 
   // Independent Data Fetchers
   const loadStats = async (dateStr: string) => {
@@ -303,7 +348,14 @@ return (
       {/* 3. Four KPI Summary Cards */}
       <div className="billing-kpi-grid-4">
         {/* Card 1: Net billed today */}
-        <div className="billing-kpi-card">
+        <div
+          className="billing-kpi-card clickable"
+          role="button"
+          tabIndex={0}
+          onClick={() => handleOpenDetails("net_billed")}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpenDetails("net_billed"); } }}
+          title="Click to view detailed Net Billed records"
+        >
           <div className="billing-kpi-icon-wrap" style={{ background: "#f0fdfa", color: "#0d9488" }}>
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
@@ -320,7 +372,14 @@ return (
         </div>
 
         {/* Card 2: Receipts today */}
-        <div className="billing-kpi-card">
+        <div
+          className="billing-kpi-card clickable"
+          role="button"
+          tabIndex={0}
+          onClick={() => handleOpenDetails("receipts_today")}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpenDetails("receipts_today"); } }}
+          title="Click to view detailed Receipts records"
+        >
           <div className="billing-kpi-icon-wrap" style={{ background: "#f0fdf4", color: "#16a34a" }}>
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <rect x="2" y="5" width="20" height="14" rx="2" />
@@ -335,7 +394,14 @@ return (
         </div>
 
         {/* Card 3: Refunds today */}
-        <div className="billing-kpi-card">
+        <div
+          className="billing-kpi-card clickable"
+          role="button"
+          tabIndex={0}
+          onClick={() => handleOpenDetails("refunds_today")}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpenDetails("refunds_today"); } }}
+          title="Click to view detailed Refunds records"
+        >
           <div className="billing-kpi-icon-wrap" style={{ background: "#fef2f2", color: "#dc2626" }}>
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="1 4 1 10 7 10" />
@@ -349,7 +415,14 @@ return (
         </div>
 
         {/* Card 4: Outstanding patient dues */}
-        <div className="billing-kpi-card">
+        <div
+          className="billing-kpi-card clickable"
+          role="button"
+          tabIndex={0}
+          onClick={() => handleOpenDetails("outstanding_dues")}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpenDetails("outstanding_dues"); } }}
+          title="Click to view detailed Outstanding Patient Dues records"
+        >
           <div className="billing-kpi-icon-wrap" style={{ background: "#fff7ed", color: "#ea580c" }}>
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
@@ -420,10 +493,11 @@ return (
                   className="billing-filter-select"
                 >
                   <option value="All departments">All departments</option>
-                  <option value="OP">Outpatient (OP)</option>
-                  <option value="Pharmacy">Pharmacy</option>
-                  <option value="Laboratory">Laboratory</option>
-                  <option value="Imaging">Imaging / Radiology</option>
+                  {departmentOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
                 </select>
 
                 <select
@@ -432,7 +506,11 @@ return (
                   className="billing-filter-select"
                 >
                   <option value="All visit types">All visit types</option>
-                  <option value="OP">OP Visits</option>
+                  {visitTypeOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
                 </select>
               </div>
             </div>
@@ -853,6 +931,193 @@ return (
           </div>
         </Modal>
       )}
+
+      {/* 8. Summary Card Details Pop-up Modal (Issue 2) */}
+      <Modal
+        open={detailsModalOpen}
+        onClose={() => setDetailsModalOpen(false)}
+        title={detailsData?.title || "Billing Metric Details"}
+        description={
+          detailsMetric === "outstanding_dues"
+            ? "Live breakdown of outstanding dues across all patient invoices"
+            : `Live transaction records for date: ${targetDate}`
+        }
+        className="billing-details-modal"
+      >
+        <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
+          {/* Top Meta & Search Bar */}
+          <div className="billing-details-meta-bar">
+            <div className="billing-details-summary-stats">
+              <div className="billing-details-stat-item">
+                <span className="billing-details-stat-label">Total Records</span>
+                <span className="billing-details-stat-value">{detailsData?.count ?? 0}</span>
+              </div>
+              <div className="billing-details-stat-item">
+                <span className="billing-details-stat-label">
+                  {detailsMetric === "outstanding_dues" ? "Total Due Amount" : "Total Amount"}
+                </span>
+                <span className="billing-details-stat-value" style={{ color: detailsMetric === "refunds_today" ? "#dc2626" : "#0d9488" }}>
+                  ₹{fmt(detailsData?.total_amount ?? 0)}
+                </span>
+              </div>
+            </div>
+
+            <div className="billing-details-filter-box">
+              <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#94a3b8" strokeWidth="2">
+                <circle cx="11" cy="11" r="8" />
+                <line x1="21" y1="21" x2="16.65" y2="16.65" />
+              </svg>
+              <input
+                type="text"
+                placeholder="Filter in details..."
+                value={detailsFilterQuery}
+                onChange={(e) => setDetailsFilterQuery(e.target.value)}
+              />
+              {detailsFilterQuery && (
+                <button
+                  type="button"
+                  style={{ border: "none", background: "transparent", cursor: "pointer", color: "#94a3b8", padding: 0 }}
+                  onClick={() => setDetailsFilterQuery("")}
+                >
+                  ✕
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Records Table */}
+          {detailsLoading ? (
+            <div style={{ padding: "40px", textAlign: "center", color: "#64748b" }}>
+              <div className="loading-spinner" style={{ margin: "0 auto 12px" }}></div>
+              Loading live billing records...
+            </div>
+          ) : !detailsData?.records || detailsData.records.length === 0 ? (
+            <div style={{ padding: "36px", textAlign: "center", color: "#94a3b8", background: "#f8fafc", borderRadius: "8px" }}>
+              No records found for this metric on {targetDate}.
+            </div>
+          ) : (() => {
+            const query = detailsFilterQuery.trim().toLowerCase();
+            const filtered = detailsData.records.filter((r: any) => {
+              if (!query) return true;
+              return (
+                (r.reference_no && r.reference_no.toLowerCase().includes(query)) ||
+                (r.patient_name && r.patient_name.toLowerCase().includes(query)) ||
+                (r.patient_id && r.patient_id.toLowerCase().includes(query)) ||
+                (r.mode && r.mode.toLowerCase().includes(query)) ||
+                (r.module && r.module.toLowerCase().includes(query)) ||
+                (r.cashier && r.cashier.toLowerCase().includes(query)) ||
+                (r.status && r.status.toLowerCase().includes(query))
+              );
+            });
+
+            if (filtered.length === 0) {
+              return (
+                <div style={{ padding: "24px", textAlign: "center", color: "#94a3b8" }}>
+                  No matching records for "{detailsFilterQuery}".
+                </div>
+              );
+            }
+
+            return (
+              <div className="billing-details-table-wrap">
+                <table className="billing-details-table">
+                  <thead>
+                    <tr>
+                      <th>Ref / Bill #</th>
+                      <th>Patient Details</th>
+                      {detailsMetric === "net_billed" && <th>Module</th>}
+                      {detailsMetric === "receipts_today" && <th>Type</th>}
+                      {detailsMetric === "receipts_today" && <th>Mode</th>}
+                      {detailsMetric === "refunds_today" && <th>Payment Mode</th>}
+                      {detailsMetric === "outstanding_dues" && <th>Module</th>}
+                      <th style={{ textAlign: "right" }}>Amount (₹)</th>
+                      {detailsMetric === "net_billed" && <th style={{ textAlign: "right" }}>Paid / Due</th>}
+                      {detailsMetric === "outstanding_dues" && <th style={{ textAlign: "right" }}>Total Bill</th>}
+                      <th>Status / Notes</th>
+                      <th>Time / Date</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {filtered.map((r: any, idx: number) => (
+                      <tr key={r.id || idx}>
+                        <td style={{ fontWeight: 600, color: "#0f172a" }}>
+                          {r.reference_no || "-"}
+                        </td>
+                        <td>
+                          <div style={{ fontWeight: 500, color: "#0f172a" }}>{r.patient_name || "-"}</div>
+                          <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{r.patient_id || "-"}</div>
+                        </td>
+                        {detailsMetric === "net_billed" && (
+                          <td>
+                            <span className="billing-table-badge badge-blue">{r.module}</span>
+                          </td>
+                        )}
+                        {detailsMetric === "receipts_today" && (
+                          <td>
+                            <span className="billing-table-badge badge-teal">
+                              {r.type === "advance" ? "Advance Deposit" : "Bill Settlement"}
+                            </span>
+                          </td>
+                        )}
+                        {detailsMetric === "receipts_today" && (
+                          <td>
+                            <span className="billing-table-badge badge-gray">{r.mode}</span>
+                          </td>
+                        )}
+                        {detailsMetric === "refunds_today" && (
+                          <td>
+                            <span className="billing-table-badge badge-orange">{r.mode}</span>
+                          </td>
+                        )}
+                        {detailsMetric === "outstanding_dues" && (
+                          <td>
+                            <span className="billing-table-badge badge-blue">{r.module || "OP"}</span>
+                          </td>
+                        )}
+                        <td style={{ textAlign: "right", fontWeight: 700, color: detailsMetric === "refunds_today" ? "#dc2626" : "#0f172a" }}>
+                          ₹{fmt(detailsMetric === "outstanding_dues" ? r.due_amount : (r.amount ?? r.total_amount))}
+                        </td>
+                        {detailsMetric === "net_billed" && (
+                          <td style={{ textAlign: "right", fontSize: "0.75rem", color: "#64748b" }}>
+                            ₹{fmt(r.paid_amount)} / <strong style={{ color: r.due_amount > 0 ? "#ea580c" : "#16a34a" }}>₹{fmt(r.due_amount)}</strong>
+                          </td>
+                        )}
+                        {detailsMetric === "outstanding_dues" && (
+                          <td style={{ textAlign: "right", fontSize: "0.75rem", color: "#64748b" }}>
+                            ₹{fmt(r.total_amount)}
+                          </td>
+                        )}
+                        <td>
+                          {r.status ? (
+                            <span className={`billing-table-badge ${r.status === "paid" ? "badge-green" : r.status === "due" ? "badge-orange" : "badge-gray"}`}>
+                              {r.status}
+                            </span>
+                          ) : (
+                            <span style={{ fontSize: "0.75rem", color: "#64748b" }}>{r.notes || "-"}</span>
+                          )}
+                        </td>
+                        <td style={{ fontSize: "0.75rem", color: "#64748b", whiteSpace: "nowrap" }}>
+                          {r.time || r.created_at || "-"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            );
+          })()}
+
+          {/* Modal Footer */}
+          <div className="billing-details-footer">
+            <span style={{ fontSize: "0.8125rem", color: "#64748b" }}>
+              Showing verified database billing records for Ayu Polyclinic.
+            </span>
+            <Button variant="primary" onClick={() => setDetailsModalOpen(false)}>
+              Close
+            </Button>
+          </div>
+        </div>
+      </Modal>
     </div>
   );
 }

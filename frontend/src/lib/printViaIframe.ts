@@ -38,7 +38,7 @@ function applySharedHospaiPrintFrame(html: string, options: SharedPrintOptions):
   }
 
   const preserveDocumentHeader = options.preserveDocumentHeader ?? false;
-  const footerAtBottom = options.footerAtBottom ?? false;
+  const footerAtBottom = options.footerAtBottom ?? true;
   const includeFooter = options.includeFooter ?? true;
   const includeSignature = options.includeSignature ?? true;
   const suppressBrowserHeadersAndFooters = options.suppressBrowserHeadersAndFooters ?? false;
@@ -90,10 +90,28 @@ function applySharedHospaiPrintFrame(html: string, options: SharedPrintOptions):
       .report-header,
       .pdf > .print-header { display: none !important; }`;
   const footerAlignment = footerAtBottom && includeFooter ? `
-      @media print {
-        body { display: flex !important; flex-direction: column !important; min-height: 297mm !important; }
-        body > .pdf { flex: 0 0 auto; }
-        .hospai-shared-print-footer { margin-top: auto !important; }
+      html { height: 100% !important; }
+      body {
+        display: flex !important;
+        flex-direction: column !important;
+        justify-content: space-between !important;
+        min-height: 100% !important;
+        box-sizing: border-box !important;
+      }
+      .content,
+      .hospai-print-content,
+      .label-grid,
+      body > section,
+      body > main,
+      body > div:not(.hospai-shared-print-shell):not(.hospai-shared-print-footer):not(.hospai-shared-watermark) {
+        flex: 1 0 auto !important;
+      }
+      .hospai-shared-print-footer,
+      .ayu-shared-footer-shell {
+        flex: 0 0 auto !important;
+        margin-top: auto !important;
+        break-inside: avoid !important;
+        page-break-inside: avoid !important;
       }` : "";
 
   const sharedCss = `
@@ -171,7 +189,7 @@ function applySharedHospaiPrintFrame(html: string, options: SharedPrintOptions):
       ${documentHeaderVisibility}
       .hospai-shared-print-footer {
         position: relative;
-        min-height: 56mm;
+        min-height: 30mm;
         height: auto;
         margin: 0;
         font-family: Arial, Helvetica, sans-serif;

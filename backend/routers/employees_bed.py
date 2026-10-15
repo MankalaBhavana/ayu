@@ -62,10 +62,28 @@ def employees_update(employee_id: str, payload: dict = Body(...), db: Session = 
 
 
 @router.delete("/employees/{employee_id}")
-def employees_delete(employee_id: str, db: Session = Depends(get_db), user: dict = Depends(require_permissions("admin.use"))):
+def employees_delete(employee_id: str, db: Session = Depends(get_db), user: dict = Depends(require_permissions("admin.use")),
+                     hospital_id: int = Depends(current_hospital_id)):
     if "employees.write" not in security.resolve_user_permissions(user):
         raise HTTPException(status_code=403, detail={"error": "Forbidden", "required_permissions": ["employees.write"]})
-    if not lq.delete_employee(db, employee_id):
+    
+    emp = lq.get_employee(db, employee_id=employee_id, hospital_id=hospital_id)
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    if emp.get("username") == user.get("username"):
+        raise HTTPException(status_code=400, detail="Cannot delete your own account while logged in.")
+
+    # Guard against deleting the only active admin
+    if emp.get("user_type") == "admin":
+        from models import Users
+        active_admins = db.query(Users).filter(
+            Users.user_type == "admin", Users.status == "active", Users.hospital_id == hospital_id
+        ).count()
+        if active_admins <= 1 and emp.get("status") == "active":
+            raise HTTPException(status_code=400, detail="Cannot delete the only active administrator account.")
+
+    if not lq.delete_employee(db, employee_id, hospital_id=hospital_id):
         raise HTTPException(status_code=404, detail="Employee not found")
     return {"status": "ok"}
 

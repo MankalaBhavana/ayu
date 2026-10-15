@@ -342,12 +342,39 @@ def admissions_create(patient_id: str, request: Request, payload: dict = Body(..
     if vitals_err:
         raise HTTPException(status_code=400, detail=vitals_err)
 
+    # Check if patient is already in queue with an active consultation for today
+    now_dt = lq.current_ist_datetime() if hasattr(lq, "current_ist_datetime") else datetime.now()
+    appointment_day = now_dt.strftime("%Y-%m-%d")
+    with lq.get_connection(db) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT id, status, token_no 
+            FROM appointments 
+            WHERE patient_id = ? 
+              AND DATE(appointment_date) = DATE(?) 
+              AND status IN ('scheduled', 'checked_in', 'in_consultation', 'waiting', 'arrived')
+            ORDER BY id DESC LIMIT 1
+            """,
+            (patient_id, appointment_day),
+        )
+        active_appointment = cursor.fetchone()
+        if active_appointment:
+            raw_st = str(active_appointment["status"] or "waiting").lower()
+            status_display = "In Consultation" if raw_st in ("in_consultation", "consulting") else "In Queue"
+            token_display = f" (Token #{active_appointment['token_no']})" if active_appointment.get("token_no") else ""
+            raise HTTPException(
+                status_code=400,
+                detail=f"Patient is already in queue{token_display} with status '{status_display}'. Please complete the existing consultation before creating a re-visit."
+            )
+
     admission_id = lq.add_admission(db, patient_id, notes, hospital_id=hospital_id)
     log_audit_event(db, user, client_ip(request), "create", "admissions", str(admission_id), {"patient_id": patient_id})
 
     review_fee = payload.get("review_fee")
     doctor_name = payload.get("doctor_name")
     department = payload.get("department")
+    invoice_id = None
     if review_fee:
         try:
             review_fee_val = float(review_fee)
@@ -369,7 +396,6 @@ def admissions_create(patient_id: str, request: Request, payload: dict = Body(..
     token_no = None
     try:
         patient_name = " ".join(p for p in [patient.get("name"), patient.get("middle_name"), patient.get("last_name")] if p).strip() or patient_id
-        now_dt = lq.current_ist_datetime() if hasattr(lq, "current_ist_datetime") else datetime.now()
         appointment_datetime_str = now_dt.strftime("%Y-%m-%d %H:%M:%S")
         fee_to_use = float(review_fee) if review_fee is not None else 0.0
         appointment_id, token_no = lq.create_appointment(db, {
@@ -383,11 +409,10 @@ def admissions_create(patient_id: str, request: Request, payload: dict = Body(..
             "appointment_kind": "follow_up",
             "consultation_fee": fee_to_use,
             "notes": notes,
-            "allow_revisit": True,
         })
         if invoice_id and appointment_id:
             try:
-                with legacy_sql.get_connection(db) as conn:
+                with lq.get_connection(db) as conn:
                     conn.cursor().execute("UPDATE invoices SET appointment_id = ? WHERE id = ?", (appointment_id, invoice_id))
                     conn.commit()
             except Exception:
@@ -403,7 +428,7 @@ def admissions_create(patient_id: str, request: Request, payload: dict = Body(..
             h_m = re.search(r"Height:\s*([^\s|]+)", notes, re.I)
             w_m = re.search(r"Weight:\s*([^\s|]+)", notes, re.I)
             if any([bp_m, pulse_m, temp_m, spo2_m, h_m, w_m]):
-                with legacy_sql.get_connection(db) as conn:
+                with lq.get_connection(db) as conn:
                     conn.cursor().execute(
                         """
                         INSERT INTO patient_vitals (hospital_id, patient_id, patient_name, bp, pulse, temperature, spo2, height, weight, recorded_at, encounter_id, admission_id)
@@ -421,6 +446,10 @@ def admissions_create(patient_id: str, request: Request, payload: dict = Body(..
                     conn.commit()
         except Exception as e:
             print(f"[WARN] Could not record vitals in patient_vitals: {e}")
+    except HTTPException:
+        raise
+    except ValueError as val_err:
+        raise HTTPException(status_code=400, detail=str(val_err))
     except Exception as exc:
         print(f"[ERROR] Could not auto-create re-visit appointment: {exc}")
         raise HTTPException(status_code=400, detail=f"Could not create queue appointment for re-visit: {exc}")

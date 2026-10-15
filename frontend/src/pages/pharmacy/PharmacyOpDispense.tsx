@@ -289,14 +289,28 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
         billing_type: "CASH_OPD",
         stock_source: dispenseStockSource,
         payment_mode: paymentMode,
-        items: cart.map((c) => ({
-          batch_id: c.batch_id,
-          medicine_name: c.medicine_name,
-          quantity: c.quantity,
-          price: c.unit_price,
-          discount: (c.unit_price * c.quantity * (c.discount_percent / 100)),
-          tax: ((c.unit_price * c.quantity * (1 - c.discount_percent / 100)) * (c.gst_rate / 100)),
-        })),
+        subtotal: pricing.subtotal,
+        discount: pricing.totalDiscount,
+        tax: pricing.totalTax,
+        total_amount: pricing.grandTotal,
+        items: cart.map((c) => {
+          const base = c.unit_price * c.quantity;
+          const disc = base * (c.discount_percent / 100);
+          const afterDisc = base - disc;
+          const tax = afterDisc * (c.gst_rate / 100);
+          return {
+            batch_id: c.batch_id,
+            medicine_name: c.medicine_name,
+            quantity: c.quantity,
+            price: c.unit_price,
+            unit_price: c.unit_price,
+            discount_percent: c.discount_percent,
+            gst_rate: c.gst_rate,
+            discount: disc,
+            tax: tax,
+            amount: afterDisc + tax,
+          };
+        }),
       };
 
       const res = await apiFetch<DispenseResult>("/api/pharmacy/dispense", {
@@ -362,7 +376,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
           { label: "Amount Received", value: `₹${grandTotal.toFixed(2)}` },
           { label: "Balance", value: "₹0.00" },
         ],
-      }));
+      }), "__hospai_pharmacy_invoice__", { footerAtBottom: true });
     } catch (error) {
       setNotice({ type: "error", message: error instanceof Error ? error.message : "Unable to print the invoice." });
     }
@@ -378,7 +392,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
       items: dispensedItems.map((it) => ({
         medicineName: it.medicine_name, batchNo: it.batch_no, expiryDate: it.expiry_date, quantity: it.quantity,
       })),
-    }));
+    }), "__hospai_pharmacy_labels__", { footerAtBottom: true });
   };
 
   // Lookup Invoice for Return

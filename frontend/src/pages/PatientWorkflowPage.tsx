@@ -11,7 +11,8 @@ import { apiFetch, getHospitalCode, reportError } from "../lib/api";
 import { downloadExportBlob } from "../lib/exportShare";
 import { filterInteger, filterDecimal } from "../lib/format";
 import { printViaIframe } from "../lib/printViaIframe";
-import { PRINT_WATERMARK_DATA_URI, PRINT_RX_SYMBOL_DATA_URI, PRINT_CADUCEUS_DATA_URI, PRINT_FOOTER_IMAGE_DATA_URI } from "../lib/printBrand";
+import { PRINT_WATERMARK_DATA_URI, PRINT_RX_SYMBOL_DATA_URI, PRINT_CADUCEUS_DATA_URI } from "../lib/printBrand";
+import { renderAyuPdfFooterHtml } from "../lib/pdfTemplate";
 
 type Props = { setNotice: Dispatch<SetStateAction<Notice | null>>; view: "prescription" | "ip-admission" | "nurse-station" | "discharge-summary" };
 
@@ -85,6 +86,536 @@ function saveLocal(key: string, row: Row) {
   localStorage.setItem(key, JSON.stringify([row, ...rows].slice(0, 25)));
 }
 function loadLocal(key: string) { return JSON.parse(localStorage.getItem(key) || "[]") as Row[]; }
+
+export const buildPrescriptionHtml = (data: {
+  patientName: string;
+  patientAddress: string;
+  ageGender: string;
+  diagnosis: string;
+  printDate: string;
+  doctorName?: string;
+  medicines?: PrescriptionMedicine[];
+  medsHtml?: string;
+  advice?: string;
+  followUpDate?: string;
+}) => {
+  const docName = data.doctorName && data.doctorName.trim() && data.doctorName !== "-" ? data.doctorName : "Dr. Sushanth. B";
+  const validMeds: PrescriptionMedicine[] = data.medicines ? data.medicines.filter(m => m.medicine_name.trim()) : [];
+  const adviceLines = (data.advice || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+  const hasAdvice = adviceLines.length > 0 || Boolean(data.followUpDate);
+
+  const renderMedsRows = (items: PrescriptionMedicine[], startIndex: number) => {
+    return items.map((medicine, idx) => {
+      const index = startIndex + idx;
+      const rawFrequency = medicine.is_custom ? (medicine.freq_custom || "").trim() : (medicine.frequency || "").trim();
+      const frequency = medicine.is_custom
+        ? rawFrequency || "-"
+        : rawFrequency.replace(/-/g, "").trim()
+          ? rawFrequency.split("-").map((slot) => slot.trim() || "0").join(" - ")
+          : "-";
+      const dosage = medicine.dosage ? medicine.dosage.trim() : "";
+      return `<tr>
+        <td style="border:1px solid #8fb4dc;padding:5px 6px;text-align:center;width:9%;font-weight:700;">${index + 1}</td>
+        <td style="border:1px solid #8fb4dc;padding:5px 6px;width:24%;overflow-wrap:anywhere;">${escapePrescriptionHtml(medicine.medicine_name)}${dosage ? ` <span style="color:#334155;">(${escapePrescriptionHtml(dosage)})</span>` : ""}</td>
+        <td style="border:1px solid #8fb4dc;padding:5px 6px;width:25%;white-space:nowrap;text-align:center;">${escapePrescriptionHtml(frequency)}</td>
+        <td style="border:1px solid #8fb4dc;padding:5px 6px;width:27%;overflow-wrap:anywhere;">${escapePrescriptionHtml((medicine.instructions || "").trim() || "-")}</td>
+        <td style="border:1px solid #8fb4dc;padding:5px 6px;width:15%;text-align:center;">${escapePrescriptionHtml((medicine.duration || "").trim() || "-")}</td>
+      </tr>`;
+    }).join("");
+  };
+
+  const renderMedsTable = (rowsHtml: string) => {
+    if (!rowsHtml) return "";
+    return `
+      <table class="rx-meds-table" style="width:100%;border-collapse:collapse;table-layout:fixed;border:1px solid #8fb4dc;font-size:10px;line-height:1.25;">
+        <thead>
+          <tr style="background:#dcecff;color:#153d70;font-size:9px;font-weight:800;text-align:left;">
+            <th style="border:1px solid #8fb4dc;padding:5px 6px;width:9%;text-align:center;">#</th>
+            <th style="border:1px solid #8fb4dc;padding:5px 6px;width:24%;">Medicine Name</th>
+            <th style="border:1px solid #8fb4dc;padding:5px 6px;width:25%;text-align:center;">Frequency</th>
+            <th style="border:1px solid #8fb4dc;padding:5px 6px;width:27%;">Instructions</th>
+            <th style="border:1px solid #8fb4dc;padding:5px 6px;width:15%;text-align:center;">Duration</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    `;
+  };
+
+  // Determine pagination: single page vs multi-page
+  const fitsOnSinglePage = validMeds.length === 0
+    ? true
+    : (validMeds.length <= 6 && adviceLines.length <= 6)
+      || (validMeds.length <= 8 && adviceLines.length <= 2)
+      || (validMeds.length <= 4 && adviceLines.length <= 10);
+
+  type RxPagePlan = {
+    pageIndex: number;
+    meds: PrescriptionMedicine[];
+    startIndex: number;
+    isFirstPage: boolean;
+    showAdvice: boolean;
+    showSignature: boolean;
+    customMedsHtml?: string;
+  };
+
+  const pagesPlan: RxPagePlan[] = [];
+
+  if (fitsOnSinglePage) {
+    pagesPlan.push({
+      pageIndex: 1,
+      meds: validMeds,
+      startIndex: 0,
+      isFirstPage: true,
+      showAdvice: hasAdvice,
+      showSignature: true,
+      customMedsHtml: validMeds.length === 0 ? data.medsHtml : undefined,
+    });
+  } else {
+    // Page 1 gets first 6 medicines
+    const page1Meds = validMeds.length > 6 ? validMeds.slice(0, 6) : validMeds;
+    const remainingMeds = validMeds.length > 6 ? validMeds.slice(6) : [];
+
+    pagesPlan.push({
+      pageIndex: 1,
+      meds: page1Meds,
+      startIndex: 0,
+      isFirstPage: true,
+      showAdvice: false,
+      showSignature: false,
+    });
+
+    let currentRemaining = remainingMeds;
+    let currentStartIndex = 6;
+
+    while (currentRemaining.length > 10) {
+      pagesPlan.push({
+        pageIndex: pagesPlan.length + 1,
+        meds: currentRemaining.slice(0, 10),
+        startIndex: currentStartIndex,
+        isFirstPage: false,
+        showAdvice: false,
+        showSignature: false,
+      });
+      currentRemaining = currentRemaining.slice(10);
+      currentStartIndex += 10;
+    }
+
+    pagesPlan.push({
+      pageIndex: pagesPlan.length + 1,
+      meds: currentRemaining,
+      startIndex: currentStartIndex,
+      isFirstPage: false,
+      showAdvice: hasAdvice,
+      showSignature: true,
+    });
+  }
+
+  const totalPages = pagesPlan.length;
+
+  const pagesHtml = pagesPlan.map((plan) => {
+    const pageText = `Page ${plan.pageIndex} of ${totalPages}`;
+    const medsRows = plan.customMedsHtml ? "" : renderMedsRows(plan.meds, plan.startIndex);
+    const medsTableHtml = plan.customMedsHtml || renderMedsTable(medsRows);
+
+    const headerHtml = plan.isFirstPage
+      ? `
+      <div class="rx-header">
+        <div class="rx-header-left">
+          <h1 class="rx-clinic-title">AYU POLYCLINIC</h1>
+          <div class="rx-doctor-name">${docName}</div>
+          <div class="rx-doctor-qual">MBBS (Gandhi), (FCCM)</div>
+          <div class="rx-doctor-qual">TSMC/FM/27444</div>
+        </div>
+        <img src="${PRINT_CADUCEUS_DATA_URI}" class="rx-logo-img" alt="Caduceus" />
+      </div>
+
+      <div class="rx-patient-section">
+        <div class="rx-row rx-row-right">
+          <span class="rx-field-label">Date:</span>
+          <div class="rx-line-wrap" style="flex:0 0 160px;">
+            ${data.printDate ? `<span class="rx-line-val">${escapePrescriptionHtml(data.printDate)}</span>` : ""}
+          </div>
+        </div>
+
+        <div class="rx-row">
+          <span class="rx-field-label">Patient Name:</span>
+          <div class="rx-line-wrap">
+            ${data.patientName ? `<span class="rx-line-val">${escapePrescriptionHtml(data.patientName)}</span>` : ""}
+          </div>
+        </div>
+
+        <div class="rx-row">
+          <span class="rx-field-label">Address:</span>
+          <div class="rx-line-wrap" style="flex: 1; margin-right: 20px;">
+            ${data.patientAddress ? `<span class="rx-line-val">${escapePrescriptionHtml(data.patientAddress)}</span>` : ""}
+          </div>
+          <span class="rx-field-label">Age:</span>
+          <div class="rx-line-wrap" style="flex: 0 0 120px;">
+            ${data.ageGender ? `<span class="rx-line-val">${escapePrescriptionHtml(data.ageGender)}</span>` : ""}
+          </div>
+        </div>
+
+        <div class="rx-row">
+          <span class="rx-field-label">Diagnosis:</span>
+          <div class="rx-line-wrap">
+            ${data.diagnosis ? `<span class="rx-line-val">${escapePrescriptionHtml(data.diagnosis)}</span>` : ""}
+          </div>
+        </div>
+      </div>
+      `
+      : `
+      <div class="rx-header-cont">
+        <div>
+          <div class="rx-clinic-title-sm">AYU POLYCLINIC <span style="font-size:12px;font-weight:700;color:#64748b;text-transform:none;">(Prescription Cont.)</span></div>
+          <div class="rx-doctor-sm">${docName} &bull; MBBS (Gandhi), (FCCM) &bull; TSMC/FM/27444</div>
+        </div>
+        <div class="rx-header-cont-right">
+          <div><span class="rx-field-label-sm">Patient:</span> <strong>${escapePrescriptionHtml(data.patientName || "-")}</strong></div>
+          <div><span class="rx-field-label-sm">Date:</span> <strong>${escapePrescriptionHtml(data.printDate || "-")}</strong></div>
+          ${data.diagnosis ? `<div><span class="rx-field-label-sm">Diagnosis:</span> <strong>${escapePrescriptionHtml(data.diagnosis)}</strong></div>` : ""}
+        </div>
+      </div>
+      `;
+
+    const rxSymbolHtml = plan.isFirstPage
+      ? `<img src="${PRINT_RX_SYMBOL_DATA_URI}" class="rx-symbol-img" alt="Rx" />`
+      : "";
+
+    const adviceHtml = plan.showAdvice && (data.advice || data.followUpDate)
+      ? `
+      <div class="rx-advice-block">
+        ${data.advice ? `<div class="rx-advice-heading">Advice:</div>${data.advice.split(/\r?\n/).filter(Boolean).map(line => `<div>• ${escapePrescriptionHtml(line)}</div>`).join('')}` : ""}
+        ${data.followUpDate ? `<div style="margin-top: 10px;"><span class="rx-advice-heading">Next Review:</span> ${escapePrescriptionHtml(data.followUpDate)}</div>` : ""}
+      </div>
+      `
+      : "";
+
+    const signatureHtml = plan.showSignature
+      ? `
+      <div class="rx-signature-section">
+        <div class="rx-signature-line"></div>
+        <div class="rx-signature-label">SIGNATURE</div>
+      </div>
+      `
+      : "";
+
+    return `
+      <div class="rx-page">
+        <div class="rx-page-content">
+          <img src="${PRINT_WATERMARK_DATA_URI}" class="rx-watermark-img" alt="Watermark" />
+
+          ${headerHtml}
+
+          <div class="rx-body-area">
+            ${rxSymbolHtml}
+            ${medsTableHtml ? `<div class="rx-meds-list">${medsTableHtml}</div>` : ""}
+            ${adviceHtml}
+          </div>
+
+          ${signatureHtml}
+        </div>
+
+        <footer class="rx-page-footer">
+          ${renderAyuPdfFooterHtml(pageText, false)}
+        </footer>
+      </div>
+    `;
+  }).join("\n");
+
+  return `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>AYU POLYCLINIC - Doctor Prescription</title>
+</head>
+<body style="margin: 0; padding: 0; background: #ffffff;">
+  <div class="rx-print-wrap" data-hospai-shared-print-shell>
+    <style>
+      @page {
+        size: A4 portrait;
+        margin: 0;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+        padding: 0;
+        background: #ffffff;
+        font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+        color: #1e293b;
+      }
+      .rx-print-wrap {
+        width: 794px;
+        margin: 0 auto;
+        background: #ffffff;
+      }
+      .rx-page {
+        width: 794px;
+        height: 1123px;
+        max-height: 1123px;
+        position: relative;
+        background: #ffffff;
+        padding: 14mm 18mm 12mm 18mm;
+        box-sizing: border-box;
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        page-break-after: always;
+        break-after: page;
+        overflow: hidden;
+      }
+      .rx-page:last-child {
+        page-break-after: avoid;
+        break-after: avoid;
+      }
+      .rx-page-content {
+        flex: 1 1 auto;
+        display: flex;
+        flex-direction: column;
+        position: relative;
+        min-height: 0;
+      }
+      .rx-page-footer {
+        flex: 0 0 auto;
+        margin-top: auto;
+        width: 100%;
+        break-inside: avoid;
+        page-break-inside: avoid;
+      }
+
+      @media screen {
+        body {
+          background: #f1f5f9;
+          padding: 16px 0;
+        }
+        .rx-page {
+          box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+          margin-bottom: 24px;
+        }
+        .rx-page:last-child {
+          margin-bottom: 0;
+        }
+      }
+
+      @media print {
+        body {
+          background: #ffffff !important;
+          padding: 0 !important;
+        }
+        .rx-page {
+          box-shadow: none !important;
+          margin: 0 !important;
+          page-break-after: always !important;
+          break-after: page !important;
+        }
+        .rx-page:last-child {
+          page-break-after: avoid !important;
+          break-after: avoid !important;
+        }
+      }
+
+      .rx-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 6px;
+      }
+      .rx-clinic-title {
+        margin: 0;
+        font-size: 26px;
+        font-weight: 900;
+        letter-spacing: 0.6px;
+        text-transform: uppercase;
+        color: #1d4289;
+        line-height: 1.15;
+        border-bottom: 2px solid #1d4289;
+        display: inline-block;
+        padding-bottom: 2px;
+      }
+      .rx-doctor-name {
+        font-size: 15.5px;
+        font-weight: 800;
+        color: #1d4289;
+        margin-top: 5px;
+      }
+      .rx-doctor-qual {
+        font-size: 12.5px;
+        font-weight: 700;
+        color: #1d4289;
+        margin-top: 2px;
+        line-height: 1.3;
+      }
+      .rx-logo-img {
+        width: 86px;
+        height: 76px;
+        object-fit: contain;
+      }
+
+      .rx-header-cont {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        padding-bottom: 6px;
+        margin-bottom: 10px;
+        border-bottom: 1.5px solid #1d4289;
+      }
+      .rx-clinic-title-sm {
+        font-size: 18px;
+        font-weight: 900;
+        color: #1d4289;
+        letter-spacing: 0.5px;
+        text-transform: uppercase;
+      }
+      .rx-doctor-sm {
+        font-size: 11px;
+        font-weight: 700;
+        color: #1d4289;
+        margin-top: 2px;
+      }
+      .rx-header-cont-right {
+        text-align: right;
+        font-size: 11px;
+        color: #334155;
+        line-height: 1.35;
+      }
+      .rx-field-label-sm {
+        font-size: 10.5px;
+        color: #64748b;
+        font-weight: 600;
+      }
+
+      .rx-patient-section {
+        margin-top: 8px;
+        font-size: 13px;
+        color: #64748b;
+      }
+      .rx-row {
+        display: flex;
+        align-items: flex-end;
+        margin-bottom: 6px;
+      }
+      .rx-row-right {
+        justify-content: flex-end;
+        margin-bottom: 4px;
+      }
+      .rx-field-label {
+        font-size: 12.5px;
+        color: #556987;
+        font-weight: 600;
+        white-space: nowrap;
+        margin-right: 6px;
+      }
+      .rx-line-wrap {
+        flex: 1;
+        display: flex;
+        align-items: flex-end;
+        border-bottom: 1px solid #cbd5e1;
+        min-height: 22px;
+        padding-left: 6px;
+        padding-bottom: 1px;
+      }
+      .rx-line-val {
+        color: #0f172a;
+        font-weight: 700;
+        font-size: 13.5px;
+      }
+
+      .rx-body-area {
+        position: relative;
+        margin-top: 8px;
+        z-index: 1;
+      }
+      .rx-watermark-img {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        transform: translate(-50%, -50%);
+        width: 320px;
+        opacity: 0.07;
+        z-index: 0;
+        pointer-events: none;
+        user-select: none;
+      }
+      .rx-symbol-img {
+        width: 44px;
+        height: 52px;
+        object-fit: contain;
+        margin-bottom: 10px;
+        display: block;
+      }
+      .rx-meds-list {
+        position: relative;
+        z-index: 2;
+        color: #0f172a;
+      }
+      .rx-meds-table {
+        width: 100%;
+        border-collapse: collapse;
+        table-layout: fixed;
+        border: 1px solid #8fb4dc;
+        font-size: 10px;
+        line-height: 1.25;
+      }
+      .rx-meds-table th,
+      .rx-meds-table td {
+        border: 1px solid #8fb4dc;
+        padding: 5px 6px;
+        vertical-align: middle;
+        overflow-wrap: anywhere;
+      }
+      .rx-meds-table th {
+        background: #dcecff;
+        color: #153d70;
+        font-size: 9px;
+        font-weight: 800;
+        text-align: left;
+      }
+      .rx-advice-block {
+        position: relative;
+        z-index: 2;
+        margin-top: 14px;
+        font-size: 12px;
+        color: #1e293b;
+        line-height: 1.4;
+      }
+      .rx-advice-heading {
+        font-weight: 800;
+        font-size: 12.5px;
+        color: #1d4289;
+        margin-bottom: 3px;
+      }
+
+      .rx-signature-section {
+        margin-top: auto;
+        margin-bottom: 8px;
+        margin-left: auto;
+        width: 58mm;
+        text-align: center;
+        z-index: 10;
+        color: #1d4289;
+        font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
+        break-inside: avoid;
+      }
+      .rx-signature-line {
+        width: 100%;
+        border-top: 1px solid #1d4289;
+        margin-bottom: 3px;
+      }
+      .rx-signature-label {
+        font-size: 8px;
+        font-weight: 800;
+        letter-spacing: 0.6px;
+      }
+    </style>
+    ${pagesHtml}
+  </div>
+</body>
+</html>`;
+};
 
 export default function PatientWorkflowPage({ setNotice, view }: Props) {
   const [form, setForm] = useState<Record<string, string>>({ ...DEFAULTS[view] });
@@ -467,32 +998,34 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
         const frame = tempDiv.querySelector('.rx-print-wrap') as HTMLElement;
         if (frame) {
           frame.style.width = "794px";
-          frame.style.minHeight = "1123px";
           frame.style.position = "absolute";
           frame.style.top = "-9999px";
           frame.style.left = "-9999px";
           document.body.appendChild(frame);
-          
-          const canvas = await html2canvas(frame, { scale: 2, useCORS: true });
-          const imgData = canvas.toDataURL("image/jpeg", 0.95);
-          
+
+          const pageEls = frame.querySelectorAll<HTMLElement>('.rx-page');
           const pdf = new jsPDF("p", "mm", "a4");
-          const imgHeight = (canvas.height * 210) / canvas.width;
-          let heightLeft = imgHeight;
-          let position = 0;
 
-          pdf.addImage(imgData, "JPEG", 0, position, 210, imgHeight);
-          heightLeft -= 297;
-
-          while (heightLeft > 0) {
-            position = heightLeft - imgHeight;
-            pdf.addPage();
-            pdf.addImage(imgData, "JPEG", 0, position, 210, imgHeight);
-            heightLeft -= 297;
+          if (pageEls.length > 0) {
+            for (let i = 0; i < pageEls.length; i++) {
+              if (i > 0) pdf.addPage();
+              const canvas = await html2canvas(pageEls[i], {
+                scale: 2,
+                useCORS: true,
+                backgroundColor: "#ffffff",
+                width: 794,
+                height: 1123,
+              });
+              const imgData = canvas.toDataURL("image/jpeg", 0.95);
+              pdf.addImage(imgData, "JPEG", 0, 0, 210, 297);
+            }
+          } else {
+            const canvas = await html2canvas(frame, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+            const imgData = canvas.toDataURL("image/jpeg", 0.95);
+            pdf.addImage(imgData, "JPEG", 0, 0, 210, 297);
           }
 
           pdf.save(`${form.patient_id || "prescription"}-prescription.pdf`);
-          
           document.body.removeChild(frame);
           setNotice({ type: "success", message: `Doctor Prescription PDF downloaded.` });
         }
@@ -524,344 +1057,9 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
     }
   };
 
-  const buildPrescriptionHtml = (data: {
-    patientName: string;
-    patientAddress: string;
-    ageGender: string;
-    diagnosis: string;
-    printDate: string;
-    doctorName?: string;
-    medsHtml: string;
-    advice?: string;
-    followUpDate?: string;
-  }) => {
-    const docName = data.doctorName && data.doctorName.trim() && data.doctorName !== "-" ? data.doctorName : "Dr. Sushanth. B";
-    const locationIcon = `<svg viewBox="0 0 24 24" width="15" height="15" fill="#1d4289" style="flex-shrink:0; margin-top:1px;"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`;
-    const phoneIcon = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1d4289" stroke-width="1.8" style="vertical-align:-2px; margin-right:5px;"><circle cx="12" cy="12" r="9.5" fill="none"/><path d="M8.2 7.8c.25 0 .5.16.6.4l.5 1.5c.08.25 0 .55-.24.72l-.65.5c.56 1.13 1.47 2.04 2.6 2.6l.5-.65c.17-.23.47-.32.72-.24l1.5.5c.24.1.4.35.4.6v1.2c0 .33-.27.6-.6.6C9.4 15.5 7 13.1 7 8.4c0-.33.27-.6.6-.6h.6z" fill="#1d4289" stroke="none"/></svg>`;
-    const emailIcon = `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="#1d4289" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-2px; margin-right:5px;"><rect x="2" y="5" width="20" height="14" rx="1.5"/><path d="M2 6.5l10 7 10-7"/></svg>`;
-
-    return `<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>AYU POLYCLINIC - Doctor Prescription</title>
-</head>
-<body style="margin: 0; padding: 0; display: flex; flex-direction: column; background: #ffffff;">
-  <div class="rx-print-wrap" data-hospai-shared-print-shell>
-    <style>
-      @page {
-        size: A4 portrait;
-        margin: 0;
-      }
-      * {
-        box-sizing: border-box;
-      }
-      .rx-print-wrap {
-        width: 794px;
-        min-height: 1123px;
-        position: relative;
-        background: #ffffff;
-        padding: 16mm 18mm 32mm 18mm;
-        box-sizing: border-box;
-        font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
-        color: #1e293b;
-      }
-
-      /* Header */
-      .rx-header {
-        display: flex;
-        justify-content: space-between;
-        align-items: flex-start;
-        margin-bottom: 6px;
-      }
-      .rx-clinic-title {
-        margin: 0;
-        font-size: 26px;
-        font-weight: 900;
-        letter-spacing: 0.6px;
-        text-transform: uppercase;
-        color: #1d4289;
-        line-height: 1.15;
-        border-bottom: 2px solid #1d4289;
-        display: inline-block;
-        padding-bottom: 2px;
-      }
-      .rx-doctor-name {
-        font-size: 15.5px;
-        font-weight: 800;
-        color: #1d4289;
-        margin-top: 5px;
-      }
-      .rx-doctor-qual {
-        font-size: 12.5px;
-        font-weight: 700;
-        color: #1d4289;
-        margin-top: 2px;
-        line-height: 1.3;
-      }
-      .rx-logo-img {
-        width: 86px;
-        height: 76px;
-        object-fit: contain;
-      }
-
-      /* Patient Info Section */
-      .rx-patient-section {
-        margin-top: 10px;
-        font-size: 13px;
-        color: #64748b;
-      }
-      .rx-row {
-        display: flex;
-        align-items: flex-end;
-        margin-bottom: 7px;
-      }
-      .rx-row-right {
-        justify-content: flex-end;
-        margin-bottom: 5px;
-      }
-      .rx-field-label {
-        font-size: 12.5px;
-        color: #556987;
-        font-weight: 600;
-        white-space: nowrap;
-        margin-right: 6px;
-      }
-      .rx-line-wrap {
-        flex: 1;
-        display: flex;
-        align-items: flex-end;
-        border-bottom: 1px solid #cbd5e1;
-        min-height: 22px;
-        padding-left: 6px;
-        padding-bottom: 1px;
-      }
-      .rx-line-val {
-        color: #0f172a;
-        font-weight: 700;
-        font-size: 13.5px;
-      }
-
-      /* Rx Body & Watermark */
-      .rx-body-area {
-        position: relative;
-        margin-top: 12px;
-        min-height: 560px;
-        z-index: 1;
-      }
-      .rx-watermark-img {
-        position: absolute;
-        top: 50%;
-        left: 50%;
-        transform: translate(-50%, -50%);
-        width: 330px;
-        opacity: 0.07;
-        z-index: 0;
-        pointer-events: none;
-        user-select: none;
-      }
-      .rx-symbol-img {
-        width: 44px;
-        height: 52px;
-        object-fit: contain;
-        margin-bottom: 14px;
-        display: block;
-      }
-      .rx-meds-list {
-        position: relative;
-        z-index: 2;
-        color: #0f172a;
-      }
-      .rx-meds-table {
-        width: 100%;
-        border-collapse: collapse;
-        table-layout: fixed;
-        border: 1px solid #8fb4dc;
-        font-size: 10px;
-        line-height: 1.25;
-      }
-      .rx-meds-table th,
-      .rx-meds-table td {
-        border: 1px solid #8fb4dc;
-        padding: 5px 6px;
-        vertical-align: middle;
-        overflow-wrap: anywhere;
-      }
-      .rx-meds-table th {
-        background: #dcecff;
-        color: #153d70;
-        font-size: 9px;
-        font-weight: 800;
-        text-align: left;
-      }
-      .rx-meds-table th:nth-child(1),
-      .rx-meds-table td:nth-child(1) {
-        width: 9%;
-        text-align: center;
-      }
-      .rx-meds-table th:nth-child(2) { width: 24%; }
-      .rx-meds-table th:nth-child(3) { width: 25%; }
-      .rx-meds-table th:nth-child(4) { width: 27%; }
-      .rx-meds-table th:nth-child(5),
-      .rx-meds-table td:nth-child(5) {
-        width: 15%;
-        text-align: center;
-      }
-      .rx-meds-frequency {
-        white-space: nowrap;
-        text-align: center;
-      }
-      .rx-med-dosage {
-        color: #334155;
-      }
-
-      .rx-advice-block {
-        position: relative;
-        z-index: 2;
-        margin-top: 25px;
-        font-size: 13px;
-        color: #1e293b;
-      }
-      .rx-advice-heading {
-        font-weight: 800;
-        font-size: 13.5px;
-        color: #1d4289;
-        margin-bottom: 4px;
-      }
-
-      /* Footer */
-      .rx-signature-section {
-        position: absolute;
-        right: 18mm;
-        bottom: 48mm;
-        width: 58mm;
-        text-align: center;
-        z-index: 10;
-        color: #1d4289;
-        font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
-      }
-      .rx-signature-line {
-        width: 100%;
-        border-top: 1px solid #1d4289;
-        margin-bottom: 3px;
-      }
-      .rx-signature-label {
-        font-size: 8px;
-        font-weight: 800;
-        letter-spacing: 0.6px;
-      }
-
-      .rx-footer {
-        position: absolute;
-        bottom: 8mm;
-        left: 18mm;
-        right: 18mm;
-        box-sizing: border-box;
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        gap: 12px;
-        z-index: 10;
-        background: #ffffff;
-        color: #1d4289;
-        font-family: Arial, "Helvetica Neue", Helvetica, sans-serif;
-      }
-      .rx-footer-brand {
-        display: block;
-        width: 100%;
-        height: auto;
-        object-fit: contain;
-        object-position: left center;
-      }
-    </style>
-
-    <!-- Header -->
-    <div class="rx-header">
-      <div class="rx-header-left">
-        <h1 class="rx-clinic-title">AYU POLYCLINIC</h1>
-        <div class="rx-doctor-name">${docName}</div>
-        <div class="rx-doctor-qual">MBBS (Gandhi), (FCCM)</div>
-        <div class="rx-doctor-qual">TSMC/FM/27444</div>
-      </div>
-      <img src="${PRINT_CADUCEUS_DATA_URI}" class="rx-logo-img" alt="Caduceus" />
-    </div>
-
-    <!-- Patient Details -->
-    <div class="rx-patient-section">
-      <div class="rx-row rx-row-right">
-        <span class="rx-field-label">Date:</span>
-        <div class="rx-line-wrap" style="flex:0 0 160px;">
-          ${data.printDate ? `<span class="rx-line-val">${data.printDate}</span>` : ""}
-        </div>
-      </div>
-
-      <div class="rx-row">
-        <span class="rx-field-label">Patient Name:</span>
-        <div class="rx-line-wrap">
-          ${data.patientName ? `<span class="rx-line-val">${data.patientName}</span>` : ""}
-        </div>
-      </div>
-
-      <div class="rx-row">
-        <span class="rx-field-label">Address:</span>
-        <div class="rx-line-wrap" style="flex: 1; margin-right: 20px;">
-          ${data.patientAddress ? `<span class="rx-line-val">${data.patientAddress}</span>` : ""}
-        </div>
-        <span class="rx-field-label">Age:</span>
-        <div class="rx-line-wrap" style="flex: 0 0 120px;">
-          ${data.ageGender ? `<span class="rx-line-val">${data.ageGender}</span>` : ""}
-        </div>
-      </div>
-
-      <div class="rx-row">
-        <span class="rx-field-label">Diagnosis:</span>
-        <div class="rx-line-wrap">
-          ${data.diagnosis ? `<span class="rx-line-val">${data.diagnosis}</span>` : ""}
-        </div>
-      </div>
-    </div>
-
-    <!-- Prescription Area -->
-    <div class="rx-body-area">
-      <!-- Faint Medical Watermark in Center -->
-      <img src="${PRINT_WATERMARK_DATA_URI}" class="rx-watermark-img" alt="Watermark" />
-
-      <!-- Rx Symbol -->
-      <img src="${PRINT_RX_SYMBOL_DATA_URI}" class="rx-symbol-img" alt="Rx" />
-
-      <!-- Prescribed Medicines -->
-      ${data.medsHtml ? `<div class="rx-meds-list">${data.medsHtml}</div>` : ""}
-
-      <!-- Advice -->
-      ${(data.advice || data.followUpDate) ? `
-      <div class="rx-advice-block">
-        ${data.advice ? `<div class="rx-advice-heading">Advice:</div>${data.advice.split(/\r?\n/).filter(Boolean).map(line => `<div>• ${line}</div>`).join('')}` : ""}
-        ${data.followUpDate ? `<div style="margin-top: 10px;"><span class="rx-advice-heading">Next Review:</span> ${data.followUpDate}</div>` : ""}
-      </div>` : ""}
-    </div>
-
-    <div class="rx-signature-section">
-      <div class="rx-signature-line"></div>
-      <div class="rx-signature-label">SIGNATURE</div>
-    </div>
-
-    <!-- Prescription Footer -->
-    <footer class="rx-footer">
-      <div style="width:100%;border-top:0.35mm solid #1d4289;border-bottom:0.35mm solid #1d4289;padding:1.5mm 0;">
-        <img src="${PRINT_FOOTER_IMAGE_DATA_URI}" class="rx-footer-brand" alt="Ayu Polyclinic emergency services, address, phone and email" />
-      </div>
-      <div style="text-align:center;font-size:8.5pt;color:#1e567a;font-family:Arial,Helvetica,sans-serif;font-weight:500;margin-top:2mm;letter-spacing:0.2px;">Powered by HospAI</div>
-    </footer>
-  </div>
-</body>
-</html>`;
-  };
-
   const getPrescriptionHtml = () => {
     const printDate = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
     const patientAddress = bannerPatient ? [bannerPatient.address, (bannerPatient as any).city].filter(Boolean).join(", ") : "";
-
-    const medsHtml = buildPrescriptionMedicineTable(medicines);
 
     return buildPrescriptionHtml({
       patientName: form.patient_name || "",
@@ -870,7 +1068,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
       diagnosis: form.diagnosis || "",
       printDate,
       doctorName: form.doctor_name || "Dr. Sushanth. B",
-      medsHtml,
+      medicines: medicines.filter(m => m.medicine_name.trim()),
       advice: form.advice || "",
       followUpDate: form.follow_up_date || ""
     });
@@ -884,10 +1082,8 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
     const printDate = rx.created_at
       ? new Date(rx.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" })
       : "";
-    const rxMeds = rx.medicines || [];
+    const rxMeds = (rx.medicines || []).filter((m: any) => (m.medicine_name || "").trim());
     const patientAddress = bannerPatient ? [bannerPatient.address, (bannerPatient as any).city].filter(Boolean).join(", ") : "";
-
-    const medsHtml = buildPrescriptionMedicineTable(rxMeds);
 
     return buildPrescriptionHtml({
       patientName: form.patient_name || rx.patient_name || "",
@@ -896,7 +1092,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
       diagnosis: rx.diagnosis || "",
       printDate,
       doctorName: rx.doctor_name || form.doctor_name || "Dr. Sushanth. B",
-      medsHtml,
+      medicines: rxMeds,
       advice: rx.advice || "",
       followUpDate: rx.follow_up_date || ""
     });
@@ -917,28 +1113,31 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
       const frame = tempDiv.querySelector('.rx-print-wrap') as HTMLElement;
       if (frame) {
         frame.style.width = "794px";
-        frame.style.minHeight = "1123px";
         frame.style.position = "absolute";
         frame.style.top = "-9999px";
         frame.style.left = "-9999px";
         document.body.appendChild(frame);
 
-        const canvas = await html2canvas(frame, { scale: 2, useCORS: true });
-        const imgData = canvas.toDataURL("image/jpeg", 0.95);
-
+        const pageEls = frame.querySelectorAll<HTMLElement>('.rx-page');
         const pdf = new jsPDF("p", "mm", "a4");
-        const imgHeight = (canvas.height * 210) / canvas.width;
-        let heightLeft = imgHeight;
-        let position = 0;
 
-        pdf.addImage(imgData, "JPEG", 0, position, 210, imgHeight);
-        heightLeft -= 297;
-
-        while (heightLeft > 0) {
-          position = heightLeft - imgHeight;
-          pdf.addPage();
-          pdf.addImage(imgData, "JPEG", 0, position, 210, imgHeight);
-          heightLeft -= 297;
+        if (pageEls.length > 0) {
+          for (let i = 0; i < pageEls.length; i++) {
+            if (i > 0) pdf.addPage();
+            const canvas = await html2canvas(pageEls[i], {
+              scale: 2,
+              useCORS: true,
+              backgroundColor: "#ffffff",
+              width: 794,
+              height: 1123,
+            });
+            const imgData = canvas.toDataURL("image/jpeg", 0.95);
+            pdf.addImage(imgData, "JPEG", 0, 0, 210, 297);
+          }
+        } else {
+          const canvas = await html2canvas(frame, { scale: 2, useCORS: true, backgroundColor: "#ffffff" });
+          const imgData = canvas.toDataURL("image/jpeg", 0.95);
+          pdf.addImage(imgData, "JPEG", 0, 0, 210, 297);
         }
 
         pdf.save(`${rx.patient_id || form.patient_id || "prescription"}-prescription-${rx.id || "rx"}.pdf`);

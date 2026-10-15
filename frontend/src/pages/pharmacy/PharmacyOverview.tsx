@@ -122,7 +122,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
   const [dateRange, setDateRange] = useState(() => toIsoDate(new Date()));
 
   // Analytics filter controls
-  const [chartPeriod, setChartPeriod] = useState<"today" | "7d" | "30d">("7d");
+  const [chartPeriod, setChartPeriod] = useState<"today" | "7d" | "30d" | "medicine">("7d");
   const [topMedsMetric, setTopMedsMetric] = useState<"qty" | "value">("qty");
   const [topMedsCount, setTopMedsCount] = useState<5 | 10>(5);
 
@@ -384,34 +384,65 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
   const dayLabel = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-IN", { weekday: "short" });
   const dateLabel = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
 
+  const totalConsumptionRevenue = useMemo(() => {
+    return (summary?.top_medicines || []).reduce((acc, m) => acc + Number(m.total_amount || 0), 0);
+  }, [summary?.top_medicines]);
+
   const chartBars = useMemo(() => {
+    if (chartPeriod === "medicine") {
+      const list = summary?.top_medicines || [];
+      const sorted = [...list].sort((a, b) => (b.total_amount || 0) - (a.total_amount || 0));
+      return sorted.slice(0, 7).map((m) => ({
+        label: m.medicine_name.length > 9 ? m.medicine_name.slice(0, 8) + "…" : m.medicine_name,
+        fullLabel: m.medicine_name,
+        op: Math.round(Number(m.total_amount || 0) * 100) / 100,
+        subtext: `${m.total_qty} units`,
+      }));
+    }
+
     const trend = summary?.sales_trend || [];
     if (chartPeriod === "today") {
       const todayRow = trend[trend.length - 1];
+      const val = Number(todayRow?.op_amount ?? summary?.opd_sales_today ?? 0);
       return [{
         label: "Today",
-        op: Math.round(todayRow?.op_amount ?? summary?.opd_sales_today ?? 0),
+        fullLabel: "Today's OP Dispense",
+        op: Math.round(val * 100) / 100,
+        subtext: `${summary?.opd_prescriptions_count ?? 0} bills`,
       }];
     }
     if (chartPeriod === "7d") {
       return trend.slice(-7).map((row) => ({
         label: dayLabel(row.date),
-        op: Math.round(row.op_amount),
+        fullLabel: `${dateLabel(row.date)} (${dayLabel(row.date)})`,
+        op: Math.round(Number(row.op_amount || 0) * 100) / 100,
+        subtext: undefined,
       }));
     }
     // 30d -- grouped into real weekly buckets from the same daily rows
     const last30 = trend.slice(-30);
-    const weeks: { label: string; op: number }[] = [];
+    const weeks: { label: string; fullLabel: string; op: number; subtext?: string }[] = [];
     for (let i = 0; i < last30.length; i += 7) {
       const chunk = last30.slice(i, i + 7);
       if (!chunk.length) continue;
+      const sum = chunk.reduce((s, r) => s + Number(r.op_amount || 0), 0);
+      const lbl = `${dateLabel(chunk[0].date)}–${dateLabel(chunk[chunk.length - 1].date)}`;
       weeks.push({
-        label: `${dateLabel(chunk[0].date)}–${dateLabel(chunk[chunk.length - 1].date)}`,
-        op: Math.round(chunk.reduce((s, r) => s + r.op_amount, 0)),
+        label: lbl,
+        fullLabel: lbl,
+        op: Math.round(sum * 100) / 100,
+        subtext: undefined,
       });
     }
     return weeks;
   }, [chartPeriod, summary]);
+
+  const currentPeriodTotal = useMemo(() => {
+    if (chartPeriod === "medicine") {
+      return totalConsumptionRevenue;
+    }
+    return Math.round(chartBars.reduce((acc, b) => acc + b.op, 0) * 100) / 100;
+  }, [chartPeriod, chartBars, totalConsumptionRevenue]);
 
   const rankedTopMedicines = useMemo(() => {
     const list = summary?.top_medicines || [];
@@ -423,10 +454,9 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
 
   // Max value for chart scaling
   const maxChartVal = useMemo(() => {
-    let max = 1000;
+    let max = 100;
     for (const b of chartBars) {
-      const sum = b.op;
-      if (sum > max) max = sum;
+      if (b.op > max) max = b.op;
     }
     return max * 1.15;
   }, [chartBars]);
@@ -972,19 +1002,46 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
             boxShadow: "0 1px 3px rgba(0,0,0,0.03)",
           }}
         >
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "14px" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "14px", flexWrap: "wrap", gap: "10px" }}>
             <div>
-              <h2 style={{ fontSize: "14px", fontWeight: 700, margin: 0, color: "#0f172a" }}>
-                Sales & Consumption Trends
-              </h2>
-              <p style={{ margin: "2px 0 0 0", fontSize: "12px", color: "#64748b" }}>
-                Daily outpatient dispensing revenue trends
+              <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+                <h2 style={{ fontSize: "14px", fontWeight: 700, margin: 0, color: "#0f172a" }}>
+                  Sales & Consumption Trends
+                </h2>
+                <span
+                  style={{
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    color: "#00828a",
+                    background: "#f0fdfa",
+                    padding: "3px 10px",
+                    borderRadius: "6px",
+                    border: "1px solid #ccfbf1",
+                    display: "inline-flex",
+                    alignItems: "center",
+                    gap: "5px",
+                  }}
+                  title={`Consumption Analytics Total: ₹${totalConsumptionRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
+                >
+                  <span>Total Revenue:</span>
+                  <strong style={{ fontSize: "13px", color: "#006d74" }}>
+                    ₹{currentPeriodTotal.toLocaleString("en-IN", {
+                      minimumFractionDigits: currentPeriodTotal % 1 !== 0 ? 2 : 0,
+                      maximumFractionDigits: 2,
+                    })}
+                  </strong>
+                </span>
+              </div>
+              <p style={{ margin: "4px 0 0 0", fontSize: "12px", color: "#64748b" }}>
+                {chartPeriod === "medicine"
+                  ? `Top consumed medicines by total revenue (Consumption Analytics Total: ₹${totalConsumptionRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`
+                  : `Daily outpatient dispensing revenue trends (Total: ₹${currentPeriodTotal.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`}
               </p>
             </div>
 
-            {/* Timeframe selector */}
+            {/* Timeframe & Category selector */}
             <div style={{ display: "flex", gap: "4px", background: "#f1f5f9", padding: "3px", borderRadius: "8px" }}>
-              {(["today", "7d", "30d"] as const).map((p) => (
+              {(["7d", "30d", "today", "medicine"] as const).map((p) => (
                 <button
                   key={p}
                   type="button"
@@ -1001,35 +1058,65 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
                     boxShadow: chartPeriod === p ? "0 1px 2px rgba(0,0,0,0.06)" : "none",
                   }}
                 >
-                  {p === "today" ? "Today" : p === "7d" ? "7 Days" : "30 Days"}
+                  {p === "today" ? "Today" : p === "7d" ? "7 Days" : p === "30d" ? "30 Days" : "By Medicine"}
                 </button>
               ))}
             </div>
           </div>
 
           {/* Bar Chart representation */}
-          <div style={{ height: "180px", display: "flex", alignItems: "flex-end", gap: "18px", paddingBottom: "10px", borderBottom: "1px solid #f1f5f9" }}>
+          <div style={{ height: "180px", display: "flex", alignItems: "flex-end", gap: chartPeriod === "medicine" ? "12px" : "18px", paddingBottom: "10px", borderBottom: "1px solid #f1f5f9" }}>
             {chartBars.map((b, idx) => {
               const total = b.op;
-              const heightPct = Math.min(100, Math.max(12, (total / maxChartVal) * 100));
+              const heightPct = maxChartVal > 0 ? Math.min(100, Math.max(total > 0 ? 12 : 2, (total / maxChartVal) * 100)) : 0;
+              const formattedVal = total === 0 ? "₹0" : total >= 10000 ? `₹${(total / 1000).toFixed(1)}k` : `₹${total.toLocaleString("en-IN", {
+                minimumFractionDigits: total % 1 !== 0 ? 2 : 0,
+                maximumFractionDigits: 2,
+              })}`;
 
               return (
-                <div key={idx} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end" }}>
-                  <div style={{ fontSize: "10.5px", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
-                    ₹{total >= 1000 ? `${(total / 1000).toFixed(1)}k` : total}
+                <div key={idx} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", height: "100%", justifyContent: "flex-end", minWidth: 0 }}>
+                  <div
+                    style={{
+                      fontSize: "10.5px",
+                      fontWeight: 700,
+                      color: total > 0 ? "#0f172a" : "#94a3b8",
+                      marginBottom: "4px",
+                      whiteSpace: "nowrap",
+                      textOverflow: "ellipsis",
+                      overflow: "hidden",
+                      maxWidth: "100%",
+                    }}
+                    title={formattedVal}
+                  >
+                    {formattedVal}
                   </div>
                   <div
                     style={{
                       width: "100%",
-                      maxWidth: "42px",
+                      maxWidth: chartPeriod === "medicine" ? "48px" : "42px",
                       height: `${heightPct}%`,
                       borderRadius: "6px 6px 0 0",
                       overflow: "hidden",
-                      background: "#00828a",
+                      background: total > 0 ? "linear-gradient(180deg, #00828a 0%, #006066 100%)" : "#e2e8f0",
+                      transition: "height 0.3s ease",
                     }}
-                    title={`OP Dispense: ₹${b.op}`}
+                    title={`${b.fullLabel || b.label}: ${formattedVal}${b.subtext ? ` (${b.subtext})` : ""}`}
                   />
-                  <div style={{ fontSize: "11px", color: "#64748b", marginTop: "6px", fontWeight: 500 }}>
+                  <div
+                    style={{
+                      fontSize: "11px",
+                      color: "#64748b",
+                      marginTop: "6px",
+                      fontWeight: 500,
+                      whiteSpace: "nowrap",
+                      textOverflow: "ellipsis",
+                      overflow: "hidden",
+                      maxWidth: "100%",
+                      textAlign: "center",
+                    }}
+                    title={b.fullLabel || b.label}
+                  >
                     {b.label}
                   </div>
                 </div>
@@ -1037,12 +1124,17 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
             })}
           </div>
 
-          {/* Legend */}
-          <div style={{ display: "flex", gap: "16px", marginTop: "10px", fontSize: "11.5px", fontWeight: 600 }}>
-            <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-              <span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#00828a" }} />
-              <span>OP Dispense</span>
-            </span>
+          {/* Legend & Summary Info */}
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "10px", fontSize: "11.5px", fontWeight: 600, flexWrap: "wrap", gap: "8px" }}>
+            <div style={{ display: "flex", gap: "16px" }}>
+              <span style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                <span style={{ width: "10px", height: "10px", borderRadius: "2px", background: "#00828a" }} />
+                <span>{chartPeriod === "medicine" ? "Medicine Revenue" : "OP Dispense"}</span>
+              </span>
+            </div>
+            <div style={{ color: "#64748b", fontWeight: 500 }}>
+              Analytics Total: <strong style={{ color: "#00828a" }}>₹{totalConsumptionRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong>
+            </div>
           </div>
         </div>
 
@@ -1318,9 +1410,24 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px", flexWrap: "wrap", gap: "8px" }}>
           <div>
-            <h2 style={{ fontSize: "14px", fontWeight: 700, margin: 0, color: "#0f172a" }}>
-              Top Medicines (Consumption Analytics)
-            </h2>
+            <div style={{ display: "flex", alignItems: "center", gap: "10px", flexWrap: "wrap" }}>
+              <h2 style={{ fontSize: "14px", fontWeight: 700, margin: 0, color: "#0f172a" }}>
+                Top Medicines (Consumption Analytics)
+              </h2>
+              <span
+                style={{
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  color: "#00828a",
+                  background: "#f0fdfa",
+                  padding: "2px 8px",
+                  borderRadius: "6px",
+                  border: "1px solid #ccfbf1",
+                }}
+              >
+                Total: ₹{totalConsumptionRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </span>
+            </div>
             <p style={{ margin: "2px 0 0 0", fontSize: "11.5px", color: "#64748b" }}>
               Monthly dispensed volume and outpatient consumption breakdown
             </p>
@@ -1422,7 +1529,10 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
                     {m.total_qty} units
                   </td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontWeight: 700, color: "#0f172a" }}>
-                    ₹{Number(m.total_amount || 0).toLocaleString("en-IN")}
+                    ₹{Number(m.total_amount || 0).toLocaleString("en-IN", {
+                      minimumFractionDigits: Number(m.total_amount || 0) % 1 !== 0 ? 2 : 0,
+                      maximumFractionDigits: 2,
+                    })}
                   </td>
                   <td style={{ padding: "8px 10px", textAlign: "center", color: "#64748b" }}>
                     <span style={{ background: "#f0fdfa", color: "#00828a", padding: "2px 6px", borderRadius: "4px", fontSize: "11px", fontWeight: 600 }}>
@@ -1439,6 +1549,24 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
                 </tr>
               )}
             </tbody>
+            {summary?.top_medicines && summary.top_medicines.length > 0 && (
+              <tfoot>
+                <tr style={{ background: "#f8fafc", borderTop: "2px solid #e2e8f0", fontWeight: 700 }}>
+                  <td style={{ padding: "8px 10px", color: "#0f172a" }}>
+                    Total Consumption Revenue
+                  </td>
+                  <td style={{ padding: "8px 10px", textAlign: "center", color: "#00828a" }}>
+                    {rankedTopMedicines.reduce((s, m) => s + (m.total_qty || 0), 0)} units
+                  </td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", color: "#00828a", fontSize: "13px" }}>
+                    ₹{totalConsumptionRevenue.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td style={{ padding: "8px 10px", textAlign: "center", color: "#64748b" }}>
+                    {rankedTopMedicines.reduce((s, m) => s + (m.op_qty || m.total_qty || 0), 0)}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
