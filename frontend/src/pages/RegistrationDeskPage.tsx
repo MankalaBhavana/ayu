@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { Button, Input, Label, Select, Textarea } from "../components/ui";
 import { apiFetch, reportError } from "../lib/api";
+import { notifyDepartmentsChanged, onDepartmentsChanged } from "../lib/departments";
 import { formatDateTime } from "../lib/format";
 import { openRazorpayCheckout } from "../lib/razorpay";
 import type { Appointment, Notice, Patient } from "../types";
@@ -324,6 +325,8 @@ const activeDepartments = (data.departments || []).filter((department) => {
     void loadRegistrationOps();
   }, [queueDate]);
 
+  useEffect(() => onDepartmentsChanged(() => void loadDepartmentOptions()), []);
+
   const filteredDoctorSuggestions = useMemo(() => {
     return doctorSuggestions;
   }, [doctorSuggestions]);
@@ -643,7 +646,8 @@ const activeDepartments = (data.departments || []).filter((department) => {
         return exists ? current : [...current, { id: data.department_id, department_name: savedName }].sort((a, b) => String(a.department_name || "").localeCompare(String(b.department_name || "")));
       });
       setAppointmentForm((prev) => ({ ...prev, department: savedName }));
-      await loadDepartmentOptions();
+      if (!data.already_exists) notifyDepartmentsChanged();
+      else await loadDepartmentOptions();
       if (data.already_exists) {
         setNotice({ type: "warning", message: `Department ${data.department_name || departmentName} already exists.` });
       } else {
@@ -794,7 +798,7 @@ const activeDepartments = (data.departments || []).filter((department) => {
         key: order.key_id,
         amount: order.amount,
         currency: order.currency || "INR",
-        name: "Ayu Polyclinic Registration Desk",
+        name: "Ayu Polyclinic & Emergency Clinic Registration Desk",
         description: "Appointment Booking",
         order_id: order.order_id,
         prefill: {

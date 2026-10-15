@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { Button, Input, Label, Modal, Select } from "../components/ui";
 import { apiFetch, reportError } from "../lib/api";
+import { fetchDepartmentNames, onDepartmentsChanged } from "../lib/departments";
 import { generatePDFBlob, exportPDF } from "../lib/exportService";
 import type { Notice, User } from "../types";
 import { fullPatientName, lookupPatientByUhid, normalizeUhidLookup } from "../lib/patientLookup";
@@ -240,7 +241,7 @@ export default function LabPage({ setNotice, user }: Props) {
             <div class="header">
               <div>
                 <h1>PAYMENT RECEIPT</h1>
-                <div style="font-size: 8pt; color:#64748b;">Ayu Polyclinic</div>
+                <div style="font-size: 8pt; color:#64748b;">Ayu Polyclinic & Emergency Clinic</div>
               </div>
               <div class="meta">
                 <div>Receipt: <strong>REC-${receipt.payment_id}</strong></div>
@@ -287,7 +288,7 @@ export default function LabPage({ setNotice, user }: Props) {
 
             <div class="footer">
               <div>Processed by operator: <strong>${safeText(receipt.operator_name)}</strong></div>
-              <div style="margin-top: 1mm; font-style: italic;">Thank you for choosing Ayu Polyclinic.</div>
+              <div style="margin-top: 1mm; font-style: italic;">Thank you for choosing Ayu Polyclinic & Emergency Clinic.</div>
             </div>
           </div>
         </body>
@@ -411,6 +412,10 @@ export default function LabPage({ setNotice, user }: Props) {
   const [diagnosticCategories, setDiagnosticCategories] = useState<string[]>([]);
   const [newCategoryName, setNewCategoryName] = useState("");
   const [deleteCategoryName, setDeleteCategoryName] = useState("");
+
+  useEffect(() => onDepartmentsChanged(() => {
+    fetchDepartmentNames().then(setDepartments).catch(() => setDepartments([]));
+  }), []);
 
   useEffect(() => {
     const loadDeps = async () => {
@@ -923,7 +928,7 @@ export default function LabPage({ setNotice, user }: Props) {
         </head>
         <body>
           <main class="report" data-hospai-shared-print-shell>
-            <img class="hospai-shared-watermark" src="${PRINT_WATERMARK_DATA_URI}" alt="Ayu Polyclinic Watermark" />
+            <img class="hospai-shared-watermark" src="${PRINT_WATERMARK_DATA_URI}" alt="Ayu Polyclinic & Emergency Clinic Watermark" />
             
             ${renderAyuPdfHeaderHtml()}
 
@@ -974,7 +979,7 @@ export default function LabPage({ setNotice, user }: Props) {
             </div>
             
             <div class="operator">
-              <p style="margin: 0 0 10mm 0;">Operator: ${safeText(user?.full_name || user?.username || "Ayu Polyclinic System")}</p>
+              <p style="margin: 0 0 10mm 0;">Operator: ${safeText(user?.full_name || user?.username || "Ayu Polyclinic & Emergency Clinic System")}</p>
               <p style="margin: 0; font-weight: bold; letter-spacing: 2px;">........................................</p>
             </div>
             
@@ -1191,7 +1196,7 @@ export default function LabPage({ setNotice, user }: Props) {
 
       return `
         <main class="report" data-hospai-shared-print-shell style="${pageBreakStyle}">
-          <img class="hospai-shared-watermark" src="${PRINT_WATERMARK_DATA_URI}" alt="Ayu Polyclinic Watermark" />
+          <img class="hospai-shared-watermark" src="${PRINT_WATERMARK_DATA_URI}" alt="Ayu Polyclinic & Emergency Clinic Watermark" />
           
           ${renderAyuPdfHeaderHtml()}
 
@@ -1242,7 +1247,7 @@ export default function LabPage({ setNotice, user }: Props) {
           </div>
           
           <div class="operator">
-            <p style="margin: 0 0 10mm 0;">Operator: ${safeText(user?.full_name || user?.username || "Ayu Polyclinic System")}</p>
+            <p style="margin: 0 0 10mm 0;">Operator: ${safeText(user?.full_name || user?.username || "Ayu Polyclinic & Emergency Clinic System")}</p>
             <p style="margin: 0; font-weight: bold; letter-spacing: 2px;">........................................</p>
           </div>
           
@@ -1462,7 +1467,7 @@ export default function LabPage({ setNotice, user }: Props) {
         </head>
         <body>
           <main class="report" data-hospai-shared-print-shell>
-            <img class="hospai-shared-watermark" src="${PRINT_WATERMARK_DATA_URI}" alt="Ayu Polyclinic Watermark" />
+            <img class="hospai-shared-watermark" src="${PRINT_WATERMARK_DATA_URI}" alt="Ayu Polyclinic & Emergency Clinic Watermark" />
             
             ${renderAyuPdfHeaderHtml()}
 
@@ -1513,7 +1518,7 @@ export default function LabPage({ setNotice, user }: Props) {
             </div>
             
             <div class="operator">
-              <p style="margin: 0 0 10mm 0;">Operator: ${safeText(user?.full_name || user?.username || "Ayu Polyclinic System")}</p>
+              <p style="margin: 0 0 10mm 0;">Operator: ${safeText(user?.full_name || user?.username || "Ayu Polyclinic & Emergency Clinic System")}</p>
               <p style="margin: 0; font-weight: bold; letter-spacing: 2px;">........................................</p>
             </div>
             
@@ -1579,10 +1584,10 @@ export default function LabPage({ setNotice, user }: Props) {
       return;
     }
 
-    const subject = encodeURIComponent(`Ayu Polyclinic - Lab & Diagnostics Bill [${patientUhid}]`);
+    const subject = encodeURIComponent(`Ayu Polyclinic & Emergency Clinic - Lab & Diagnostics Bill [${patientUhid}]`);
     const body = encodeURIComponent(
       `Dear ${patientName},\n\n` +
-      `Please find below the bill details for your recent Lab & Diagnostics booking at Ayu Polyclinic:\n\n` +
+      `Please find below the bill details for your recent Lab & Diagnostics booking at Ayu Polyclinic & Emergency Clinic:\n\n` +
       `Patient Name: ${patientName}\n` +
       `UHID / Patient ID: ${patientUhid}\n` +
       `Department: ${department || "-"}\n` +
@@ -1592,7 +1597,7 @@ export default function LabPage({ setNotice, user }: Props) {
       `BILL SUMMARY:\n` +
       `Total Billed: ₹${formatAmount(grandTotal)}\n` +
       `Total Paid: ₹${formatAmount(Number(paidAmount || 0))}\n\n` +
-      `Thank you for choosing Ayu Polyclinic.\n` +
+      `Thank you for choosing Ayu Polyclinic & Emergency Clinic.\n` +
       `Valid for 7 days or 2 times.`
     );
     window.location.href = `mailto:${trimmedEmail}?subject=${subject}&body=${body}`;

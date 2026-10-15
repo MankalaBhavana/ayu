@@ -260,7 +260,7 @@ export async function generateClientPdf(
 
     wrapper.innerHTML = `
       <div style="position: relative; z-index: 1;">
-        ${renderAyuPdfHeaderHtml({ title, printDate, printTime, generatedBy: "Ayu Polyclinic System" })}
+        ${renderAyuPdfHeaderHtml({ title, printDate, printTime, generatedBy: "Ayu Polyclinic & Emergency Clinic System" })}
         <div id="hospai-client-pdf-clone"></div>
         ${renderAyuPdfFooterHtml("Page 1 of 1")}
       </div>

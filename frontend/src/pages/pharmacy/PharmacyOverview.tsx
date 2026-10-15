@@ -480,7 +480,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
       <div className="hosp-dashboard-top" style={{ marginBottom: "1.25rem" }}>
         <div>
           <div className="hosp-dashboard-eyebrow">
-            <span>Ayu Polyclinic</span>
+            <span>Ayu Polyclinic & Emergency Clinic</span>
             <span>/</span>
             <span>Pharmacy</span>
             <span>/</span>

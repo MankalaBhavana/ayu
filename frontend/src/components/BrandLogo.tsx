@@ -19,7 +19,7 @@ export default function BrandLogo({ className = "brand-logo-img" }: BrandLogoPro
 
   if (showSvgFallback) {
     return (
-      <span className="brand-logo-fallback" aria-label="Ayu Polyclinic logo" role="img">
+      <span className="brand-logo-fallback" aria-label="Ayu Polyclinic & Emergency Clinic logo" role="img">
         <svg viewBox="0 0 64 64" focusable="false" aria-hidden="true">
           <rect x="6" y="6" width="52" height="52" rx="14" fill="none" />
           <rect x="10" y="10" width="44" height="44" rx="10" fill="#0f4f7a" />
@@ -36,7 +36,7 @@ export default function BrandLogo({ className = "brand-logo-img" }: BrandLogoPro
     <img
       className={className}
       src={LOGO_PATHS[logoIndex]}
-      alt="Ayu Polyclinic logo"
+      alt="Ayu Polyclinic & Emergency Clinic logo"
       loading="eager"
       decoding="sync"
       onError={() => {

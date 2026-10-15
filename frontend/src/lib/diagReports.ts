@@ -53,7 +53,7 @@ export function buildReportPrintHtml(report: ReportDetail, content: Record<strin
       : "DRAFT / PRELIMINARY";
   return `
     <html><head><title>${report.service_name} report</title></head><body style="font-family:sans-serif;padding:24px;">
-    <h2>Ayu Polyclinic -- ${isLab ? "Laboratory" : "Imaging"} Report</h2>
+    <h2>Ayu Polyclinic & Emergency Clinic -- ${isLab ? "Laboratory" : "Imaging"} Report</h2>
     <p><strong>${statusLabel}</strong> -- Version ${report.version}</p>
     <p>Patient: ${patient.name || ""} ${patient.last_name || ""} &nbsp; UHID: ${report.patient_id} &nbsp; Age/Sex: ${patient.age ?? "-"}/${patient.gender ?? "-"}</p>
     <p>Order: ${report.order_no} &nbsp; Test: ${report.service_name}</p>
@@ -86,7 +86,7 @@ export function buildWhatsAppMessage(report: ReportDetail, content: Record<strin
   }
 
   return [
-    "*Ayu Polyclinic - Diagnostic Report Summary*",
+    "*Ayu Polyclinic & Emergency Clinic - Diagnostic Report Summary*",
     "━━━━━━━━━━━━━━━━━━━━",
     `*Patient:* ${patientName(patient.name, patient.last_name, report.patient_id)} (${report.patient_id})`,
     `*Investigation:* ${report.service_name} (Order #${report.order_no})`,
@@ -98,6 +98,6 @@ export function buildWhatsAppMessage(report: ReportDetail, content: Record<strin
     "",
     `*Authorized Specialist:* Dr. ${doctorName}`,
     "━━━━━━━━━━━━━━━━━━━━",
-    "Ayu Polyclinic · Bollaram, Hyderabad · Ph: +91 6303346810",
+    "Ayu Polyclinic & Emergency Clinic · Bollaram, Hyderabad · Ph: +91 6303346810",
   ].join("\n");
 }

@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import type { StandardPdfPayload } from "../lib/exportService";
 
 describe("Dashboard Display Cards PDF Export", () => {
-  it("formats Today's Revenue display card popup payload with standard Ayu Polyclinic branding", () => {
+  it("formats Today's Revenue display card popup payload with standard Ayu Polyclinic & Emergency Clinic branding", () => {
     const payload: StandardPdfPayload = {
       title: "Today's Revenue Details",
       subtitle: "Hospital Revenue Summary for 15 Oct 2026",
@@ -10,7 +10,7 @@ describe("Dashboard Display Cards PDF Export", () => {
       brand_logo: "ayu",
       include_signature: false,
       include_doctor_details: false,
-      operator_name: "Ayu Polyclinic System",
+      operator_name: "Ayu Polyclinic & Emergency Clinic System",
       sections: [
         {
           title: "Revenue Overview",
@@ -47,7 +47,7 @@ describe("Dashboard Display Cards PDF Export", () => {
     expect(payload.totals?.grand_total).toBe("₹12,500");
   });
 
-  it("formats Patient Registrations display card popup payload with standard Ayu Polyclinic branding", () => {
+  it("formats Patient Registrations display card popup payload with standard Ayu Polyclinic & Emergency Clinic branding", () => {
     const payload: StandardPdfPayload = {
       title: "Today's Registrations",
       subtitle: "Patient Registration Summary for 15 Oct 2026",
@@ -55,7 +55,7 @@ describe("Dashboard Display Cards PDF Export", () => {
       brand_logo: "ayu",
       include_signature: false,
       include_doctor_details: false,
-      operator_name: "Ayu Polyclinic System",
+      operator_name: "Ayu Polyclinic & Emergency Clinic System",
       sections: [
         {
           title: "Registration Metrics",

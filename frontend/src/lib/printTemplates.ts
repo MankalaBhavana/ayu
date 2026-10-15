@@ -5,7 +5,7 @@ const escapeHtml = (value: unknown) =>
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
 
-// printViaIframe() injects the shared Ayu Polyclinic clinic/doctor header and
+// printViaIframe() injects the shared Ayu Polyclinic & Emergency Clinic clinic/doctor header and
 // services/contact footer around whatever HTML is passed to it -- these templates
 // supply only the body content, never a second header/footer of their own.
 const BASE_STYLE = `
@@ -53,7 +53,7 @@ export function buildPrintDocumentHtml(opts: {
     : "";
   const subtitle = opts.subtitleLines.filter(Boolean).join(" · ");
   const headerHtml = opts.brandLogoDataUri
-    ? `<header class="custom-report-header"><img src="${escapeHtml(opts.brandLogoDataUri)}" alt="Ayu Polyclinic logo" /><div class="custom-report-header-copy">${opts.brandName ? `<strong class="custom-report-brand-name">${escapeHtml(opts.brandName)}</strong>` : ""}<h1>${escapeHtml(opts.title)}</h1></div></header>`
+    ? `<header class="custom-report-header"><img src="${escapeHtml(opts.brandLogoDataUri)}" alt="Ayu Polyclinic & Emergency Clinic logo" /><div class="custom-report-header-copy">${opts.brandName ? `<strong class="custom-report-brand-name">${escapeHtml(opts.brandName)}</strong>` : ""}<h1>${escapeHtml(opts.title)}</h1></div></header>`
     : "";
   const headerStyle = opts.brandLogoDataUri
      ? `.custom-report-header { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; padding-bottom: 10px; border-bottom: 2px solid #1d4289; }
@@ -80,6 +80,8 @@ export function buildPrintDocumentHtml(opts: {
 /** A sheet of small dispensing labels, one per medicine line -- meant to be
  * printed and affixed to the medicine packet/pouch, not a billing document. */
 export function buildPrintLabelsHtml(opts: {
+  /** Pharmacy name from Pharmacy → Settings → Print & Label; defaults to the clinic name. */
+  hospitalName?: string;
   patientName: string;
   patientId: string;
   invoiceNo?: string;
@@ -99,7 +101,7 @@ export function buildPrintLabelsHtml(opts: {
   `;
   const labelsHtml = opts.items.map((it) => `
     <div class="label">
-      <div class="label-hospital">Ayu Polyclinic &middot; Pharmacy</div>
+      <div class="label-hospital">${escapeHtml(opts.hospitalName || "Ayu Polyclinic & Emergency Clinic")} &middot; Pharmacy</div>
       <div class="label-medicine">${escapeHtml(it.medicineName)}</div>
       <div class="label-row"><b>Patient:</b> ${escapeHtml(opts.patientName)} (${escapeHtml(opts.patientId)})</div>
       <div class="label-row"><b>Quantity:</b> ${escapeHtml(it.quantity)}</div>

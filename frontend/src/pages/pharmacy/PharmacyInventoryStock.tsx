@@ -26,6 +26,7 @@ type StockItem = {
   batch_status?: string;
   unit_type?: string;
   master_reorder_level?: number;
+  storage_location?: string | null;
 };
 
 type StockMovement = {
@@ -270,7 +271,7 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
       {/* Topbar / Breadcrumbs */}
       <div className="pharmacy-topbar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", flexWrap: "wrap", gap: "1rem" }}>
         <div className="pharmacy-breadcrumb" style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem", color: "#64748b" }}>
-          <span style={{ cursor: "pointer", color: "#3b82f6", fontWeight: 600 }} onClick={() => window.history.back()}>Ayu Polyclinic</span>
+          <span style={{ cursor: "pointer", color: "#3b82f6", fontWeight: 600 }} onClick={() => window.history.back()}>Ayu Polyclinic & Emergency Clinic</span>
           <span>/</span>
           <span style={{ cursor: "pointer", color: "#00828a", fontWeight: 600 }} onClick={() => onNavigate("pharmacy-overview")}>Pharmacy</span>
           <span>/</span>
@@ -505,6 +506,7 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
                   <th style={{ padding: "0.5rem 0.75rem" }}>Medicine</th>
                   <th style={{ padding: "0.5rem 0.75rem" }}>Unit / Form</th>
                   <th style={{ padding: "0.5rem 0.75rem" }}>Batch No</th>
+                  <th style={{ padding: "0.5rem 0.75rem" }}>Store / Rack</th>
                   <th style={{ padding: "0.5rem 0.75rem" }}>Mfg Date</th>
                   <th style={{ padding: "0.5rem 0.75rem" }}>Expiry Date</th>
                   <th style={{ padding: "0.5rem 0.75rem", textAlign: "center" }}>Available Qty</th>
@@ -523,6 +525,7 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
                       <td style={{ padding: "0.5rem 0.75rem", fontWeight: 600 }}>{b.medicine_name}</td>
                       <td style={{ padding: "0.5rem 0.75rem", color: "#475569" }}>{b.unit_type || "-"}</td>
                       <td style={{ padding: "0.5rem 0.75rem", fontWeight: 700, color: "#00828a" }}>{b.batch_no}</td>
+                      <td style={{ padding: "0.5rem 0.75rem", color: "#475569" }}>{b.storage_location || "-"}</td>
                       <td style={{ padding: "0.5rem 0.75rem", color: "#64748b" }}>{b.mfg_date || "-"}</td>
                       <td style={{ padding: "0.5rem 0.75rem", fontWeight: isExpired ? 700 : 500, color: isExpired ? "#dc2626" : "#334155" }}>
                         {b.expiry_date || "-"}

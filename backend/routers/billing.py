@@ -223,7 +223,7 @@ def billing_overview_stats(date: str | None = None, cashier: str | None = None, 
 
 
 @router.get("/overview-details")
-def billing_overview_details(metric: str = Query(..., description="net_billed, receipts_today, refunds_today, outstanding_dues"),
+def billing_overview_details(metric: str = Query(..., description="net_billed, monthly_revenue, receipts_today, refunds_today, outstanding_dues"),
                              date: str | None = None,
                              db: Session = Depends(get_db), user: dict = Depends(require_permissions("billing.read"))):
     try:
@@ -235,8 +235,9 @@ def billing_overview_details(metric: str = Query(..., description="net_billed, r
 @router.get("/worklist")
 def billing_worklist(tab: str = "pending_payments", department: str | None = None,
                      visit_type: str | None = None, q: str | None = None,
+                     target_date: str | None = None,
                      db: Session = Depends(get_db), user: dict = Depends(require_permissions("billing.read"))):
-    return bs.get_billing_worklist(db, tab=tab, department=department, visit_type=visit_type, q=q)
+    return bs.get_billing_worklist(db, tab=tab, department=department, visit_type=visit_type, q=q, target_date=target_date)
 
 
 @router.get("/cashier-session/current")

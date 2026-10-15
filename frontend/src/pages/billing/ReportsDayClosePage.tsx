@@ -291,7 +291,7 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
       buildPrintDocumentHtml({
         title: "Daily Collection & Day Close Report",
         subtitleLines: [
-          `Ayu Polyclinic · Date: ${targetDate}`,
+          `Ayu Polyclinic & Emergency Clinic · Date: ${targetDate}`,
           `Cashier: ${selectedCashier} · Counter: ${selectedCounter}`,
         ],
         meta: [
@@ -323,7 +323,7 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
     printViaIframe(
       buildPrintDocumentHtml({
         title: `Monthly Collections Summary — ${selectedMonth}`,
-        subtitleLines: ["Ayu Polyclinic · Accounts & Finance"],
+        subtitleLines: ["Ayu Polyclinic & Emergency Clinic · Accounts & Finance"],
         meta: [
           { label: "Net Billed", value: `₹${fmt(monthData.totals?.net_billed ?? 0)}` },
           { label: "Net Collections", value: `₹${fmt(monthData.totals?.net_collections ?? 0)}` },
@@ -358,7 +358,7 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
       buildPrintDocumentHtml({
         title: "Cashier Shift Reconciliation Slip",
         subtitleLines: [
-          `Ayu Polyclinic · Session: ${sess.session_code}`,
+          `Ayu Polyclinic & Emergency Clinic · Session: ${sess.session_code}`,
           `Status: ${sess.status?.toUpperCase()} · Date: ${targetDate}`,
         ],
         meta: [
@@ -391,11 +391,13 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
       buildPrintDocumentHtml({
         title: "Payment Receipt",
         subtitleLines: [
-          "Ayu Polyclinic · Main Hospital & Diagnostic Centre",
+          "Ayu Polyclinic & Emergency Clinic · Main Hospital & Diagnostic Centre",
           `Receipt No: ${r.receipt_no} · Date: ${r.time || targetDate}`,
         ],
         meta: [
           { label: "Receipt No", value: r.receipt_no },
+          { label: "Patient ID", value: r.patient_id || "-" },
+          { label: "Patient Name", value: r.patient_name || "-" },
           { label: "Payment Mode", value: r.payment_mode },
           { label: "Amount Paid", value: `₹${fmt(r.amount)}` },
         ],
@@ -412,10 +414,13 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
   // Filtered receipts
   const filteredReceipts = useMemo(() => {
     return (reportData.receipt_register || []).filter((r: any) => {
+      const q = receiptSearch.toLowerCase();
       const matchSearch =
         !receiptSearch ||
-        r.receipt_no.toLowerCase().includes(receiptSearch.toLowerCase()) ||
-        (r.payment_mode && r.payment_mode.toLowerCase().includes(receiptSearch.toLowerCase()));
+        r.receipt_no.toLowerCase().includes(q) ||
+        (r.patient_id && String(r.patient_id).toLowerCase().includes(q)) ||
+        (r.patient_name && String(r.patient_name).toLowerCase().includes(q)) ||
+        (r.payment_mode && r.payment_mode.toLowerCase().includes(q));
       const matchMode =
         receiptModeFilter === "ALL" ||
         r.payment_mode?.toUpperCase() === receiptModeFilter.toUpperCase();
@@ -464,7 +469,7 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
           className="breadcrumb-link"
           onClick={() => onNavigate?.("dashboard")}
         >
-          Ayu Polyclinic
+          Ayu Polyclinic & Emergency Clinic
         </span>
         <span className="separator">/</span>
         <span
@@ -752,7 +757,7 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
                         </svg>
                         <input
                           type="text"
-                          placeholder="Search receipt no..."
+                          placeholder="Search receipt, patient ID or name..."
                           value={receiptSearch}
                           onChange={(e) => setReceiptSearch(e.target.value)}
                         />
@@ -777,6 +782,8 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
                       <thead>
                         <tr>
                           <th>Receipt no</th>
+                          <th>Patient ID</th>
+                          <th>Patient name</th>
                           <th>Time</th>
                           <th>Payment method</th>
                           <th style={{ textAlign: "right" }}>Amount</th>
@@ -786,7 +793,7 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
                       <tbody>
                         {filteredReceipts.length === 0 ? (
                           <tr>
-                            <td colSpan={5} style={{ textAlign: "center", padding: "2rem", color: "#94a3b8" }}>
+                            <td colSpan={7} style={{ textAlign: "center", padding: "2rem", color: "#94a3b8" }}>
                               No receipts matching filter.
                             </td>
                           </tr>
@@ -799,6 +806,10 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
                                 <td style={{ fontFamily: "monospace", fontWeight: 700, color: "#0f172a" }}>
                                   {r.receipt_no}
                                 </td>
+                                <td style={{ fontFamily: "monospace", color: "#334155", fontSize: "0.85rem", whiteSpace: "nowrap" }}>
+                                  {r.patient_id || "-"}
+                                </td>
+                                <td style={{ fontWeight: 600, color: "#0f172a" }}>{r.patient_name || "-"}</td>
                                 <td style={{ color: "#64748b", fontSize: "0.85rem" }}>{r.time}</td>
                                 <td>
                                   <span
@@ -1389,6 +1400,14 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
             </div>
 
             <div style={{ background: "#f8fafc", borderRadius: "8px", padding: "14px", border: "1px solid #e2e8f0" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: "0.875rem" }}>
+                <span style={{ color: "#64748b" }}>Patient ID:</span>
+                <span style={{ fontWeight: 600, color: "#0f172a" }}>{selectedReceipt.patient_id || "-"}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: "0.875rem" }}>
+                <span style={{ color: "#64748b" }}>Patient Name:</span>
+                <span style={{ fontWeight: 600, color: "#0f172a" }}>{selectedReceipt.patient_name || "-"}</span>
+              </div>
               <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: "0.875rem" }}>
                 <span style={{ color: "#64748b" }}>Payment Method:</span>
                 <span style={{ fontWeight: 600, color: "#0f172a" }}>{selectedReceipt.payment_mode}</span>

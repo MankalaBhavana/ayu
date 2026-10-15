@@ -224,7 +224,7 @@ export const buildPrescriptionHtml = (data: {
       ? `
       <div class="rx-header">
         <div class="rx-header-left">
-          <h1 class="rx-clinic-title">AYU POLYCLINIC</h1>
+          <h1 class="rx-clinic-title">AYU POLYCLINIC & EMERGENCY CLINIC</h1>
           <div class="rx-doctor-name">${docName}</div>
           <div class="rx-doctor-qual">MBBS (Gandhi), (FCCM)</div>
           <div class="rx-doctor-qual">TSMC/FM/27444</div>
@@ -269,7 +269,7 @@ export const buildPrescriptionHtml = (data: {
       : `
       <div class="rx-header-cont">
         <div>
-          <div class="rx-clinic-title-sm">AYU POLYCLINIC <span style="font-size:12px;font-weight:700;color:#64748b;text-transform:none;">(Prescription Cont.)</span></div>
+          <div class="rx-clinic-title-sm">AYU POLYCLINIC & EMERGENCY CLINIC <span style="font-size:12px;font-weight:700;color:#64748b;text-transform:none;">(Prescription Cont.)</span></div>
           <div class="rx-doctor-sm">${docName} &bull; MBBS (Gandhi), (FCCM) &bull; TSMC/FM/27444</div>
         </div>
         <div class="rx-header-cont-right">
@@ -329,7 +329,7 @@ export const buildPrescriptionHtml = (data: {
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>AYU POLYCLINIC - Doctor Prescription</title>
+  <title>AYU POLYCLINIC & EMERGENCY CLINIC - Doctor Prescription</title>
 </head>
 <body style="margin: 0; padding: 0; background: #ffffff;">
   <div class="rx-print-wrap" data-hospai-shared-print-shell>
@@ -426,7 +426,7 @@ export const buildPrescriptionHtml = (data: {
       }
       .rx-clinic-title {
         margin: 0;
-        font-size: 26px;
+        font-size: 21px;
         font-weight: 900;
         letter-spacing: 0.6px;
         text-transform: uppercase;
@@ -464,7 +464,7 @@ export const buildPrescriptionHtml = (data: {
         border-bottom: 1.5px solid #1d4289;
       }
       .rx-clinic-title-sm {
-        font-size: 18px;
+        font-size: 16px;
         font-weight: 900;
         color: #1d4289;
         letter-spacing: 0.5px;
@@ -1156,7 +1156,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
         <div className="module-unified-topbar">
           <div className="module-topbar-breadcrumb-row">
             <div className="module-topbar-breadcrumb">
-              <span className="breadcrumb-root" onClick={() => window.history.back()}>Ayu Polyclinic</span>
+              <span className="breadcrumb-root" onClick={() => window.history.back()}>Ayu Polyclinic & Emergency Clinic</span>
               <span className="breadcrumb-sep">/</span>
               <span>OP Management</span>
               <span className="breadcrumb-sep">/</span>

@@ -2,6 +2,7 @@ import { useState, useMemo, useEffect } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import type { Notice, Patient, PatientForm } from "../types";
 import { apiFetch, reportError } from "../lib/api";
+import { fetchDepartmentNames, onDepartmentsChanged } from "../lib/departments";
 import { printViaIframe } from "../lib/printViaIframe";
 import { PRINT_BRAND_HEADER_DATA_URI } from "../lib/printBrand";
 import { calculateAgeFromDob } from "../lib/format";
@@ -221,6 +222,10 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
       return [];
     }
   });
+
+  useEffect(() => onDepartmentsChanged(() => {
+    fetchDepartmentNames().then(setDepartments).catch(() => setDepartments([]));
+  }), []);
 
   // Load departments and doctor schedules from backend
   useEffect(() => {
@@ -776,9 +781,9 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
     const slipHtml = `
       <div style="font-family: Arial, sans-serif; max-width: 480px; margin: 0 auto; padding: 24px; border: 2px solid #00828a; border-radius: 8px;">
         <div class="registration-slip-header" style="display: flex; align-items: center; gap: 6px; border-bottom: 2px solid #00828a; padding-bottom: 12px; margin-bottom: 16px;">
-          <img src="${PRINT_BRAND_HEADER_DATA_URI}" alt="Ayu Polyclinic logo" style="display: block; flex: 0 0 48px; width: 48px; height: 42px; object-fit: contain; object-position: left center;" />
+          <img src="${PRINT_BRAND_HEADER_DATA_URI}" alt="Ayu Polyclinic & Emergency Clinic logo" style="display: block; flex: 0 0 48px; width: 48px; height: 42px; object-fit: contain; object-position: left center;" />
           <div class="registration-slip-title" style="flex: 1; text-align: left;">
-            <h2 style="margin: 0; color: #16324a;">Ayu Polyclinic</h2>
+            <h2 style="margin: 0; color: #16324a; font-size: 18px; line-height: 1.25;">Ayu Polyclinic & Emergency Clinic</h2>
             <div style="font-size: 11px; color: #64748b; margin-top: 2px;">Patient Registration & Token Slip</div>
           </div>
         </div>
@@ -827,7 +832,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
       {/* Top Breadcrumb */}
       <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "12.5px", color: "#64748b", fontWeight: 500, marginBottom: "8px" }}>
         <span style={{ color: "#3b82f6", cursor: "pointer" }} onClick={() => window.history.back()}>
-          Ayu Polyclinic
+          Ayu Polyclinic & Emergency Clinic
         </span>
         <span style={{ color: "#94a3b8" }}>/</span>
         <span style={{ color: "#0f172a", fontWeight: 600 }}>Patient Registration</span>

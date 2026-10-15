@@ -75,7 +75,7 @@ describe("App role-based UI", () => {
       root.render(<App />);
       await flush();
     });
-    expect(container.textContent).toContain("Welcome to Ayu Polyclinic");
+    expect(container.textContent).toContain("Welcome to Ayu Polyclinic & Emergency Clinic");
     expect(container.textContent).toContain("Sign in");
   });
 
@@ -230,7 +230,7 @@ describe("App role-based UI", () => {
       await flush();
     });
 
-    expect(container.textContent).toContain("Welcome to Ayu Polyclinic");
+    expect(container.textContent).toContain("Welcome to Ayu Polyclinic & Emergency Clinic");
     expect(container.textContent).toContain("Sign in");
     expect(container.textContent).not.toContain("Log out");
     expect(container.textContent).not.toContain("Authentication required");

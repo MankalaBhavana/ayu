@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { apiFetch, reportError } from "../lib/api";
+import { onDepartmentsChanged } from "../lib/departments";
 import {
   Button,
   Card,
@@ -140,6 +141,7 @@ export default function DoctorsHistoryPage({ setNotice, onOpenPatient }: Props) 
   useEffect(() => {
     void loadFilterOptions();
     void fetchConsultationHistory();
+    return onDepartmentsChanged(() => void loadFilterOptions());
   }, []);
 
   const handleShow = (e: React.FormEvent) => {

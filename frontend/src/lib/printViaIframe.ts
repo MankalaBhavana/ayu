@@ -69,7 +69,7 @@ function applySharedHospaiPrintFrame(html: string, options: SharedPrintOptions):
       </style>`;
     const compactHeader = `
       <div class="hospai-shared-label-mark" data-hospai-shared-print-shell>
-        <div class="brand">Ayu Polyclinic</div>
+        <div class="brand">Ayu Polyclinic & Emergency Clinic</div>
         <div class="meta">${title} &middot; ${printDate} ${printTime}</div>
         <div class="rule"></div>
       </div>`;
@@ -245,7 +245,7 @@ function applySharedHospaiPrintFrame(html: string, options: SharedPrintOptions):
 
   const header = preserveDocumentHeader ? "" : `
     <header class="hospai-shared-print-shell" data-hospai-shared-print-shell>
-      ${renderAyuPdfHeaderHtml({ title: rawTitle, printDate, printTime, generatedBy: "Ayu Polyclinic System" })}
+      ${renderAyuPdfHeaderHtml({ title: rawTitle, printDate, printTime, generatedBy: "Ayu Polyclinic & Emergency Clinic System" })}
     </header>`;
 
   const footer = includeFooter ? `

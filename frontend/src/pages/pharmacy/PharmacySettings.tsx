@@ -2,7 +2,11 @@ import { useEffect, useState, useMemo } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { Button, Input, Modal } from "../../components/ui";
 import { apiFetch, reportError } from "../../lib/api";
+import { useDropdownOptions } from "../../lib/dropdownService";
+import { DEFAULT_PHARMACY_NAME, fetchPharmacySettings, savePharmacySettings } from "../../lib/pharmacySettings";
+import type { PharmacyPrintSettings } from "../../lib/pharmacySettings";
 import type { Notice } from "../../types";
+import ConfigListManager from "./ConfigListManager";
 
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
@@ -21,8 +25,10 @@ type Medicine = {
   gst_rate?: number;
   manufacturer?: string;
   reorder_level?: number;
-  active?: boolean;
+  active?: number | boolean | null;
 };
+
+const isActiveMedicine = (m: Medicine) => m.active === undefined || m.active === null || Boolean(Number(m.active));
 
 export default function PharmacySettings({ setNotice, onNavigate }: Props) {
   const [activeTab, setActiveTab] = useState<"medicines" | "categories" | "stores" | "print">("medicines");
@@ -45,11 +51,41 @@ export default function PharmacySettings({ setNotice, onNavigate }: Props) {
   const [formReorder, setFormReorder] = useState<number>(20);
   const [submittingMed, setSubmittingMed] = useState(false);
 
-  // Print settings
-  const [hospitalHeader, setHospitalHeader] = useState("AYU POLYCLINIC & HEALTHCARE");
-  const [hospitalAddress, setHospitalAddress] = useState("Main Road, Hospital Campus, Contact: +91 800-1234567");
-  const [dlNumber, setDlNumber] = useState("DL-20B-102938 / DL-21B-102939");
-  const [gstin, setGstin] = useState("36AAAAA0000A1Z5");
+  const [formActive, setFormActive] = useState(true);
+  const [showInactive, setShowInactive] = useState(false);
+
+  // Dosage forms come from Settings → Dosage Forms & Categories (shared "dosage_forms" list).
+  const { options: dosageFormList } = useDropdownOptions("dosage_forms");
+  // Keeps a medicine's existing value selectable even if it was removed from the list.
+  const dosageFormOptions = useMemo(() => {
+    const opts = dosageFormList.map((f) => ({ value: f.value, label: f.label || f.value }));
+    if (formCategory && !opts.some((o) => o.value.toLowerCase() === formCategory.toLowerCase())) {
+      opts.push({ value: formCategory, label: formCategory });
+    }
+    return opts;
+  }, [dosageFormList, formCategory]);
+
+  // Print & label settings, stored on the server and used on pharmacy invoices and labels
+  const [printSettings, setPrintSettings] = useState<PharmacyPrintSettings>({ pharmacy_name: "", address_line: "", dl_number: "", gstin: "" });
+  const [savingPrint, setSavingPrint] = useState(false);
+
+  useEffect(() => {
+    fetchPharmacySettings()
+      .then(setPrintSettings)
+      .catch((err) => reportError(setNotice, err as any, "Failed to load print settings"));
+  }, []);
+
+  const handleSavePrintSettings = async () => {
+    setSavingPrint(true);
+    try {
+      setPrintSettings(await savePharmacySettings(printSettings));
+      setNotice({ type: "success", message: "Print settings saved. New pharmacy invoices and labels will use them." });
+    } catch (err) {
+      reportError(setNotice, err as any, "Failed to save print settings");
+    } finally {
+      setSavingPrint(false);
+    }
+  };
 
   // Load medicines
   const loadMedicines = async () => {
@@ -73,13 +109,15 @@ export default function PharmacySettings({ setNotice, onNavigate }: Props) {
   // Filtered
   const filteredMeds = useMemo(() => {
     const q = searchQuery.trim().toLowerCase();
-    if (!q) return medicines;
-    return medicines.filter((m) =>
+    const visible = showInactive ? medicines : medicines.filter(isActiveMedicine);
+    if (!q) return visible;
+    return visible.filter((m) =>
       m.name.toLowerCase().includes(q) ||
       (m.generic_name || "").toLowerCase().includes(q) ||
       (m.category || "").toLowerCase().includes(q)
     );
-  }, [medicines, searchQuery]);
+  }, [medicines, searchQuery, showInactive]);
+  const inactiveCount = medicines.filter((m) => !isActiveMedicine(m)).length;
 
   // Open Add
   const handleOpenAdd = () => {
@@ -94,6 +132,7 @@ export default function PharmacySettings({ setNotice, onNavigate }: Props) {
     setFormGst(12);
     setFormMfr("");
     setFormReorder(20);
+    setFormActive(true);
     setMedModalOpen(true);
   };
 
@@ -107,9 +146,10 @@ export default function PharmacySettings({ setNotice, onNavigate }: Props) {
     setFormStrength(m.strength || "");
     setFormUnit(m.unit || "Strip");
     setFormHsn(m.hsn_code || "3004");
-    setFormGst(m.gst_rate || 12);
+    setFormGst(m.gst_rate ?? 12);
     setFormMfr(m.manufacturer || "");
-    setFormReorder(m.reorder_level || 20);
+    setFormReorder(m.reorder_level ?? 20);
+    setFormActive(isActiveMedicine(m));
     setMedModalOpen(true);
   };
 
@@ -133,7 +173,7 @@ export default function PharmacySettings({ setNotice, onNavigate }: Props) {
         gst_rate: formGst,
         manufacturer: formMfr,
         reorder_level: formReorder,
-        active: true,
+        active: formActive,
       };
 
       if (editingMed) {
@@ -164,7 +204,7 @@ export default function PharmacySettings({ setNotice, onNavigate }: Props) {
       {/* Topbar / Breadcrumbs */}
       <div className="pharmacy-topbar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", flexWrap: "wrap", gap: "1rem" }}>
         <div className="pharmacy-breadcrumb" style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem", color: "#64748b" }}>
-          <span style={{ cursor: "pointer", color: "#3b82f6", fontWeight: 600 }} onClick={() => window.history.back()}>Ayu Polyclinic</span>
+          <span style={{ cursor: "pointer", color: "#3b82f6", fontWeight: 600 }} onClick={() => window.history.back()}>Ayu Polyclinic & Emergency Clinic</span>
           <span>/</span>
           <span style={{ cursor: "pointer", color: "#00828a", fontWeight: 600 }} onClick={() => onNavigate("pharmacy-overview")}>Pharmacy</span>
           <span>/</span>
@@ -225,8 +265,14 @@ export default function PharmacySettings({ setNotice, onNavigate }: Props) {
                 placeholder="Search master catalog..."
               />
             </div>
-            <div style={{ fontSize: "0.85rem", color: "#64748b" }}>
-              Showing {filteredMeds.length} medicines
+            <div style={{ display: "flex", alignItems: "center", gap: "1rem", fontSize: "0.85rem", color: "#64748b" }}>
+              {inactiveCount > 0 && (
+                <label style={{ display: "flex", alignItems: "center", gap: "6px", cursor: "pointer" }}>
+                  <input type="checkbox" checked={showInactive} onChange={(e) => setShowInactive(e.target.checked)} />
+                  Show inactive ({inactiveCount})
+                </label>
+              )}
+              <span>Showing {filteredMeds.length} medicines</span>
             </div>
           </div>
 
@@ -251,12 +297,18 @@ export default function PharmacySettings({ setNotice, onNavigate }: Props) {
                     <td style={{ padding: "0.5rem", color: "#475569" }}>{m.generic_name || "-"}</td>
                     <td style={{ padding: "0.5rem", color: "#64748b" }}>{m.category || m.dosage_form || "Tablet"}</td>
                     <td style={{ padding: "0.5rem", color: "#334155" }}>{m.strength || "-"}</td>
-                    <td style={{ padding: "0.5rem", textAlign: "center", fontWeight: 600 }}>{m.reorder_level || 20}</td>
-                    <td style={{ padding: "0.5rem", textAlign: "right", color: "#64748b" }}>{m.gst_rate || 12}%</td>
+                    <td style={{ padding: "0.5rem", textAlign: "center", fontWeight: 600 }}>{m.reorder_level ?? 10}</td>
+                    <td style={{ padding: "0.5rem", textAlign: "right", color: "#64748b" }}>{m.gst_rate ?? 0}%</td>
                     <td style={{ padding: "0.5rem", textAlign: "center" }}>
-                      <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "0.72rem", fontWeight: 700, background: "#dcfce7", color: "#166534" }}>
-                        Active
-                      </span>
+                      {isActiveMedicine(m) ? (
+                        <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "0.72rem", fontWeight: 700, background: "#dcfce7", color: "#166534" }}>
+                          Active
+                        </span>
+                      ) : (
+                        <span style={{ padding: "2px 8px", borderRadius: "10px", fontSize: "0.72rem", fontWeight: 700, background: "#f1f5f9", color: "#64748b" }}>
+                          Inactive
+                        </span>
+                      )}
                     </td>
                     <td style={{ padding: "0.5rem", textAlign: "right" }}>
                       <Button
@@ -278,86 +330,70 @@ export default function PharmacySettings({ setNotice, onNavigate }: Props) {
 
       {/* 2. CATEGORIES & FORMS */}
       {activeTab === "categories" && (
-        <div style={{ background: "#ffffff", borderRadius: "10px", padding: "1.5rem", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <h3 style={{ margin: "0 0 1rem 0", fontSize: "1.1rem", fontWeight: 700, color: "#0f172a" }}>
-            Configured Dosage Forms & Therapeutic Categories
-          </h3>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem" }}>
-            {["Tablets & Capsules", "Syrups & Oral Suspensions", "Injections & IV Fluids", "Topical Creams & Ointments", "Eye / Ear Drops", "Inhalers & Sprays"].map((cat) => (
-              <div key={cat} style={{ background: "#f8fafc", padding: "1rem", borderRadius: "8px", border: "1px solid #e2e8f0", fontWeight: 600, color: "#334155" }}>
-                ✓ {cat}
-              </div>
-            ))}
-          </div>
-        </div>
+        <ConfigListManager
+          category="dosage_forms"
+          title="Dosage Forms & Categories"
+          description="Used by the Dosage Form field in the medicine master, the Unit / Form on GRN lines, and unit suggestions on purchase requests."
+          itemNoun="dosage form"
+          placeholder="New dosage form / category, e.g. Sachet / Powder"
+          setNotice={setNotice}
+        />
       )}
 
       {/* 3. STORE & RACK LOCATIONS */}
       {activeTab === "stores" && (
-        <div style={{ background: "#ffffff", borderRadius: "10px", padding: "1.5rem", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)" }}>
-          <h3 style={{ margin: "0 0 1rem 0", fontSize: "1.1rem", fontWeight: 700, color: "#0f172a" }}>
-            Physical Store & Rack Locations
-          </h3>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
-            {[
-              { name: "Main Central Pharmacy", code: "PHARM-MAIN", desc: "Ground floor outpatient & central dispensing" },
-              { name: "Emergency Fast-Rack", code: "RACK-EMERGENCY", desc: "Crash cart & acute emergency drugs" },
-              { name: "Cold Chain Storage (2°C - 8°C)", code: "COLD-STORAGE", desc: "Insulins, vaccines, and sera" },
-              { name: "Day Care / Procedure Rack", code: "RACK-DAYCARE", desc: "Day care & observation procedures" },
-            ].map((loc) => (
-              <div key={loc.code} style={{ background: "#f8fafc", padding: "1rem", borderRadius: "8px", border: "1px solid #e2e8f0" }}>
-                <div style={{ fontWeight: 700, color: "#0f172a" }}>{loc.name}</div>
-                <div style={{ fontSize: "0.75rem", color: "#00828a", fontWeight: 600, marginTop: "2px" }}>{loc.code}</div>
-                <div style={{ fontSize: "0.8rem", color: "#64748b", marginTop: "6px" }}>{loc.desc}</div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <ConfigListManager
+          category="storage_locations"
+          title="Store & Rack Locations"
+          description="Chosen per line when receiving goods (GRN) and shown against each batch in Inventory / Stock."
+          itemNoun="location"
+          placeholder="New store or rack, e.g. Cold Chain Storage (2°C - 8°C)"
+          setNotice={setNotice}
+        />
       )}
 
       {/* 4. PRINT & LABEL SETTINGS */}
       {activeTab === "print" && (
         <div style={{ background: "#ffffff", borderRadius: "10px", padding: "1.5rem", border: "1px solid #e2e8f0", boxShadow: "0 1px 3px rgba(0,0,0,0.05)", maxWidth: "700px" }}>
-          <h3 style={{ margin: "0 0 1rem 0", fontSize: "1.1rem", fontWeight: 700, color: "#0f172a" }}>
+          <h3 style={{ margin: "0 0 0.25rem 0", fontSize: "1.1rem", fontWeight: 700, color: "#0f172a" }}>
             Invoice Header & Label Printing Configuration
           </h3>
+          <p style={{ margin: "0 0 1rem 0", fontSize: "0.85rem", color: "#64748b" }}>
+            Printed at the top of OP Dispense invoices and on medicine labels. Leave a field blank to omit it.
+          </p>
 
           <div style={{ display: "flex", flexDirection: "column", gap: "1rem", marginBottom: "1.5rem" }}>
             <div>
-              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
-                Hospital / Pharmacy Name on Invoices:
-              </label>
+              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Hospital / Pharmacy Name on Invoices:</label>
               <Input
-                value={hospitalHeader}
-                onChange={(e) => setHospitalHeader(e.target.value)}
+                value={printSettings.pharmacy_name}
+                placeholder={DEFAULT_PHARMACY_NAME}
+                onChange={(e) => setPrintSettings((s) => ({ ...s, pharmacy_name: e.target.value }))}
               />
             </div>
             <div>
-              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
-                Campus Address & Contact Line:
-              </label>
+              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Address & Contact Line:</label>
               <Input
-                value={hospitalAddress}
-                onChange={(e) => setHospitalAddress(e.target.value)}
+                value={printSettings.address_line}
+                placeholder="e.g. Old Alwal Road, Bollaram, Hyderabad · +91 63033 46810"
+                onChange={(e) => setPrintSettings((s) => ({ ...s, address_line: e.target.value }))}
               />
             </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "1rem" }}>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: "1rem" }}>
               <div>
-                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
-                  Drug License Numbers:
-                </label>
+                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>Drug License Numbers:</label>
                 <Input
-                  value={dlNumber}
-                  onChange={(e) => setDlNumber(e.target.value)}
+                  value={printSettings.dl_number}
+                  placeholder="e.g. 20B/XX/0000, 21B/XX/0000"
+                  onChange={(e) => setPrintSettings((s) => ({ ...s, dl_number: e.target.value }))}
                 />
               </div>
               <div>
-                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
-                  GSTIN Number:
-                </label>
+                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>GSTIN Number:</label>
                 <Input
-                  value={gstin}
-                  onChange={(e) => setGstin(e.target.value)}
+                  value={printSettings.gstin}
+                  placeholder="15-character GSTIN"
+                  onChange={(e) => setPrintSettings((s) => ({ ...s, gstin: e.target.value.toUpperCase() }))}
                 />
               </div>
             </div>
@@ -367,9 +403,10 @@ export default function PharmacySettings({ setNotice, onNavigate }: Props) {
             type="button"
             className="primary"
             style={{ background: "#00828a", borderColor: "#00828a", fontWeight: 700 }}
-            onClick={() => setNotice({ type: "success", message: "Print header settings saved." })}
+            disabled={savingPrint}
+            onClick={() => void handleSavePrintSettings()}
           >
-            Save Print Settings
+            {savingPrint ? "Saving..." : "Save Print Settings"}
           </Button>
         </div>
       )}
@@ -429,12 +466,9 @@ export default function PharmacySettings({ setNotice, onNavigate }: Props) {
                   value={formCategory}
                   onChange={(e) => setFormCategory(e.target.value)}
                 >
-                  <option value="Tablet">Tablet</option>
-                  <option value="Capsule">Capsule</option>
-                  <option value="Syrup">Syrup / Suspension</option>
-                  <option value="Injection">Injection / IV</option>
-                  <option value="Ointment">Ointment / Gel</option>
-                  <option value="Drops">Drops</option>
+                  {dosageFormOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
                 </select>
               </div>
 
@@ -501,6 +535,11 @@ export default function PharmacySettings({ setNotice, onNavigate }: Props) {
                 />
               </div>
             </div>
+
+            <label style={{ display: "flex", alignItems: "center", gap: "8px", fontSize: "0.85rem", color: "#334155", marginBottom: "1rem", cursor: "pointer" }}>
+              <input type="checkbox" checked={formActive} onChange={(e) => setFormActive(e.target.checked)} />
+              Active — inactive medicines are hidden from purchase request and GRN suggestions (existing stock can still be dispensed)
+            </label>
 
             <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
               <Button type="button" variant="secondary" onClick={() => setMedModalOpen(false)}>

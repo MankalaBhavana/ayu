@@ -16,7 +16,9 @@ export type HospitalBrandProps = {
 
 export const HOSPITAL_BRAND_CONFIG = {
   name: "Ayu",
-  sub: "POLYCLINIC",
+  sub: "POLYCLINIC & EMERGENCY CLINIC",
+  // Sub-title split for the narrow space beside the emblem.
+  subLines: ["POLYCLINIC &", "EMERGENCY CLINIC"],
   emblemSrc: "/logo_emblem.png?v=20261012-v5",
   hospaiLogoSrc: "/hospai_login_logo.png",
   colors: {
@@ -28,7 +30,7 @@ export const HOSPITAL_BRAND_CONFIG = {
 };
 
 const EMBLEM_SIZE_BY_VARIANT: Record<HospitalBrandVariant, number> = {
-  sidebar: 58,
+  sidebar: 64,
   collapsed: 44,
   print: 52,
   screen: 48,
@@ -62,7 +64,7 @@ function BrandEmblem({ size, isSidebar }: { size: number; isSidebar?: boolean })
     >
       <img
         src={HOSPITAL_BRAND_CONFIG.emblemSrc}
-        alt="Ayu Polyclinic emblem"
+        alt="Ayu Polyclinic & Emergency Clinic emblem"
         style={{
           width: "100%",
           height: "100%",
@@ -159,8 +161,8 @@ export default function HospitalBrand({
         onKeyDown={handleKeyDown}
         tabIndex={0}
         role="button"
-        title={`Active logo: ${activeLogo === "hospai" ? "HospAI" : "Ayu Polyclinic"}. Click to toggle.`}
-        aria-label={`Active logo: ${activeLogo === "hospai" ? "HospAI" : "Ayu Polyclinic"}. Click to toggle.`}
+        title={`Active logo: ${activeLogo === "hospai" ? "HospAI" : "Ayu Polyclinic & Emergency Clinic"}. Click to toggle.`}
+        aria-label={`Active logo: ${activeLogo === "hospai" ? "HospAI" : "Ayu Polyclinic & Emergency Clinic"}. Click to toggle.`}
       >
         {activeLogo === "hospai" ? (
           <img
@@ -176,7 +178,7 @@ export default function HospitalBrand({
         ) : (
           <BrandEmblem size={size} isSidebar={true} />
         )}
-        <span style={VISUALLY_HIDDEN_STYLE}>Ayu Polyclinic</span>
+        <span style={VISUALLY_HIDDEN_STYLE}>Ayu Polyclinic & Emergency Clinic</span>
       </div>
     );
   }
@@ -216,14 +218,17 @@ export default function HospitalBrand({
                 fontSize: isPrint ? "11px" : "10px",
                 fontWeight: 800,
                 color: resolvedHospitalColor,
-                letterSpacing: "0.22em",
+                letterSpacing: "0.12em",
+                lineHeight: 1.3,
                 textTransform: "uppercase",
                 whiteSpace: "nowrap",
                 margin: "3px 0 0",
                 padding: 0,
               }}
             >
-              {HOSPITAL_BRAND_CONFIG.sub}
+              {HOSPITAL_BRAND_CONFIG.subLines.map((line) => (
+                <span key={line} style={{ display: "block" }}>{line}</span>
+              ))}
             </span>
           )}
         </div>
@@ -231,7 +236,7 @@ export default function HospitalBrand({
     );
   }
 
-  // Sidebar branding with 3D flip / toggle between HospAI (primary) and Ayu Polyclinic
+  // Sidebar branding with 3D flip / toggle between HospAI (primary) and Ayu Polyclinic & Emergency Clinic
   const isAyu = activeLogo === "ayu";
 
   return (
@@ -253,8 +258,8 @@ export default function HospitalBrand({
         onKeyDown={handleKeyDown}
         role="button"
         tabIndex={0}
-        title={isAyu ? "Showing Ayu Polyclinic · Click to flip to HospAI" : "Showing HospAI · Click to flip to Ayu Polyclinic"}
-        aria-label={isAyu ? "Showing Ayu Polyclinic logo. Click to flip to HospAI." : "Showing HospAI logo. Click to flip to Ayu Polyclinic."}
+        title={isAyu ? "Showing Ayu Polyclinic & Emergency Clinic · Click to flip to HospAI" : "Showing HospAI · Click to flip to Ayu Polyclinic & Emergency Clinic"}
+        aria-label={isAyu ? "Showing Ayu Polyclinic & Emergency Clinic logo. Click to flip to HospAI." : "Showing HospAI logo. Click to flip to Ayu Polyclinic & Emergency Clinic."}
       >
         <div className={`hospital-brand-flipper ${isAyu ? "flipped" : ""}`}>
           {/* Front Face: HospAI official logo */}
@@ -264,43 +269,35 @@ export default function HospitalBrand({
                 src={HOSPITAL_BRAND_CONFIG.hospaiLogoSrc}
                 alt="HospAI - AI-Driven Healthcare Optimization"
                 className="hospital-brand-hospai-img"
+                style={{
+                  width: "100%",
+                  maxWidth: "185px",
+                  height: "auto",
+                  maxHeight: "125px",
+                  objectFit: "contain",
+                  display: "block",
+                  margin: "0 auto",
+                  filter: "drop-shadow(0 2px 8px rgba(0, 0, 0, 0.45))",
+                }}
               />
             </div>
-            <button
-              type="button"
-              className="hospital-brand-toggle-btn"
-              onClick={toggleLogo}
-              title="Flip logo to Ayu Polyclinic"
-              aria-label="Flip logo to Ayu Polyclinic"
-            >
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4" />
-              </svg>
-            </button>
           </div>
 
-          {/* Back Face: Existing Ayu Polyclinic logo */}
+          {/* Back Face: Existing Ayu Polyclinic & Emergency Clinic logo */}
           <div className="hospital-brand-face hospital-brand-back">
             <div className="hospital-brand-ayu-box">
               <BrandEmblem size={size} isSidebar={true} />
               <div className="hospital-brand-titles">
                 <span className="hospital-brand-name">{HOSPITAL_BRAND_CONFIG.name}</span>
                 {showSubtitle && (
-                  <span className="hospital-brand-sub">{HOSPITAL_BRAND_CONFIG.sub}</span>
+                  <span className="hospital-brand-sub" aria-label={HOSPITAL_BRAND_CONFIG.sub}>
+                    {HOSPITAL_BRAND_CONFIG.subLines.map((line) => (
+                      <span key={line} className="hospital-brand-sub-line">{line}</span>
+                    ))}
+                  </span>
                 )}
               </div>
             </div>
-            <button
-              type="button"
-              className="hospital-brand-toggle-btn"
-              onClick={toggleLogo}
-              title="Flip logo to HospAI"
-              aria-label="Flip logo to HospAI"
-            >
-              <svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M7 16V4m0 0L3 8m4-4l4 4m6 4v12m0 0l4-4m-4 4l-4-4" />
-              </svg>
-            </button>
           </div>
         </div>
       </div>

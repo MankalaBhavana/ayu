@@ -1,5 +1,5 @@
 /**
- * AYU POLYCLINIC Shared Print Branding Constants
+ * AYU POLYCLINIC & EMERGENCY CLINIC Shared Print Branding Constants
  * High-definition vector-rendered Data-URI strings for print and PDF generation.
  */
 

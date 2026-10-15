@@ -60,6 +60,8 @@ DEFAULT_DROPDOWNS = [
     {"category": "dosage_forms", "value": "Syrup / Suspension", "label": "Syrup / Suspension", "sort_order": 3, "is_system": True},
     {"category": "dosage_forms", "value": "Injection / IV", "label": "Injection / IV", "sort_order": 4, "is_system": True},
     {"category": "dosage_forms", "value": "Ointment / Gel", "label": "Ointment / Gel", "sort_order": 5, "is_system": True},
+    {"category": "dosage_forms", "value": "Drops", "label": "Eye / Ear Drops", "sort_order": 6, "is_system": True},
+    {"category": "dosage_forms", "value": "Inhaler / Spray", "label": "Inhaler / Spray", "sort_order": 7, "is_system": True},
 
     # Unit Types
     {"category": "unit_types", "value": "Strip", "label": "Strip", "sort_order": 1, "is_system": True},
@@ -190,10 +192,26 @@ def add_dropdown_option(payload: dict, user: dict):
     with engine.begin() as conn:
         # Check duplicate
         exists = conn.execute(text(
-            "SELECT id FROM dropdown_configurations WHERE category = :cat AND LOWER(value) = LOWER(:val)"
+            "SELECT id, is_active FROM dropdown_configurations WHERE category = :cat AND LOWER(value) = LOWER(:val)"
         ), {"cat": category, "val": value}).fetchone()
         if exists:
-            raise ValueError(f"An option with value '{value}' already exists in category '{category}'.")
+            if exists.is_active:
+                raise ValueError(f"An option with value '{value}' already exists in category '{category}'.")
+            # Previously removed (soft-deactivated) option: bring it back instead of failing.
+            res = conn.execute(text("""
+                UPDATE dropdown_configurations SET is_active = TRUE, updated_at = CURRENT_TIMESTAMP
+                WHERE id = :id
+                RETURNING id, category, value, label, is_active, sort_order, is_system
+            """), {"id": exists.id}).fetchone()
+            return {
+                "id": res.id,
+                "category": res.category,
+                "value": res.value,
+                "label": res.label,
+                "is_active": res.is_active,
+                "sort_order": res.sort_order,
+                "is_system": res.is_system,
+            }
 
         res = conn.execute(text("""
             INSERT INTO dropdown_configurations (category, value, label, sort_order, is_system, is_active)
@@ -220,6 +238,15 @@ def add_dropdown_option(payload: dict, user: dict):
             "sort_order": res.sort_order,
             "is_system": res.is_system,
         }
+
+
+def get_option_category(option_id: int):
+    """Category of a stored dropdown option, or None if it does not exist."""
+    with engine.begin() as conn:
+        row = conn.execute(text(
+            "SELECT category FROM dropdown_configurations WHERE id = :id"
+        ), {"id": option_id}).fetchone()
+        return row.category if row else None
 
 
 def update_dropdown_option(option_id: int, payload: dict, user: dict):

@@ -54,6 +54,7 @@ def on_startup():
         security.create_default_clinical_master(db)
         with legacy_sql.get_connection(db) as conn:
             legacy_queries.ensure_lab_diagnostics_tables(conn)
+            legacy_queries.ensure_pharmacy_master_schema(conn)
         db.commit()
 
 

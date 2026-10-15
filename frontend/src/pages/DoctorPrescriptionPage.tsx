@@ -166,7 +166,7 @@ export default function DoctorPrescriptionPage({ setNotice, onNavigate }: Props)
       {/* Top Breadcrumb */}
       <div className="doc-rx-top-header">
         <div className="doc-rx-breadcrumb">
-          <span className="crumb-root" onClick={() => window.history.back()}>Ayu Polyclinic</span>
+          <span className="crumb-root" onClick={() => window.history.back()}>Ayu Polyclinic & Emergency Clinic</span>
           <span className="crumb-sep">/</span>
           <span className="crumb-module">OP Management</span>
           <span className="crumb-sep">/</span>

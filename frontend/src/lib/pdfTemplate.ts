@@ -1,8 +1,8 @@
 /**
- * Centralized Ayu Polyclinic PDF & Print Header/Footer Template
+ * Centralized Ayu Polyclinic & Emergency Clinic PDF & Print Header/Footer Template
  * Reproduces Reference Images 1 and 2 identically across all modules.
  */
-import { PRINT_CADUCEUS_DATA_URI, PRINT_FOOTER_IMAGE_DATA_URI, PRINT_BRAND_HEADER_DATA_URI } from "./printBrand";
+import { PRINT_CADUCEUS_DATA_URI, PRINT_BRAND_HEADER_DATA_URI } from "./printBrand";
 
 export const AYU_PDF_COLORS = {
   primary: "#1d4289",
@@ -23,9 +23,9 @@ export type PdfHeaderOptions = {
 };
 
 /**
- * Standard Ayu Polyclinic PDF Header
+ * Standard Ayu Polyclinic & Emergency Clinic PDF Header
  * Displays:
- *  - Official Ayu Polyclinic logo
+ *  - Official Ayu Polyclinic & Emergency Clinic logo
  *  - Doctor credentials and clinic name
  *  - Optional report title section below the divider
  */
@@ -35,7 +35,7 @@ export function renderAyuPdfHeaderHtml(options?: PdfHeaderOptions): string {
   const printTime =
     options?.printTime ||
     now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
-  const generatedBy = options?.generatedBy || "Ayu Polyclinic System";
+  const generatedBy = options?.generatedBy || "Ayu Polyclinic & Emergency Clinic System";
   const logoSrc = options?.brandLogoDataUri || (options?.useAyuLogo !== false ? PRINT_BRAND_HEADER_DATA_URI : PRINT_CADUCEUS_DATA_URI);
 
   const titleSection = options?.title
@@ -54,12 +54,12 @@ export function renderAyuPdfHeaderHtml(options?: PdfHeaderOptions): string {
     <div class="ayu-shared-header-shell" style="width:100%;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;margin-bottom:12px;color:#1d4289;">
       <div class="ayu-shared-brand-bar" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;min-height:82px;padding-bottom:6px;">
         <div style="display:flex;flex-direction:column;align-items:flex-start;">
-          <div style="display:inline-block;margin:0 0 5px;border-bottom:2px solid #1d4289;padding-bottom:2px;font-size:26px;font-weight:900;line-height:1.1;color:#1d4289;">AYU POLYCLINIC</div>
+          <div style="display:inline-block;margin:0 0 5px;border-bottom:2px solid #1d4289;padding-bottom:2px;font-size:21px;white-space:nowrap;font-weight:900;line-height:1.1;color:#1d4289;">AYU POLYCLINIC & EMERGENCY CLINIC</div>
           <div style="font-size:16px;font-weight:800;line-height:1.2;color:#1d4289;">Dr. Sushanth. B</div>
           <div style="margin-top:2px;font-size:11px;font-weight:700;line-height:1.25;color:#1d4289;">MBBS (Gandhi), (FCCM)</div>
           <div style="font-size:11px;font-weight:700;line-height:1.25;color:#1d4289;">TSMC/FM/27444</div>
         </div>
-        <img src="${logoSrc}" alt="Ayu Polyclinic Logo" style="width:78px;height:76px;object-fit:contain;object-position:center top;display:block;flex:0 0 auto;" />
+        <img src="${logoSrc}" alt="Ayu Polyclinic & Emergency Clinic Logo" style="width:78px;height:76px;object-fit:contain;object-position:center top;display:block;flex:0 0 auto;" />
       </div>
       ${titleSection}
     </div>
@@ -67,12 +67,11 @@ export function renderAyuPdfHeaderHtml(options?: PdfHeaderOptions): string {
 }
 
 /**
- * Standard Ayu Polyclinic PDF Footer (Reference Image 2)
+ * Standard Ayu Polyclinic & Emergency Clinic PDF Footer
  * Displays:
- *  - Horizontal divider line in primary blue (#1e567a)
- *  - Centered medical symbol emblem in the middle of the divider line
- *  - Left: "Thank you for choosing AYU POLYCLINIC." (italic primary blue)
- *  - Right: "Page 1 of 1" (italic grey)
+ *  - Optional SIGNATURE line
+ *  - Services / address / contact band between two blue rules
+ *  - Centered "Powered by HospAI"
  */
 export function renderAyuPdfFooterHtml(pageText = "Page 1 of 1", includeSignature = true): string {
   const signatureSpacing = "margin:0;padding-top:0;";
@@ -87,12 +86,43 @@ export function renderAyuPdfFooterHtml(pageText = "Page 1 of 1", includeSignatur
   return `
     <div class="ayu-shared-footer-shell" aria-label="${escapeHtml(pageText)}" style="width:100%;position:relative;${signatureSpacing}font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;clear:both;break-inside:avoid;">
       ${signatureHtml}
-      <div style="width:100%;border-top:1px solid #1d4289;border-bottom:1px solid #1d4289;padding:1.5mm 0;box-sizing:border-box;margin:0;">
-        <img src="${PRINT_FOOTER_IMAGE_DATA_URI}" alt="Ayu Polyclinic services, address, phone and email" style="display:block;width:100%;max-width:100%;height:auto;object-fit:contain;margin:0;" />
-      </div>
-      <div class="ayu-shared-footer-powered" style="text-align:center;font-size:8.5pt;color:#1e567a;font-family:Arial,Helvetica,sans-serif;font-weight:500;margin-top:2.5mm;letter-spacing:0.2px;">Powered by HospAI</div>
+      ${renderAyuPdfFooterBandHtml()}
+      <div class="ayu-shared-footer-powered" style="text-align:center;font-size:8.5pt;line-height:4mm;color:#1e567a;font-family:Arial,Helvetica,sans-serif;font-weight:400;margin:1mm 0 0;padding:0;">Powered by HospAI</div>
     </div>
   `;
+}
+
+/**
+ * Services / address / contact band between the two footer rules.
+ * Mirrors draw_pdf_brand_footer() in backend/export_utils.py (same mm offsets,
+ * text, colours and vector icons) so browser-printed and server-generated
+ * PDFs carry an identical footer.
+ */
+function renderAyuPdfFooterBandHtml(): string {
+  const reset = "position:absolute;margin:0;padding:0;white-space:nowrap;font-family:Arial,Helvetica,sans-serif;color:#1e567a;";
+  const service = (top: number, text: string) =>
+    `<div style="${reset}left:1mm;top:${top}mm;height:3.8mm;line-height:3.8mm;font-size:8pt;">${text}</div>`;
+  const address = (top: number, text: string) =>
+    `<div style="${reset}left:72mm;top:${top}mm;height:3.4mm;line-height:3.4mm;font-size:7.8pt;">${text}</div>`;
+  const icon = (left: number, top: number, w: number, h: number, body: string) =>
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" style="position:absolute;left:${left}mm;top:${top}mm;width:${w}mm;height:${h}mm;display:block;overflow:visible;" aria-hidden="true">${body}</svg>`;
+
+  return `
+      <div class="ayu-shared-footer-band" role="img" aria-label="24/7 Emergency, Ambulance Service, Home Care Service Available. GGF2+2F8, Old Alwal Road, Jonnabanda, Chetana Housing Colony, Brundavan Colony, Bollaram - 500010, Hyderabad. Phone +91 6303346810. Email dr.sushanth108@gmail.com" style="position:relative;width:100%;height:15.3mm;margin:0;padding:0;border-top:0.35mm solid #1d4289;border-bottom:0.35mm solid #1d4289;box-sizing:content-box;overflow:visible;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+        ${service(1.5, "- 24/7 Emergency")}
+        ${service(5.3, "- Ambulance Service")}
+        ${service(9.1, "- Home Care Service Available")}
+        ${icon(50, 4, 11.7, 7.2, `<rect x="0" y="0" width="8.5" height="6" fill="#1e567a"/><rect x="8.5" y="2.5" width="3.2" height="3.5" fill="#1e567a"/><circle cx="2.7" cy="6.1" r="1.1" fill="#000"/><circle cx="9.3" cy="6.1" r="1.1" fill="#000"/><rect x="3.4" y="1.2" width="1.4" height="3.6" fill="#fff"/><rect x="2.3" y="2.3" width="3.6" height="1.4" fill="#fff"/>`)}
+        ${icon(62.8, 1.5, 0.4, 12.5, `<rect x="0" y="0" width="0.4" height="12.5" fill="#1e567a"/>`)}
+        ${icon(67.2, 1.8, 2.6, 3.6, `<circle cx="1.3" cy="1.3" r="1.3" fill="#1e567a"/><polygon points="0,1.3 2.6,1.3 1.3,3.6" fill="#1e567a"/><circle cx="1.3" cy="1.3" r="0.5" fill="#fff"/>`)}
+        ${address(1.5, "GGF2+2F8, Old Alwal Road, Jonnabanda,")}
+        ${address(4.9, "Chetana Housing Colony, Brundavan Colony,")}
+        ${address(8.3, "Bollaram - 500010, Hyderabad.")}
+        ${icon(67.2, 11.8, 2.2, 3.2, `<rect x="0" y="0" width="2.2" height="3.2" fill="#1e567a"/><rect x="0.3" y="0.3" width="1.6" height="2" fill="#fff"/>`)}
+        ${address(11.7, "+91 6303346810")}
+        ${icon(101, 12.1, 3.6, 2.6, `<rect x="0" y="0" width="3.6" height="2.6" fill="#fff" stroke="#1e567a" stroke-width="0.3"/><polyline points="0,0 1.8,1.3 3.6,0" fill="none" stroke="#1e567a" stroke-width="0.3"/>`)}
+        <div style="${reset}left:106.8mm;top:11.7mm;height:3.4mm;line-height:3.4mm;font-size:7.8pt;">dr.sushanth108@gmail.com</div>
+      </div>`;
 }
 
 export const AYU_PDF_SHARED_CSS = `

@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useTransition } from "react";
+import React, { useEffect, useMemo, useState, useTransition } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { apiFetch, reportError } from "../../lib/api";
 import type { Notice } from "../../types";
@@ -6,6 +6,7 @@ import { Button, Modal } from "../../components/ui";
 import { printViaIframe } from "../../lib/printViaIframe";
 import { buildPrintDocumentHtml } from "../../lib/printTemplates";
 import { useDropdownOptions } from "../../lib/dropdownService";
+import { filterDetailRecords } from "./detailsSearch";
 import "./billingTheme.css";
 
 type Props = {
@@ -32,6 +33,8 @@ export default function BillingOverviewPage({ setNotice, onNavigate }: Props) {
   const [stats, setStats] = useState({
     net_billed: 26100,
     receipts_today: 21600,
+    monthly_revenue: 0,
+    month_name: "",
     refunds_today: 600,
     net_collections: 21000,
     outstanding_dues: 18450,
@@ -91,10 +94,26 @@ export default function BillingOverviewPage({ setNotice, onNavigate }: Props) {
     records: any[];
   } | null>(null);
 
+  // Searches every value shown in a details row; all words in the query must match.
+  const filteredDetailRecords = useMemo(
+    () => filterDetailRecords<any>(detailsData?.records || [], detailsFilterQuery),
+    [detailsData, detailsFilterQuery]
+  );
+  const filteredDetailTotal = useMemo(
+    () =>
+      filteredDetailRecords.reduce(
+        (sum: number, r: any) =>
+          sum + Number(detailsMetric === "outstanding_dues" ? r.due_amount : (r.amount ?? r.total_amount) ?? 0),
+        0
+      ),
+    [filteredDetailRecords, detailsMetric]
+  );
+
   const handleOpenDetails = async (metric: string) => {
     setDetailsMetric(metric);
     setDetailsModalOpen(true);
     setDetailsLoading(true);
+    setDetailsData(null);
     setDetailsFilterQuery("");
     try {
       const res = await apiFetch(`/api/billing/overview-details?metric=${metric}&date=${targetDate}`);
@@ -229,7 +248,7 @@ export default function BillingOverviewPage({ setNotice, onNavigate }: Props) {
     const html = buildPrintDocumentHtml({
       title: `Daily Billing Overview Summary`,
       subtitleLines: [
-        `Ayu Polyclinic · Billing Department`,
+        `Ayu Polyclinic & Emergency Clinic · Billing Department`,
         `Report Date: ${targetDate}`,
         `Generated: ${new Date().toLocaleTimeString("en-IN")}`,
       ],
@@ -245,6 +264,7 @@ export default function BillingOverviewPage({ setNotice, onNavigate }: Props) {
         ["Gross Collections", "Cash, UPI, and Card receipts collected", `₹${fmt(stats.receipts_today)}`],
         ["Disbursed Refunds", "Authorised patient deposit refunds", `-₹${fmt(stats.refunds_today)}`],
         ["Net Daily Collections", "Receipts minus refunded payments", `₹${fmt(stats.net_collections)}`],
+        ["Monthly Revenue", `All receipts collected in ${stats.month_name || "the month"}`, `₹${fmt(stats.monthly_revenue)}`],
         ["Outstanding Balance", "Cumulative unpaid patient dues across all dates", `₹${fmt(stats.outstanding_dues)}`],
       ],
       totals: [
@@ -262,7 +282,7 @@ export default function BillingOverviewPage({ setNotice, onNavigate }: Props) {
     const html = buildPrintDocumentHtml({
       title: `Official Payment Receipt ${rcp.receipt_no}`,
       subtitleLines: [
-        `Ayu Polyclinic · Central Cashier Desk`,
+        `Ayu Polyclinic & Emergency Clinic · Central Cashier Desk`,
         `Receipt Date: ${rcp.date || targetDate} · ${rcp.time || ""}`,
         `Payment Mode: ${rcp.mode || "CASH"}`,
       ],
@@ -302,7 +322,7 @@ return (
       {/* 1. Breadcrumbs */}
       <div className="billing-breadcrumbs">
         <span className="breadcrumb-link" onClick={() => onNavigate("dashboard")}>
-          Ayu Polyclinic
+          Ayu Polyclinic & Emergency Clinic
         </span>
         <span className="separator">/</span>
         <span className="current">Billing</span>
@@ -371,14 +391,14 @@ return (
           </div>
         </div>
 
-        {/* Card 2: Receipts today */}
+        {/* Card 2: Monthly revenue */}
         <div
           className="billing-kpi-card clickable"
           role="button"
           tabIndex={0}
-          onClick={() => handleOpenDetails("receipts_today")}
-          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpenDetails("receipts_today"); } }}
-          title="Click to view detailed Receipts records"
+          onClick={() => handleOpenDetails("monthly_revenue")}
+          onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); handleOpenDetails("monthly_revenue"); } }}
+          title="Click to view detailed Monthly Revenue records"
         >
           <div className="billing-kpi-icon-wrap" style={{ background: "#f0fdf4", color: "#16a34a" }}>
             <svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -387,9 +407,9 @@ return (
             </svg>
           </div>
           <div className="billing-kpi-info">
-            <span className="billing-kpi-label">Receipts today</span>
-            <span className="billing-kpi-value">₹{fmt(stats.receipts_today)}</span>
-            <span className="billing-kpi-subtitle">Includes advances</span>
+            <span className="billing-kpi-label">Monthly revenue</span>
+            <span className="billing-kpi-value">₹{fmt(stats.monthly_revenue)}</span>
+            <span className="billing-kpi-subtitle">{stats.month_name || "This month"} · Includes advances</span>
           </div>
         </div>
 
@@ -940,7 +960,9 @@ return (
         description={
           detailsMetric === "outstanding_dues"
             ? "Live breakdown of outstanding dues across all patient invoices"
-            : `Live transaction records for date: ${targetDate}`
+            : detailsMetric === "monthly_revenue"
+              ? `Live collection records for month: ${stats.month_name || targetDate.slice(0, 7)}`
+              : `Live transaction records for date: ${targetDate}`
         }
         className="billing-details-modal"
       >
@@ -950,14 +972,16 @@ return (
             <div className="billing-details-summary-stats">
               <div className="billing-details-stat-item">
                 <span className="billing-details-stat-label">Total Records</span>
-                <span className="billing-details-stat-value">{detailsData?.count ?? 0}</span>
+                <span className="billing-details-stat-value">
+                  {detailsFilterQuery.trim() ? `${filteredDetailRecords.length} of ${detailsData?.count ?? 0}` : detailsData?.count ?? 0}
+                </span>
               </div>
               <div className="billing-details-stat-item">
                 <span className="billing-details-stat-label">
                   {detailsMetric === "outstanding_dues" ? "Total Due Amount" : "Total Amount"}
                 </span>
                 <span className="billing-details-stat-value" style={{ color: detailsMetric === "refunds_today" ? "#dc2626" : "#0d9488" }}>
-                  ₹{fmt(detailsData?.total_amount ?? 0)}
+                  ₹{fmt(detailsFilterQuery.trim() ? filteredDetailTotal : detailsData?.total_amount ?? 0)}
                 </span>
               </div>
             </div>
@@ -993,22 +1017,10 @@ return (
             </div>
           ) : !detailsData?.records || detailsData.records.length === 0 ? (
             <div style={{ padding: "36px", textAlign: "center", color: "#94a3b8", background: "#f8fafc", borderRadius: "8px" }}>
-              No records found for this metric on {targetDate}.
+              No records found for this metric {detailsMetric === "monthly_revenue" ? `in ${stats.month_name || targetDate.slice(0, 7)}` : `on ${targetDate}`}.
             </div>
           ) : (() => {
-            const query = detailsFilterQuery.trim().toLowerCase();
-            const filtered = detailsData.records.filter((r: any) => {
-              if (!query) return true;
-              return (
-                (r.reference_no && r.reference_no.toLowerCase().includes(query)) ||
-                (r.patient_name && r.patient_name.toLowerCase().includes(query)) ||
-                (r.patient_id && r.patient_id.toLowerCase().includes(query)) ||
-                (r.mode && r.mode.toLowerCase().includes(query)) ||
-                (r.module && r.module.toLowerCase().includes(query)) ||
-                (r.cashier && r.cashier.toLowerCase().includes(query)) ||
-                (r.status && r.status.toLowerCase().includes(query))
-              );
-            });
+            const filtered = filteredDetailRecords;
 
             if (filtered.length === 0) {
               return (
@@ -1025,9 +1037,9 @@ return (
                     <tr>
                       <th>Ref / Bill #</th>
                       <th>Patient Details</th>
-                      {detailsMetric === "net_billed" && <th>Module</th>}
-                      {detailsMetric === "receipts_today" && <th>Type</th>}
-                      {detailsMetric === "receipts_today" && <th>Mode</th>}
+                      {(detailsMetric === "net_billed" || detailsMetric === "monthly_revenue") && <th>Module</th>}
+                      {(detailsMetric === "receipts_today" || detailsMetric === "monthly_revenue") && <th>Type</th>}
+                      {(detailsMetric === "receipts_today" || detailsMetric === "monthly_revenue") && <th>Mode</th>}
                       {detailsMetric === "refunds_today" && <th>Payment Mode</th>}
                       {detailsMetric === "outstanding_dues" && <th>Module</th>}
                       <th style={{ textAlign: "right" }}>Amount (₹)</th>
@@ -1047,19 +1059,19 @@ return (
                           <div style={{ fontWeight: 500, color: "#0f172a" }}>{r.patient_name || "-"}</div>
                           <div style={{ fontSize: "0.75rem", color: "#64748b" }}>{r.patient_id || "-"}</div>
                         </td>
-                        {detailsMetric === "net_billed" && (
+                        {(detailsMetric === "net_billed" || detailsMetric === "monthly_revenue") && (
                           <td>
                             <span className="billing-table-badge badge-blue">{r.module}</span>
                           </td>
                         )}
-                        {detailsMetric === "receipts_today" && (
+                        {(detailsMetric === "receipts_today" || detailsMetric === "monthly_revenue") && (
                           <td>
                             <span className="billing-table-badge badge-teal">
                               {r.type === "advance" ? "Advance Deposit" : "Bill Settlement"}
                             </span>
                           </td>
                         )}
-                        {detailsMetric === "receipts_today" && (
+                        {(detailsMetric === "receipts_today" || detailsMetric === "monthly_revenue") && (
                           <td>
                             <span className="billing-table-badge badge-gray">{r.mode}</span>
                           </td>
@@ -1110,7 +1122,7 @@ return (
           {/* Modal Footer */}
           <div className="billing-details-footer">
             <span style={{ fontSize: "0.8125rem", color: "#64748b" }}>
-              Showing verified database billing records for Ayu Polyclinic.
+              Showing verified database billing records for Ayu Polyclinic & Emergency Clinic.
             </span>
             <Button variant="primary" onClick={() => setDetailsModalOpen(false)}>
               Close

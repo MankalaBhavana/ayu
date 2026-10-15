@@ -9,13 +9,13 @@ from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-BRAND_NAME = "AYU POLYCLINIC"
+BRAND_NAME = "AYU POLYCLINIC & EMERGENCY CLINIC"
 BRAND_TAGLINE = "POLYCLINIC & DIAGNOSTICS"
 
 
 @lru_cache(maxsize=1)
 def _frontend_logo_path():
-    """Return the approved black Ayu Polyclinic print logo for offline/PyInstaller builds."""
+    """Return the approved black Ayu Polyclinic & Emergency Clinic print logo for offline/PyInstaller builds."""
     root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
     meipass = getattr(__import__("sys"), "_MEIPASS", "")
     candidates = [
@@ -53,15 +53,15 @@ def _clinic_pdf_asset_path(filename: str):
 
 
 def draw_pdf_brand_header(pdf, left_margin: float, top_y: float, title_width: float = 120, is_prescription: bool = False, use_ayu_logo: bool = False, include_doctor_details: bool = True):
-    """Draw the approved Ayu Polyclinic logo/address header used by every PDF export."""
+    """Draw the approved Ayu Polyclinic & Emergency Clinic logo/address header used by every PDF export."""
     logo_path = _frontend_logo_path()
     
     if is_prescription:
         # Top Left Header
         pdf.set_xy(left_margin, top_y)
-        pdf.set_font("Helvetica", "B", 18)
+        pdf.set_font("Helvetica", "B", 16)
         pdf.set_text_color(30, 86, 122) # Same blue
-        pdf.cell(100, 7, "AYU POLYCLINIC", ln=True)
+        pdf.cell(pdf.get_string_width(BRAND_NAME) + 1, 7, BRAND_NAME, ln=True)
         
         pdf.set_x(left_margin)
         pdf.set_font("Helvetica", "B", 12)
@@ -87,11 +87,13 @@ def draw_pdf_brand_header(pdf, left_margin: float, top_y: float, title_width: fl
     else:
         pdf.set_text_color(29, 66, 137)
         pdf.set_xy(left_margin, top_y)
-        pdf.set_font("Helvetica", "B", 20)
-        pdf.cell(145, 8, "AYU POLYCLINIC", ln=True)
+        pdf.set_font("Helvetica", "B", 17)
+        brand_w = pdf.get_string_width(BRAND_NAME)
+        pdf.cell(brand_w + 1, 8, BRAND_NAME, ln=True)
         pdf.set_draw_color(29, 66, 137)
         pdf.set_line_width(0.45)
-        pdf.line(left_margin, top_y + 9, left_margin + 76, top_y + 9)
+        # Underline spans the clinic name (fpdf cells pad text by c_margin on the left)
+        pdf.line(left_margin, top_y + 9, left_margin + pdf.c_margin + brand_w, top_y + 9)
 
         if include_doctor_details:
             pdf.set_xy(left_margin, top_y + 11)
@@ -114,7 +116,7 @@ def draw_pdf_brand_header(pdf, left_margin: float, top_y: float, title_width: fl
 
 
 def draw_pdf_brand_footer(pdf, is_prescription: bool = False, left_margin: float = 15, right_margin: float = 15, include_signature: bool = True):
-    """Draw the standardized, pixel-perfect Ayu Polyclinic footer across all modules and pages."""
+    """Draw the standardized, pixel-perfect Ayu Polyclinic & Emergency Clinic footer across all modules and pages."""
     def _clean(val) -> str:
         text = "" if val is None else str(val)
         text = text.replace("₹", "Rs.").replace("•", "-").replace("–", "-").replace("—", "-")
@@ -395,7 +397,7 @@ def generate_pdf(patient_name: str, doc_type: str, ocr_text: str, date_str: str 
             pdf.set_text_color(0, 0, 0)
             pdf.set_x(left_margin)
             pdf.set_font("Helvetica", "", 8.5)
-            pdf.cell(105, 5, _pdf_clean("Ayu Polyclinic | Pharmacy | Diagnostic"))
+            pdf.cell(105, 5, _pdf_clean("Ayu Polyclinic & Emergency Clinic | Pharmacy | Diagnostic"))
 
             try:
                 generated_dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M")

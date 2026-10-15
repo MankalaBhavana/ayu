@@ -52,6 +52,12 @@ export default function AuthView({ onLogin }: Props) {
             src="/hospai_login_logo.png"
             alt="HospAI - AI-Driven Healthcare Optimization"
             className="login-hero-hospai-logo"
+            style={{
+              width: "210px",
+              maxWidth: "100%",
+              height: "auto",
+              display: "block",
+            }}
           />
         </div>
 
@@ -91,16 +97,28 @@ export default function AuthView({ onLogin }: Props) {
           </div>
           {showAdminNote && (
             <div className="login-admin-note" role="note">
-              Access to Ayu Polyclinic is managed by your hospital's admin team. Reach out to them to get a username set up
+              Access to Ayu Polyclinic & Emergency Clinic is managed by your hospital's admin team. Reach out to them to get a username set up
               or your password reset.
             </div>
           )}
 
           <div className="login-brand">
-            <BrandLogo />
+            <img
+              src="/logo.png"
+              alt="Ayu Polyclinic & Emergency Clinic"
+              className="login-brand-img"
+              style={{
+                width: "96px",
+                height: "96px",
+                objectFit: "contain",
+                display: "block",
+                margin: "0 auto",
+                filter: "drop-shadow(0 4px 12px rgba(15, 79, 122, 0.16))",
+              }}
+            />
           </div>
 
-          <h2 className="login-title">Welcome to Ayu Polyclinic</h2>
+          <h2 className="login-title">Welcome to Ayu Polyclinic & Emergency Clinic</h2>
           <p className="login-subtitle">Sign in to your hospital workspace.</p>
 
           <form className="login-form" onSubmit={handleSubmit} noValidate>
@@ -177,7 +195,7 @@ export default function AuthView({ onLogin }: Props) {
 
           <div className="login-footer">
             <p>Access is based on your assigned role.</p>
-            <p className="login-footer-brand">Ayu Polyclinic • Connected care, simplified</p>
+            <p className="login-footer-brand">Ayu Polyclinic & Emergency Clinic • Connected care, simplified</p>
           </div>
         </div>
       </div>

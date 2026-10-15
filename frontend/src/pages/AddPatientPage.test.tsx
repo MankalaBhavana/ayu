@@ -153,7 +153,7 @@ describe("AddPatientPage", () => {
     const printHtml = vi.mocked(printViaIframe).mock.calls[vi.mocked(printViaIframe).mock.calls.length - 1]?.[0] || "";
     const parsedPrintHtml = new DOMParser().parseFromString(printHtml, "text/html");
     expect(parsedPrintHtml.querySelector(".registration-slip-header img")?.getAttribute("src")).toBe(PRINT_BRAND_HEADER_DATA_URI);
-    expect(parsedPrintHtml.querySelector(".registration-slip-title")?.textContent).toContain("Ayu Polyclinic");
+    expect(parsedPrintHtml.querySelector(".registration-slip-title")?.textContent).toContain("Ayu Polyclinic & Emergency Clinic");
     expect(parsedPrintHtml.querySelector(".registration-slip-header")?.getAttribute("style")).toContain("gap: 6px");
     expect(parsedPrintHtml.querySelector(".registration-slip-title")?.getAttribute("style")).toContain("text-align: left");
     expect(printViaIframe).toHaveBeenCalledWith(

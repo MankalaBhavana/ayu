@@ -7,6 +7,19 @@ import dropdown_service as ds
 
 router = APIRouter(prefix="/api/config", tags=["config"])
 
+# Pharmacy-owned lists that pharmacy staff may manage from Pharmacy → Settings.
+PHARMACY_CATEGORIES = {"dosage_forms", "unit_types", "storage_locations"}
+
+
+def _ensure_can_manage(user: dict, category: str | None = None):
+    role = (user.get("role") or "").lower()
+    perms = user.get("permissions") or []
+    if role in ("admin", "platform_admin", "employee") or "admin.use" in perms or "settings.write" in perms:
+        return
+    if (category or "").strip().lower() in PHARMACY_CATEGORIES and "pharmacy.write" in perms:
+        return
+    raise HTTPException(status_code=403, detail="Only administrators can manage dropdown configurations.")
+
 
 @router.get("/dropdowns")
 def list_dropdowns(category: str | None = None, active_only: bool = False,
@@ -18,10 +31,7 @@ def list_dropdowns(category: str | None = None, active_only: bool = False,
 def create_dropdown(request: Request, payload: dict = Body(...),
                     user: dict = Depends(get_current_user)):
     # Restrict dropdown configuration changes to authorized roles
-    role = (user.get("role") or "").lower()
-    perms = user.get("permissions") or []
-    if role not in ("admin", "platform_admin", "employee") and "admin.use" not in perms and "settings.write" not in perms:
-        raise HTTPException(status_code=403, detail="Only administrators can manage dropdown configurations.")
+    _ensure_can_manage(user, payload.get("category"))
     try:
         res = ds.add_dropdown_option(payload, user)
         try:
@@ -36,10 +46,7 @@ def create_dropdown(request: Request, payload: dict = Body(...),
 @router.put("/dropdowns/{option_id}")
 def update_dropdown(option_id: int, request: Request, payload: dict = Body(...),
                     user: dict = Depends(get_current_user)):
-    role = (user.get("role") or "").lower()
-    perms = user.get("permissions") or []
-    if role not in ("admin", "platform_admin", "employee") and "admin.use" not in perms and "settings.write" not in perms:
-        raise HTTPException(status_code=403, detail="Only administrators can manage dropdown configurations.")
+    _ensure_can_manage(user, ds.get_option_category(option_id))
     try:
         res = ds.update_dropdown_option(option_id, payload, user)
         try:
@@ -54,10 +61,7 @@ def update_dropdown(option_id: int, request: Request, payload: dict = Body(...),
 @router.delete("/dropdowns/{option_id}")
 def delete_dropdown(option_id: int, request: Request,
                     user: dict = Depends(get_current_user)):
-    role = (user.get("role") or "").lower()
-    perms = user.get("permissions") or []
-    if role not in ("admin", "platform_admin", "employee") and "admin.use" not in perms and "settings.write" not in perms:
-        raise HTTPException(status_code=403, detail="Only administrators can manage dropdown configurations.")
+    _ensure_can_manage(user, ds.get_option_category(option_id))
     try:
         res = ds.delete_dropdown_option(option_id, user)
         try:

@@ -1478,14 +1478,14 @@ function App() {
               <line x1="3" y1="18" x2="21" y2="18" />
             </svg>
           </button>
-          <span className="mobile-top-bar-title">Ayu Polyclinic</span>
+          <span className="mobile-top-bar-title">Ayu Polyclinic & Emergency Clinic</span>
         </div>
         <Container size="full">
         {page !== "dashboard" && !page.startsWith("pharmacy-") && !isBillingRoute && page !== "doctor-prescription" && page !== "op-queue-management" && page !== "add" && page !== "patient-journey" && (
           <header className="topbar module-unified-topbar">
             <div className="module-topbar-breadcrumb-row">
               <div className="module-topbar-breadcrumb">
-                <span className="breadcrumb-root" onClick={() => window.history.back()}>Ayu Polyclinic</span>
+                <span className="breadcrumb-root" onClick={() => window.history.back()}>Ayu Polyclinic & Emergency Clinic</span>
                 <span className="breadcrumb-sep">/</span>
                 <span className="breadcrumb-active">{page === "admin" ? "Admin" : NAV_ITEMS.find((item) => item.id === page)?.label || "Dashboard"}</span>
               </div>

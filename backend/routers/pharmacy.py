@@ -33,6 +33,20 @@ def pharmacy_medicines_update(medicine_id: int, request: Request, payload: dict 
     return {"status": "ok"}
 
 
+@router.get("/settings")
+def pharmacy_settings_get(db: Session = Depends(get_db), user: dict = Depends(require_permissions("pharmacy.read"))):
+    """Invoice header / licence details printed on pharmacy bills and labels."""
+    return lq.get_pharmacy_settings(db)
+
+
+@router.put("/settings")
+def pharmacy_settings_save(request: Request, payload: dict = Body(...), db: Session = Depends(get_db),
+                           user: dict = Depends(require_permissions("pharmacy.write"))):
+    saved = lq.save_pharmacy_settings(db, payload, user.get("username"))
+    log_audit_event(db, user, client_ip(request), "update", "pharmacy_settings", "print", saved)
+    return saved
+
+
 @router.get("/stock")
 def pharmacy_stock_list(stock_source: str | None = None, db: Session = Depends(get_db), user: dict = Depends(require_permissions("pharmacy.read"))):
     return {"batches": rows_to_dicts(lq.list_inventory_items(db, stock_source=stock_source))}

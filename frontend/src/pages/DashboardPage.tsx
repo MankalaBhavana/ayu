@@ -402,7 +402,7 @@ export default function DashboardPage({
       brand_logo: "ayu",
       include_signature: false,
       include_doctor_details: false,
-      operator_name: user?.full_name || "Ayu Polyclinic System",
+      operator_name: user?.full_name || "Ayu Polyclinic & Emergency Clinic System",
       sections: [
         {
           title: "Dashboard Summary",
@@ -525,7 +525,7 @@ export default function DashboardPage({
       brand_logo: "ayu",
       include_signature: false,
       include_doctor_details: false,
-      operator_name: user?.full_name || user?.username || "Ayu Polyclinic System",
+      operator_name: user?.full_name || user?.username || "Ayu Polyclinic & Emergency Clinic System",
       sections: [
         {
           title: "Revenue Overview",
@@ -590,7 +590,7 @@ export default function DashboardPage({
       brand_logo: "ayu",
       include_signature: false,
       include_doctor_details: false,
-      operator_name: user?.full_name || user?.username || "Ayu Polyclinic System",
+      operator_name: user?.full_name || user?.username || "Ayu Polyclinic & Emergency Clinic System",
       sections: [
         {
           title: "Registration Metrics",
@@ -667,7 +667,7 @@ export default function DashboardPage({
       <div className="hosp-dashboard-top">
         <div>
           <p className="hosp-dashboard-page-title">{dashboardHeadline}</p>
-          <p className="hosp-dashboard-page-subtitle">Here's how Ayu Polyclinic is doing on {currentDateLabel}.</p>
+          <p className="hosp-dashboard-page-subtitle">Here's how Ayu Polyclinic & Emergency Clinic is doing on {currentDateLabel}.</p>
         </div>
         <div className="hosp-dashboard-top-actions">
           <DateCalendarPicker value={dashboardDate} onChange={setDashboardDate} />
@@ -697,7 +697,7 @@ export default function DashboardPage({
             setNotice={setNotice}
             onGenerate={async () => {
               const { blob, filename } = await handleGeneratePdf();
-              return { blob, filename, title: "Ayu Polyclinic Executive Dashboard", text: "Ayu Polyclinic executive dashboard export" };
+              return { blob, filename, title: "Ayu Polyclinic & Emergency Clinic Executive Dashboard", text: "Ayu Polyclinic & Emergency Clinic executive dashboard export" };
             }}
             renderTrigger={(onClick, loading) => (
               <button type="button" className="hosp-dashboard-icon-btn" onClick={onClick} disabled={loading || exportStatus !== ""}>

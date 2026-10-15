@@ -6,6 +6,7 @@ import MarkdownReport from "../components/MarkdownReport";
 import { Button, Checkbox, Input, Label, Select, Table, TableCell, TableHead, TableRow, Textarea } from "../components/ui";
 import { API_BASE, DOC_TYPES, SUPPORTED_DOCUMENT_ACCEPT, SUPPORTED_DOCUMENT_EXTENSIONS, isSupportedDocumentFile } from "../lib/constants";
 import { apiFetch, reportError } from "../lib/api";
+import { fetchDepartmentNames, onDepartmentsChanged } from "../lib/departments";
 import { formatDateTimeIST, getISTDateTimeKey, getTimestamp, stripUploadTimestampPrefix, filterInteger, filterDecimal } from "../lib/format";
 import { printViaIframe } from "../lib/printViaIframe";
 import { renderAyuPdfHeaderHtml, renderAyuPdfFooterHtml } from "../lib/pdfTemplate";
@@ -286,6 +287,9 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
   }, [doctorSchedules]);
 
   const [departmentNames, setDepartmentNames] = useState<string[]>([]);
+  useEffect(() => onDepartmentsChanged(() => {
+    fetchDepartmentNames().then(setDepartmentNames).catch(() => setDepartmentNames([]));
+  }), []);
 
   const getDoctorScheduleForName = (name: string) => {
     const normalized = String(name).trim().toLowerCase();

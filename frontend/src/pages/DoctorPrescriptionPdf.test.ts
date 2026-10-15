@@ -1,10 +1,10 @@
 import { describe, test, expect } from "vitest";
 import { buildPrescriptionHtml } from "./PatientWorkflowPage";
-import { PRINT_FOOTER_IMAGE_DATA_URI, PRINT_CADUCEUS_DATA_URI } from "../lib/printBrand";
+import { PRINT_CADUCEUS_DATA_URI } from "../lib/printBrand";
 import { renderAyuPdfFooterHtml } from "../lib/pdfTemplate";
 
 describe("Doctor Prescription Standardized PDF Footer & Multi-Page Layout", () => {
-  test("generates standardized Ayu Polyclinic footer with Powered by HospAI matching Dashboard", () => {
+  test("generates standardized Ayu Polyclinic & Emergency Clinic footer with Powered by HospAI matching Dashboard", () => {
     const html = buildPrescriptionHtml({
       patientName: "Ramesh Kumar",
       patientAddress: "Alwal, Hyderabad",
@@ -22,12 +22,13 @@ describe("Doctor Prescription Standardized PDF Footer & Multi-Page Layout", () =
 
     // Valid HTML & document structure
     expect(html).toContain("<!DOCTYPE html>");
-    expect(html).toContain("AYU POLYCLINIC");
+    expect(html).toContain("AYU POLYCLINIC & EMERGENCY CLINIC");
     expect(html).toContain("Dr. Sushanth. B");
     expect(html).toContain("Ramesh Kumar");
 
     // Standardized footer elements matching Dashboard
-    expect(html).toContain(`src="${PRINT_FOOTER_IMAGE_DATA_URI}"`);
+    expect(html).toContain("ayu-shared-footer-band");
+    expect(html).toContain("dr.sushanth108@gmail.com");
     expect(html).toContain("Powered by HospAI");
     expect(html).toContain("Page 1 of 1");
     expect(html).toContain("rx-page-footer");

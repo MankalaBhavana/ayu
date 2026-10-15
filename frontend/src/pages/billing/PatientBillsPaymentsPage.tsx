@@ -25,7 +25,7 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
   const [targetDate, setTargetDate] = useState(() => new Date().toISOString().split("T")[0]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"unpaid" | "paid" | "all">("unpaid");
+  const [activeTab, setActiveTab] = useState<"unpaid" | "paid" | "all">("all");
 
   const [patientData, setPatientData] = useState<any>(null);
   const [selectedBills, setSelectedBills] = useState<Record<number, boolean>>({});
@@ -41,6 +41,14 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
 
   // Quick fallback patients if user hasn't searched yet
   const [recentPatients, setRecentPatients] = useState<any[]>([]);
+
+  // Daily worklist data (bills, receipts, pending payments for targetDate)
+  const [worklistData, setWorklistData] = useState<{
+    recent_bills?: any[];
+    recent_receipts?: any[];
+    pending_payments?: any[];
+  } | null>(null);
+  const [worklistLoading, setWorklistLoading] = useState(false);
 
   // In-place info inspection modals (No redirection)
   const [journeyModalOpen, setJourneyModalOpen] = useState(false);
@@ -88,7 +96,7 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
   };
 
   const fetchPatientBills = async (searchKey: string) => {
-    if (!searchKey.trim()) return;
+    if (!searchKey || !searchKey.trim()) return;
     setLoading(true);
     setError(null);
     try {
@@ -110,6 +118,10 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
         setAmountReceived(String(totalDue));
         if (unpaid.length > 0) {
           setExpandedBillId(Number(unpaid[0].id ?? unpaid[0].invoice_id));
+          setActiveTab("unpaid");
+        } else if (res.bills?.length > 0) {
+          setExpandedBillId(Number(res.bills[0].id ?? res.bills[0].invoice_id));
+          setActiveTab("all");
         }
       } else {
         setError(`No billing records found for "${searchKey}".`);
@@ -124,28 +136,64 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
     }
   };
 
-  // Load recent worklist on mount to provide fast patient picks if needed
-  useEffect(() => {
-    localStorage.removeItem("selected_billing_patient");
-    const init = async () => {
-      try {
-        const wl = await apiFetch("/api/billing/worklist?tab=pending_payments");
-        if (wl?.pending_payments?.length > 0) {
-          setRecentPatients(wl.pending_payments.slice(0, 5));
-        }
-      } catch {
-        // ignore
+  const fetchWorklist = async (dateStr: string) => {
+    setWorklistLoading(true);
+    try {
+      const wl = await apiFetch(`/api/billing/worklist?target_date=${encodeURIComponent(dateStr)}`);
+      setWorklistData(wl || {});
+      if (wl?.pending_payments?.length > 0) {
+        setRecentPatients(wl.pending_payments.slice(0, 5));
+        setActiveTab("unpaid");
+      } else {
+        setActiveTab("all");
       }
-    };
-    init();
-  }, []);
+    } catch (err) {
+      console.error("Failed to load billing worklist:", err);
+    } finally {
+      setWorklistLoading(false);
+    }
+  };
+
+  // Re-fetch worklist when targetDate changes
+  useEffect(() => {
+    fetchWorklist(targetDate);
+  }, [targetDate]);
+
+  // Initial load check for passed or stored patient
+  useEffect(() => {
+    const initPatient =
+      selectedPatient?.patient_id ||
+      selectedPatient?.uhid ||
+      (typeof selectedPatient === "string" ? selectedPatient : null) ||
+      localStorage.getItem("selected_billing_patient");
+
+    if (initPatient) {
+      setPatientSearch(initPatient);
+      fetchPatientBills(initPatient);
+    }
+  }, [selectedPatient]);
 
   const handleSearchSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     fetchPatientBills(patientSearch);
   };
 
-  const allBills = patientData?.bills || [];
+  const handleSelectPatient = (pid: string) => {
+    if (!pid) return;
+    setPatientSearch(pid);
+    fetchPatientBills(pid);
+  };
+
+  const handleClearPatient = () => {
+    setPatientData(null);
+    setPatientSearch("");
+    setSelectedBills({});
+    setAmountReceived("");
+    setExpandedBillId(null);
+    localStorage.removeItem("selected_billing_patient");
+  };
+
+  const allBills = patientData ? (patientData.bills || []) : (worklistData?.recent_bills || []);
   const unpaidBills = allBills.filter((b: any) => Number(b.due_amount ?? b.balance ?? 0) > 0);
   const paidBills = allBills.filter((b: any) => Number(b.due_amount ?? b.balance ?? 0) <= 0);
 
@@ -248,8 +296,9 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
         message: `Payment recorded! Receipt ${res.receipt_no} generated for ₹${fmt(res.total_amount)}.`,
       });
 
-      // Refresh patient bills
+      // Refresh patient bills and worklist
       fetchPatientBills(patientData.patient.patient_id);
+      fetchWorklist(targetDate);
       setTransactionRef("");
     } catch (err: any) {
       reportError(setNotice, err);
@@ -263,20 +312,20 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
     const html = buildPrintDocumentHtml({
       title: `Official Payment Receipt ${rcp.receipt_no}`,
       subtitleLines: [
-        `Ayu Polyclinic · Billing Department`,
-        `Receipt Date: ${rcp.created_at ? rcp.created_at.slice(0, 10) : targetDate} · ${rcp.time || ""}`,
-        `Payment Mode: ${rcp.payment_mode || paymentMode}`,
+        `Ayu Polyclinic & Emergency Clinic · Billing Department`,
+        `Receipt Date: ${rcp.date || (rcp.created_at ? rcp.created_at.slice(0, 10) : targetDate)} · ${rcp.time || ""}`,
+        `Payment Mode: ${rcp.payment_mode || rcp.mode || paymentMode}`,
       ],
       meta: [
         { label: "Receipt No", value: rcp.receipt_no },
-        { label: "Patient UHID", value: patientData?.patient?.patient_id || "-" },
-        { label: "Patient Name", value: patientData?.patient?.name || "-" },
-        { label: "Payment Mode", value: rcp.payment_mode || paymentMode },
+        { label: "Patient UHID", value: rcp.patient_id || patientData?.patient?.patient_id || "-" },
+        { label: "Patient Name", value: rcp.patient_name || patientData?.patient?.name || "-" },
+        { label: "Payment Mode", value: rcp.payment_mode || rcp.mode || paymentMode },
       ],
       columns: ["Bill / Service", "Description", "Amount (₹)"],
       rows: [
         [
-          rcp.receipt_type || "Bill Payment",
+          rcp.receipt_type || rcp.service || "Bill Payment",
           `Settlement for inpatient/outpatient hospital charges`,
           `₹${Number(rcp.total_amount || rcp.amount || 0).toLocaleString("en-IN", { minimumFractionDigits: 2 })}`,
         ],
@@ -294,12 +343,16 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
 
   const expandedBill = allBills.find((b: any) => Number(b.id ?? b.invoice_id) === Number(expandedBillId));
 
+  const displayedReceipts = patientData
+    ? (patientData.receipts || patientData.recent_payments || [])
+    : (worklistData?.recent_receipts || []);
+
   return (
     <div className="billing-page-wrapper">
       {/* 1. Breadcrumbs */}
       <div className="billing-breadcrumbs">
         <span className="breadcrumb-link" onClick={() => onNavigate?.("dashboard")}>
-          Ayu Polyclinic
+          Ayu Polyclinic & Emergency Clinic
         </span>
         <span className="separator">/</span>
         <span className="current">Billing</span>
@@ -366,6 +419,17 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
           </svg>
           Search
         </button>
+
+        {patientData && (
+          <button
+            type="button"
+            className="billing-btn-outline"
+            onClick={handleClearPatient}
+            title="Clear patient and view all bills"
+          >
+            ✕ Clear patient
+          </button>
+        )}
       </form>
 
       {/* 4. Patient Identity Strip */}
@@ -391,6 +455,14 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
           </div>
 
           <div style={{ display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="billing-btn-outline"
+              onClick={handleClearPatient}
+              title="Return to hospital worklist"
+            >
+              ← All bills ({targetDate})
+            </button>
             <button
               type="button"
               className="billing-btn-outline"
@@ -421,46 +493,87 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
             </button>
           </div>
         </div>
-      ) : loading ? (
-        <div className="billing-skeleton" style={{ height: "70px", marginBottom: "1.25rem" }} />
+      ) : loading || worklistLoading ? (
+        <div className="billing-skeleton" style={{ height: "60px", marginBottom: "1.25rem" }} />
       ) : error ? (
-        <div className="billing-card" style={{ padding: "1.25rem", textAlign: "center" }}>
+        <div className="billing-card" style={{ padding: "1.25rem", textAlign: "center", marginBottom: "1.25rem" }}>
           <p style={{ color: "#dc2626", margin: "0 0 8px" }}>{error}</p>
           <button type="button" className="billing-retry-btn" onClick={() => fetchPatientBills(patientSearch)}>
             Retry
           </button>
         </div>
-      ) : recentPatients.length > 0 ? (
-        <div className="billing-card" style={{ padding: "1rem 1.25rem", marginBottom: "1.25rem" }}>
-          <div style={{ fontSize: "0.85rem", fontWeight: 600, color: "#64748b", marginBottom: "8px" }}>
-            Select a patient with pending bills:
+      ) : (
+        <div
+          className="billing-identity-strip"
+          style={{
+            background: "#f0fdfa",
+            borderColor: "#ccfbf1",
+            display: "flex",
+            justifyContent: "space-between",
+            alignItems: "center",
+            padding: "0.875rem 1.25rem",
+          }}
+        >
+          <div className="billing-identity-left">
+            <div className="billing-avatar-circle" style={{ background: "#ccfbf1", color: "#0f766e" }}>
+              <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" strokeWidth="2">
+                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z" />
+                <polyline points="14 2 14 8 20 8" />
+                <line x1="16" y1="13" x2="8" y2="13" />
+                <line x1="16" y1="17" x2="8" y2="17" />
+                <polyline points="10 9 9 9 8 9" />
+              </svg>
+            </div>
+            <div className="billing-identity-details">
+              <h3 style={{ color: "#0f766e", fontSize: "1rem", margin: "0 0 2px" }}>
+                Daily Billing Worklist · {targetDate}
+              </h3>
+              <div className="billing-identity-meta" style={{ color: "#134e4a" }}>
+                <span>{allBills.length} total bills</span>
+                <span className="meta-divider">|</span>
+                <span>{unpaidBills.length} pending</span>
+                <span className="meta-divider">|</span>
+                <span>{paidBills.length} paid</span>
+                <span className="meta-divider">|</span>
+                <span>{worklistData?.recent_receipts?.length || 0} receipts generated</span>
+              </div>
+            </div>
           </div>
-          <div style={{ display: "flex", gap: "8px", flexWrap: "wrap" }}>
-            {recentPatients.map((p) => (
-              <button
-                key={p.id}
-                type="button"
-                className="billing-btn-outline"
-                style={{ fontSize: "0.8125rem" }}
-                onClick={() => {
-                  setPatientSearch(p.patient_id);
-                  fetchPatientBills(p.patient_id);
-                }}
-              >
-                <strong>{p.patient_name}</strong> ({p.patient_id}) · ₹{fmt(p.balance)} due
-              </button>
-            ))}
+
+          <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+            <span style={{ fontSize: "0.8125rem", color: "#0f766e", fontWeight: 600 }}>
+              💡 Click any patient bill below to collect payment
+            </span>
           </div>
         </div>
-      ) : null}
+      )}
 
       {/* 5. Main Two-Column Layout */}
       <div className="billing-two-col-layout">
-        {/* Left Column: Bills for this visit & Expanded Bill Details */}
+        {/* Left Column: Bills for this visit / Target Date */}
         <div className="billing-left-col">
           <div className="billing-card">
-            <div className="billing-card-header" style={{ paddingBottom: 0 }}>
-              <h2 className="billing-card-title">Bills for this visit</h2>
+            <div className="billing-card-header" style={{ paddingBottom: 0, display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <h2 className="billing-card-title">
+                  {patientData ? "Bills for this visit" : `Bills for ${targetDate}`}
+                </h2>
+                <div style={{ fontSize: "0.8125rem", color: "#64748b", marginTop: "2px" }}>
+                  {patientData
+                    ? `Showing ${allBills.length} bills for ${patientData.patient.name} (${patientData.patient.patient_id})`
+                    : `Showing ${allBills.length} bills recorded on this date. Click any patient to load counter.`}
+                </div>
+              </div>
+              {patientData && (
+                <button
+                  type="button"
+                  className="billing-btn-outline"
+                  style={{ fontSize: "0.8125rem", padding: "4px 10px" }}
+                  onClick={handleClearPatient}
+                >
+                  ← All bills ({targetDate})
+                </button>
+              )}
             </div>
 
             {/* Tabs */}
@@ -480,6 +593,7 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
                 onClick={() => setActiveTab("paid")}
               >
                 Paid
+                <span className="billing-tab-badge">{paidBills.length}</span>
               </button>
 
               <button
@@ -488,28 +602,30 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
                 onClick={() => setActiveTab("all")}
               >
                 All
+                <span className="billing-tab-badge">{allBills.length}</span>
               </button>
             </div>
 
             {/* Table */}
             <div className="billing-table-responsive">
-              {loading ? (
+              {loading || worklistLoading ? (
                 <div className="billing-state-box">
                   <div className="billing-skeleton" style={{ height: "30px", marginBottom: "8px" }} />
                   <div className="billing-skeleton" style={{ height: "30px" }} />
                 </div>
-              ) : !patientData ? (
+              ) : displayedBills.length === 0 ? (
                 <div className="billing-state-box" style={{ padding: "2.5rem 1rem", textAlign: "center" }}>
-                  <p style={{ margin: "0 0 6px", fontWeight: 600, color: "#334155" }}>No patient selected</p>
+                  <p style={{ margin: "0 0 6px", fontWeight: 600, color: "#334155" }}>
+                    No {activeTab} bills {patientData ? "for this patient visit" : `for ${targetDate}`}.
+                  </p>
                   <p style={{ margin: 0, fontSize: "0.85rem", color: "#64748b" }}>
-                    Search by patient name, UHID, or bill number above to view bills and record payments.
+                    {patientData
+                      ? "Switch tabs or search for another patient above."
+                      : "Select another date or search by patient name/UHID above."}
                   </p>
                 </div>
-              ) : displayedBills.length === 0 ? (
-                <div className="billing-state-box">
-                  <p style={{ margin: 0 }}>No {activeTab} bills for this patient visit.</p>
-                </div>
-              ) : (
+              ) : patientData ? (
+                /* Patient Specific Bills Table with Checkboxes */
                 <table className="billing-table">
                   <thead>
                     <tr>
@@ -563,8 +679,72 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
                           </td>
                           <td style={{ fontWeight: 600 }}>₹{fmt(bTotal)}</td>
                           <td style={{ color: "#64748b" }}>₹{fmt(bPaid)}</td>
-                          <td style={{ fontWeight: 700, color: bDue > 0 ? "#0f172a" : "#10b981" }}>
+                          <td style={{ fontWeight: 700, color: bDue > 0 ? "#dc2626" : "#10b981" }}>
                             ₹{fmt(bDue)}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              ) : (
+                /* Worklist Bills Table (Hospital-wide for targetDate) */
+                <table className="billing-table">
+                  <thead>
+                    <tr>
+                      <th>Patient</th>
+                      <th>Bill / Service</th>
+                      <th>Net bill</th>
+                      <th>Applied</th>
+                      <th>Balance</th>
+                      <th style={{ textAlign: "right" }}>Status</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {displayedBills.map((b: any) => {
+                      const bId = Number(b.id ?? b.invoice_id);
+                      const bDue = Number(b.due_amount ?? b.balance ?? 0);
+                      const bPaid = Number(b.paid_amount ?? b.applied ?? 0);
+                      const bTotal = Number(b.total_amount ?? b.net_bill ?? 0);
+                      return (
+                        <tr
+                          key={bId}
+                          onClick={() => handleSelectPatient(b.patient_id)}
+                          style={{ cursor: "pointer" }}
+                          title="Click to select this patient and open billing counter"
+                        >
+                          <td>
+                            <div style={{ fontWeight: 600, color: "#0284c7" }}>{b.patient_name}</div>
+                            <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                              {b.patient_id} {b.phone ? `· ${b.phone}` : ""}
+                            </div>
+                          </td>
+                          <td>
+                            <div style={{ fontWeight: 600, color: "#0f172a" }}>{b.invoice_no}</div>
+                            <div style={{ fontSize: "0.75rem", color: "#64748b" }}>
+                              {b.module || "General"} · {b.date || targetDate}
+                            </div>
+                          </td>
+                          <td style={{ fontWeight: 600 }}>₹{fmt(bTotal)}</td>
+                          <td style={{ color: "#64748b" }}>₹{fmt(bPaid)}</td>
+                          <td style={{ fontWeight: 700, color: bDue > 0 ? "#dc2626" : "#10b981" }}>
+                            ₹{fmt(bDue)}
+                          </td>
+                          <td style={{ textAlign: "right" }}>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "2px 8px",
+                                borderRadius: "4px",
+                                fontSize: "0.75rem",
+                                fontWeight: 700,
+                                background: bDue > 0 ? "#fef3c7" : "#ecfdf5",
+                                color: bDue > 0 ? "#b45309" : "#047857",
+                                border: `1px solid ${bDue > 0 ? "#fde68a" : "#a7f3d0"}`,
+                              }}
+                            >
+                              {bDue > 0 ? "DUE" : "PAID"}
+                            </span>
                           </td>
                         </tr>
                       );
@@ -648,11 +828,95 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
 
             <div className="billing-card-body">
               {!patientData ? (
-                <div className="billing-state-box" style={{ padding: "2.5rem 1rem", textAlign: "center" }}>
-                  <p style={{ margin: "0 0 6px", fontWeight: 600, color: "#334155" }}>No payment pending</p>
-                  <p style={{ margin: 0, fontSize: "0.85rem", color: "#64748b" }}>
-                    Search for a patient to load bills and collect payment.
+                <div style={{ padding: "1.5rem 1rem", textAlign: "center" }}>
+                  <div
+                    style={{
+                      width: "48px",
+                      height: "48px",
+                      borderRadius: "50%",
+                      background: "#f0fdfa",
+                      color: "#0d9488",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      margin: "0 auto 12px",
+                    }}
+                  >
+                    <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2">
+                      <rect x="2" y="4" width="20" height="16" rx="2" />
+                      <line x1="2" y1="10" x2="22" y2="10" />
+                    </svg>
+                  </div>
+                  <h3 style={{ margin: "0 0 6px", fontSize: "1rem", color: "#0f172a" }}>Billing Counter Active</h3>
+                  <p style={{ margin: "0 0 1.25rem", fontSize: "0.85rem", color: "#64748b" }}>
+                    Select any patient from the table on the left or search by UHID to collect payment and generate official receipts.
                   </p>
+                  {worklistData?.pending_payments && worklistData.pending_payments.length > 0 ? (
+                    <div style={{ textAlign: "left", background: "#fef3c7", border: "1px solid #fde68a", borderRadius: "8px", padding: "10px 12px" }}>
+                      <div style={{ fontSize: "0.75rem", fontWeight: 700, color: "#92400e", marginBottom: "6px" }}>
+                        PENDING SETTLEMENTS ({worklistData.pending_payments.length})
+                      </div>
+                      {worklistData.pending_payments.slice(0, 3).map((p: any) => (
+                        <div
+                          key={p.id}
+                          style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "4px 0", borderBottom: "1px solid #fef3c7", cursor: "pointer" }}
+                          onClick={() => handleSelectPatient(p.patient_id)}
+                        >
+                          <span style={{ fontSize: "0.8125rem", fontWeight: 600, color: "#78350f" }}>{p.patient_name}</span>
+                          <span style={{ fontSize: "0.8125rem", fontWeight: 700, color: "#b45309" }}>₹{fmt(p.balance)} due →</span>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div style={{ background: "#f8fafc", borderRadius: "8px", padding: "12px", border: "1px solid #e2e8f0" }}>
+                      <span style={{ fontSize: "0.8125rem", color: "#64748b" }}>
+                        All {allBills.length} bills for {targetDate} are currently settled in full.
+                      </span>
+                    </div>
+                  )}
+                </div>
+              ) : unpaidBills.length === 0 ? (
+                <div style={{ padding: "1.5rem 1rem", textAlign: "center" }}>
+                  <div
+                    style={{
+                      width: "48px",
+                      height: "48px",
+                      borderRadius: "50%",
+                      background: "#ecfdf5",
+                      color: "#059669",
+                      display: "flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      margin: "0 auto 12px",
+                      fontSize: "1.5rem",
+                    }}
+                  >
+                    ✓
+                  </div>
+                  <h3 style={{ margin: "0 0 6px", fontSize: "1rem", color: "#0f172a" }}>All Bills Settled</h3>
+                  <p style={{ margin: "0 0 1.25rem", fontSize: "0.85rem", color: "#64748b" }}>
+                    {patientData.patient.name} has no outstanding balance due.
+                  </p>
+                  <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                    {patientData.receipts && patientData.receipts.length > 0 && (
+                      <button
+                        type="button"
+                        className="billing-btn-teal"
+                        style={{ width: "100%", justifyContent: "center" }}
+                        onClick={() => handlePrintReceipt(patientData.receipts[0])}
+                      >
+                        Print Latest Receipt ({patientData.receipts[0].receipt_no})
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      className="billing-btn-outline"
+                      style={{ width: "100%", justifyContent: "center" }}
+                      onClick={handleClearPatient}
+                    >
+                      Select Another Patient
+                    </button>
+                  </div>
                 </div>
               ) : (
                 <>
@@ -757,18 +1021,37 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
 
       {/* 6. Bottom Section: Recent Payments */}
       <div className="billing-card" style={{ marginTop: "1.25rem" }}>
-        <div className="billing-card-header">
-          <h2 className="billing-card-title">Recent payments</h2>
-          <span style={{ fontSize: "0.8125rem", color: "#0284c7", fontWeight: 600, cursor: "pointer" }}>
-            View all
-          </span>
+        <div className="billing-card-header" style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <h2 className="billing-card-title">
+              {patientData ? `Recent payments for ${patientData.patient.name}` : `Recent payments (${targetDate})`}
+            </h2>
+            <div style={{ fontSize: "0.8125rem", color: "#64748b", marginTop: "2px" }}>
+              {patientData
+                ? `Showing recorded receipts for ${patientData.patient.patient_id}`
+                : `Showing ${worklistData?.recent_receipts?.length || 0} receipts recorded across hospital`}
+            </div>
+          </div>
+          {patientData && (
+            <button
+              type="button"
+              className="billing-btn-outline"
+              style={{ fontSize: "0.8125rem", padding: "4px 10px" }}
+              onClick={handleClearPatient}
+            >
+              View all payments ↗
+            </button>
+          )}
         </div>
 
         <div className="billing-table-responsive">
-          {(!patientData || !patientData.receipts || patientData.receipts.length === 0) ? (
-            <div className="billing-state-box">
-              <p style={{ margin: 0 }}>
-                {patientData ? "No recent payments recorded for this patient." : "Search for a patient to view payment history."}
+          {displayedReceipts.length === 0 ? (
+            <div className="billing-state-box" style={{ padding: "2.5rem 1rem", textAlign: "center" }}>
+              <p style={{ margin: "0 0 6px", fontWeight: 600, color: "#334155" }}>
+                {patientData ? "No recent payments recorded for this patient." : `No payment receipts found for ${targetDate}.`}
+              </p>
+              <p style={{ margin: 0, fontSize: "0.85rem", color: "#64748b" }}>
+                {patientData ? "Payments collected at counter will appear here instantly." : "Select another date to review historical payment receipts."}
               </p>
             </div>
           ) : (
@@ -777,6 +1060,7 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
                 <tr>
                   <th>Receipt no.</th>
                   <th>Date & time</th>
+                  <th>Patient</th>
                   <th>Bill / Service</th>
                   <th>Mode</th>
                   <th>Amount</th>
@@ -784,15 +1068,31 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
                 </tr>
               </thead>
               <tbody>
-                {patientData.receipts.map((rcp: any) => (
+                {displayedReceipts.map((rcp: any) => (
                   <tr key={rcp.id}>
                     <td style={{ fontWeight: 600 }}>{rcp.receipt_no}</td>
                     <td style={{ color: "#64748b" }}>
-                      {rcp.created_at ? String(rcp.created_at).slice(0, 16).replace("T", " ") : "-"}
+                      {rcp.date ? `${rcp.date} ${rcp.time || ""}` : (rcp.created_at ? String(rcp.created_at).slice(0, 16).replace("T", " ") : "-")}
                     </td>
-                    <td>{rcp.receipt_type || "Bill Settlement"}</td>
-                    <td>{rcp.payment_mode || "UPI"}</td>
-                    <td style={{ fontWeight: 700 }}>₹{fmt(rcp.total_amount)}</td>
+                    <td>
+                      {rcp.patient_name ? (
+                        <div
+                          style={{ fontWeight: 600, color: "#0284c7", cursor: "pointer" }}
+                          onClick={() => handleSelectPatient(rcp.patient_id)}
+                          title="Click to select this patient and open billing counter"
+                        >
+                          {rcp.patient_name}
+                          <div style={{ fontSize: "0.75rem", color: "#64748b", fontWeight: 400 }}>
+                            {rcp.patient_id}
+                          </div>
+                        </div>
+                      ) : (
+                        <span style={{ color: "#64748b" }}>{rcp.patient_id || "-"}</span>
+                      )}
+                    </td>
+                    <td>{rcp.receipt_type || rcp.service || "Bill Settlement"}</td>
+                    <td><span style={{ textTransform: "uppercase", fontSize: "0.8125rem", fontWeight: 600 }}>{rcp.payment_mode || rcp.mode || "CASH"}</span></td>
+                    <td style={{ fontWeight: 700 }}>₹{fmt(rcp.total_amount || rcp.amount)}</td>
                     <td style={{ textAlign: "right" }}>
                       <button
                         type="button"

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import type { Dispatch, SetStateAction } from "react";
 import { Modal } from "../components/ui";
 import { apiFetch, reportError } from "../lib/api";
+import { onDepartmentsChanged } from "../lib/departments";
 import type { Notice } from "../types";
 
 type Props = {
@@ -237,6 +238,7 @@ export default function OpQueuePage({ setNotice, onOpenPatient, onNavigate }: Pr
       }
     };
     void loadRoster();
+    return onDepartmentsChanged(() => void loadRoster());
   }, []);
 
   const doctorsList = useMemo(() => {
@@ -534,7 +536,7 @@ export default function OpQueuePage({ setNotice, onOpenPatient, onNavigate }: Pr
           {/* Breadcrumbs */}
           <div className="opq-breadcrumbs">
             <span className="opq-crumb-root" onClick={() => window.history.back()}>
-              Ayu Polyclinic
+              Ayu Polyclinic & Emergency Clinic
             </span>
             <span className="opq-crumb-sep">/</span>
             <span className="opq-crumb-module">OP Management</span>

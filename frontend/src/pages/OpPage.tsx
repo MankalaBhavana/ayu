@@ -9,6 +9,7 @@ import { fullPatientName, lookupPatientByUhid, normalizeUhidLookup } from "../li
 import type { Appointment, DoctorSchedule, Notice, OpSummary } from "../types";
 import { PRINT_BRAND_HEADER_DATA_URI } from "../lib/printBrand";
 import { printViaIframe } from "../lib/printViaIframe";
+import { fetchDepartments, notifyDepartmentsChanged, onDepartmentsChanged } from "../lib/departments";
 
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
@@ -148,7 +149,7 @@ function printTokenSlip(appointment: { token_no?: number | string; patient_id?: 
     const row = (label: string, value: unknown) => `<div class="token-field"><span>${safeText(label)}</span><strong>${safeText(value || "-")}</strong></div>`;
   const html = `<!doctype html><html><head><title>Token ${safeText(appointment.token_no)} OP Visit</title><style>
     @page { size: A5 portrait; margin: 10mm; } *{box-sizing:border-box} body{margin:0;background:#fff;color:#111827;font-family:Arial,Helvetica,sans-serif;font-size:11px}.token-sheet{width:100%}.token-head{display:flex;flex-direction:column;align-items:stretch;gap:8px;margin-bottom:12px}.token-brand{display:flex;align-items:center;gap:10px;width:100%;max-width:none}.token-brand img{display:block;width:100%;max-height:86px;height:auto;object-fit:contain;object-position:left center}.token-brand strong{display:block;color:#062f56;font-size:22px;line-height:1}.token-brand span{display:block;margin-top:4px;color:#475569;font-size:10px;letter-spacing:.04em;text-transform:uppercase}.token-title{text-align:right;border-top:1px solid #e5e7eb;padding-top:5px}.token-title h1{margin:0 0 5px;font-size:16px;text-decoration:underline}.token-title p{margin:2px 0;color:#475569}.token-no{margin:0 0 12px;padding:12px;border:2px solid #111827;text-align:center}.token-no span{display:block;color:#334155;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.token-no strong{display:block;margin-top:4px;color:#062f56;font-size:34px;line-height:1}.token-section{border:1px solid #111827;border-bottom:0}.token-section:last-child{border-bottom:1px solid #111827}.token-section h2{margin:0;padding:6px 8px;border-bottom:1px solid #111827;background:#eef7fb;color:#062f56;font-size:12px;letter-spacing:.02em;text-transform:uppercase}.token-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.token-field{min-height:32px;padding:6px 8px;border-right:1px solid #111827;border-bottom:1px solid #111827}.token-field:nth-child(2n){border-right:0}.token-field span{display:block;margin-bottom:3px;color:#334155;font-size:9px;font-weight:700;text-transform:uppercase}.token-field strong{display:block;color:#111827;font-size:11px}.token-note{padding:8px;border-bottom:1px solid #111827;color:#334155;line-height:1.45}.token-sign{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-top:24px}.token-sign div{padding-top:22px;border-top:1px solid #111827;text-align:center;font-weight:700}
-  </style></head><body><main class="token-sheet"><header class="token-head"><div class="token-brand"><img src="${PRINT_BRAND_HEADER_DATA_URI}" alt="Ayu Polyclinic, Pharmacy, Diagnostics"/></div><div class="token-title"><h1>OP Visit Token</h1><p><strong>Printed:</strong> ${safeText(printedAt)}</p></div></header><div class="token-no"><span>Token Number</span><strong>${safeText(appointment.token_no)}</strong></div><section class="token-section"><h2>Patient Information</h2><div class="token-grid">${row("Patient Name", appointment.patient_name)}${row("UHID / Patient ID", appointment.patient_id)}${row("Visit Type", appointment.visit_type || "OP")}${row("Status", appointment.status || "scheduled")}</div></section><section class="token-section"><h2>Appointment Information</h2><div class="token-grid">${row("Department", appointment.department)}${row("Doctor", appointment.doctor_name)}${row("Appointment Time", getAppointmentTimeLabel(appointment.appointment_date))}${row("Appointment Kind", appointment.appointment_kind || "new")}</div></section><section class="token-section"><h2>Instructions</h2><div class="token-note">Please keep this token and wait until your number is called at the OP queue desk.</div></section><div class="token-sign"><div>Patient / Guardian</div><div>OP Desk</div></div></main></body></html>`;
+  </style></head><body><main class="token-sheet"><header class="token-head"><div class="token-brand"><img src="${PRINT_BRAND_HEADER_DATA_URI}" alt="Ayu Polyclinic & Emergency Clinic, Pharmacy, Diagnostics"/></div><div class="token-title"><h1>OP Visit Token</h1><p><strong>Printed:</strong> ${safeText(printedAt)}</p></div></header><div class="token-no"><span>Token Number</span><strong>${safeText(appointment.token_no)}</strong></div><section class="token-section"><h2>Patient Information</h2><div class="token-grid">${row("Patient Name", appointment.patient_name)}${row("UHID / Patient ID", appointment.patient_id)}${row("Visit Type", appointment.visit_type || "OP")}${row("Status", appointment.status || "scheduled")}</div></section><section class="token-section"><h2>Appointment Information</h2><div class="token-grid">${row("Department", appointment.department)}${row("Doctor", appointment.doctor_name)}${row("Appointment Time", getAppointmentTimeLabel(appointment.appointment_date))}${row("Appointment Kind", appointment.appointment_kind || "new")}</div></section><section class="token-section"><h2>Instructions</h2><div class="token-note">Please keep this token and wait until your number is called at the OP queue desk.</div></section><div class="token-sign"><div>Patient / Guardian</div><div>OP Desk</div></div></main></body></html>`;
   printViaIframe(html, "__hospai_op_print_frame__");
 }
 
@@ -206,8 +207,7 @@ export default function OpPage({ setNotice, canEdit }: Props) {
   }, [selectedDate, selectedDoctor]);
 
   const refreshDepartments = async () => {
-    const data = await apiFetch<{ departments?: Department[] }>("/api/registration/departments");
-    setDepartments(data.departments || []);
+    setDepartments((await fetchDepartments()) as Department[]);
   };
 
   const refreshDoctors = async () => {
@@ -225,6 +225,7 @@ export default function OpPage({ setNotice, canEdit }: Props) {
   useEffect(() => {
     void refreshDepartments().catch(() => setDepartments([]));
     void refreshDoctors();
+    return onDepartmentsChanged(() => void refreshDepartments().catch(() => setDepartments([])));
   }, []);
 
   useEffect(() => {
@@ -271,8 +272,8 @@ export default function OpPage({ setNotice, canEdit }: Props) {
         body: JSON.stringify({ department_name: name }),
       });
       setDepartmentForm({ department_name: "" });
-      setNotice({ type: "success", message: "Department saved. It will now appear in Patient Registration and OP Queue filters." });
-      await refreshDepartments();
+      setNotice({ type: "success", message: "Department saved. It is now available in every department dropdown." });
+      notifyDepartmentsChanged();
       await loadOpDesk(selectedDate, selectedDoctor);
     } catch (error) {
       reportError(setNotice, error as { message?: string; status?: number }, "Unable to save department.");
@@ -444,7 +445,7 @@ export default function OpPage({ setNotice, canEdit }: Props) {
         key: order.key_id,
         amount: order.amount,
         currency: order.currency || "INR",
-        name: "Ayu Polyclinic OP Desk",
+        name: "Ayu Polyclinic & Emergency Clinic OP Desk",
         description: "OP Appointment Booking",
         order_id: order.order_id,
         prefill: {
@@ -581,7 +582,7 @@ export default function OpPage({ setNotice, canEdit }: Props) {
       await apiFetch(`/api/registration/departments/${deptObj.id}`, { method: "DELETE" });
       setNotice({ type: "success", message: "Department deleted successfully." });
       setDeleteDepartmentId("");
-      await refreshDepartments();
+      notifyDepartmentsChanged();
       await loadOpDesk(selectedDate, selectedDoctor);
       await refreshDoctors();
     } catch (error) {

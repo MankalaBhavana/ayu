@@ -8,6 +8,7 @@ import type { Notice, Patient } from "../../types";
 import { printViaIframe } from "../../lib/printViaIframe";
 import { buildPrintDocumentHtml, buildPrintLabelsHtml } from "../../lib/printTemplates";
 import { downloadCsv } from "../../lib/csvExport";
+import { pharmacyHeaderLines, usePharmacySettings } from "../../lib/pharmacySettings";
 
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
@@ -26,7 +27,11 @@ type StockBatch = {
   unit_price: number;
   mrp?: number;
   stock_source: "CASH" | "INSURANCE";
-  gst_rate?: number;
+  gst_rate?: number | null;
+  /** Medicine master GST (falls back to the rate recorded on the batch at GRN). */
+  effective_gst_rate?: number | null;
+  master_generic_name?: string | null;
+  storage_location?: string | null;
 };
 
 type CartItem = {
@@ -70,6 +75,7 @@ function matchesMedicineBatch(batch: StockBatch, query: string): boolean {
 export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
   // Tabs: Dispense vs Returns
   const [activeTab, setActiveTab] = useState<"dispense" | "returns" | "history">("dispense");
+  const pharmacySettings = usePharmacySettings();
   const [dispenseHistory, setDispenseHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
@@ -201,7 +207,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
           batch_id: selectedBatch.id,
           medicine_id: selectedBatch.medicine_id,
           medicine_name: selectedBatch.medicine_name,
-          generic_name: selectedBatch.generic_name,
+          generic_name: selectedBatch.generic_name || selectedBatch.master_generic_name || undefined,
           batch_no: selectedBatch.batch_no,
           expiry_date: selectedBatch.expiry_date,
           available_qty: selectedBatch.qty_available,
@@ -209,7 +215,8 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
           unit_price: selectedBatch.unit_price || 0,
           mrp: selectedBatch.mrp || selectedBatch.unit_price || 0,
           discount_percent: 0,
-          gst_rate: selectedBatch.gst_rate || 12,
+          // Medicine master GST; 0% (exempt) is a valid rate, so only fall back when unknown.
+          gst_rate: Number(selectedBatch.effective_gst_rate ?? selectedBatch.gst_rate ?? 12),
           stock_source: selectedBatch.stock_source || "CASH",
         },
       ]);
@@ -289,10 +296,10 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
         billing_type: "CASH_OPD",
         stock_source: dispenseStockSource,
         payment_mode: paymentMode,
-        subtotal: pricing.subtotal,
-        discount: pricing.totalDiscount,
-        tax: pricing.totalTax,
-        total_amount: pricing.grandTotal,
+        subtotal: cartTotals.subtotal,
+        discount: cartTotals.totalDiscount,
+        tax: cartTotals.totalTax,
+        total_amount: cartTotals.grandTotal,
         items: cart.map((c) => {
           const base = c.unit_price * c.quantity;
           const disc = base * (c.discount_percent / 100);
@@ -355,6 +362,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
       printViaIframe(buildPrintDocumentHtml({
         title: "Pharmacy Dispense Invoice",
         subtitleLines: [
+          ...pharmacyHeaderLines(pharmacySettings),
           `Stock: ${dispenseResult.stock_source === "CASH" ? "Cash Counter" : "Insurance Desk"}`,
           `Invoice: ${invoiceNumber}`,
           `Date: ${invoiceDate}`,
@@ -386,6 +394,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
     if (!dispenseResult) return;
     const patientName = dispensedPatient ? `${dispensedPatient.name || ""} ${dispensedPatient.last_name || ""}`.trim() : "-";
     printViaIframe(buildPrintLabelsHtml({
+      hospitalName: pharmacySettings.pharmacy_name || undefined,
       patientName: patientName || "-",
       patientId: dispensedPatient?.patient_id || "-",
       invoiceNo: dispenseResult.invoice_no || `INV-${dispenseResult.invoice_id}`,
@@ -512,7 +521,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
       {/* Topbar / Breadcrumbs */}
       <div className="pharmacy-topbar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem" }}>
         <div className="pharmacy-breadcrumb" style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem", color: "#64748b" }}>
-          <span style={{ cursor: "pointer", color: "#3b82f6", fontWeight: 600 }} onClick={() => window.history.back()}>Ayu Polyclinic</span>
+          <span style={{ cursor: "pointer", color: "#3b82f6", fontWeight: 600 }} onClick={() => window.history.back()}>Ayu Polyclinic & Emergency Clinic</span>
           <span>/</span>
           <span style={{ cursor: "pointer", color: "#00828a", fontWeight: 600 }} onClick={() => onNavigate("pharmacy-overview")}>Pharmacy</span>
           <span>/</span>

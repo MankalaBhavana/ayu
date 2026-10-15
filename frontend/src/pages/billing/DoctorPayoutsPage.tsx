@@ -6,6 +6,7 @@ import { Button, Modal } from "../../components/ui";
 import { printViaIframe } from "../../lib/printViaIframe";
 import { buildPrintDocumentHtml } from "../../lib/printTemplates";
 import { useDropdownOptions } from "../../lib/dropdownService";
+import { useDepartmentNames } from "../../lib/departments";
 import "./billingTheme.css";
 
 type Props = {
@@ -27,12 +28,8 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   // Centralized Dropdown Options
-  const { options: departmentOptions } = useDropdownOptions("departments", [
-    { value: "General Medicine", label: "General Medicine" },
-    { value: "Orthopaedics", label: "Orthopaedics" },
-    { value: "Cardiology", label: "Cardiology" },
-    { value: "Paediatrics", label: "Paediatrics" },
-  ]);
+  const { departments: departmentNames } = useDepartmentNames();
+  const departmentOptions = departmentNames.map((name) => ({ value: name, label: name }));
   const { options: paymentModeOptions } = useDropdownOptions("payment_modes", [
     { value: "Bank transfer", label: "Bank Transfer (NEFT/RTGS)" },
     { value: "Cheque", label: "Cheque" },
@@ -177,7 +174,7 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
     const html = buildPrintDocumentHtml({
       title: `Doctor Payout Statement Summary`,
       subtitleLines: [
-        `Ayu Polyclinic · Medical Finance Department`,
+        `Ayu Polyclinic & Emergency Clinic · Medical Finance Department`,
         `Period: September 2026 · Generated: ${new Date().toLocaleDateString("en-IN")}`,
       ],
       meta: [
@@ -207,7 +204,7 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
     const html = buildPrintDocumentHtml({
       title: `Doctor Payment Voucher ${p.payout_no}`,
       subtitleLines: [
-        `Ayu Polyclinic · Accounts & Payout Desk`,
+        `Ayu Polyclinic & Emergency Clinic · Accounts & Payout Desk`,
         `Payment Date: ${p.paid_date} · Mode: ${p.payment_mode}`,
       ],
       meta: [
@@ -234,7 +231,7 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
       {/* 1. Breadcrumbs */}
       <div className="billing-breadcrumbs">
         <span className="breadcrumb-link" onClick={() => onNavigate?.("dashboard")}>
-          Ayu Polyclinic
+          Ayu Polyclinic & Emergency Clinic
         </span>
         <span className="separator">/</span>
         <span className="breadcrumb-link" onClick={() => onNavigate?.("billing-overview")}>

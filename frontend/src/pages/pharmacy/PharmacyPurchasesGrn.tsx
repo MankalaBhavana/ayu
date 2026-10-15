@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { Button, Input, Modal } from "../../components/ui";
 import { apiFetch, reportError } from "../../lib/api";
 import { downloadCsv } from "../../lib/csvExport";
+import { useDropdownOptions } from "../../lib/dropdownService";
 import type { Notice } from "../../types";
 
 type Props = {
@@ -43,38 +44,6 @@ const DEFAULT_MEDICINES = [
   "Normal Saline (NS 0.9%)",
 ];
 
-const STRENGTH_FORM_OPTIONS = [
-  "500 mg / Capsules",
-  "650 mg / Tablets",
-  "10 mg / Tablets",
-  "500 mg / Tablets",
-  "250 mg / Tablets",
-  "100 mg / Tablets",
-  "200 mg / Tablets",
-  "5 mg / Tablets",
-  "20 mg / Tablets",
-  "40 mg / Tablets",
-  "250 mg / 5ml / Syrup",
-  "100 ml / Syrup",
-  "1 g / Injection",
-  "500 mg / Injection",
-  "20 g / Ointment",
-  "100 mcg / Inhaler",
-];
-
-const PR_UNIT_OPTIONS = [
-  "Strips",
-  "Tablets",
-  "Capsules",
-  "Bottles",
-  "Vials",
-  "Boxes",
-  "Ampoules",
-  "Tubes",
-  "Inhalers",
-  "Units",
-];
-
 export type PrLineItem = {
   medicine_name: string;
   strength_form: string;
@@ -100,7 +69,11 @@ type MedicineMaster = {
   category?: string;
   dosage_form?: string;
   unit?: string;
+  gst_rate?: number | null;
+  active?: number | boolean | null;
 };
+
+const isActiveMedicine = (m: MedicineMaster) => m.active === undefined || m.active === null || Boolean(Number(m.active));
 
 type PurchaseRequest = {
   id: number;
@@ -130,6 +103,8 @@ type PurchaseOrder = {
 
 type GoodsReceiptItem = {
   id?: number;
+  /** Medicine master link, set when the typed name matches a master medicine. */
+  medicine_id?: number;
   medicine_name: string;
   batch_no: string;
   mfg_date?: string;
@@ -141,6 +116,7 @@ type GoodsReceiptItem = {
   selling_price: number | string;
   gst_rate: number | string;
   unit_type: string;
+  storage_location?: string;
 };
 
 type GoodsReceipt = {
@@ -196,6 +172,27 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
   const [grnPoId, setGrnPoId] = useState<number | null>(null);
   const [grnStockSource, setGrnStockSource] = useState<"CASH" | "INSURANCE">("CASH");
   const [medicinesMaster, setMedicinesMaster] = useState<MedicineMaster[]>([]);
+  // Dosage forms configured in Pharmacy → Settings, merged with the packaging units GRN lines need.
+  const { options: dosageFormOptions } = useDropdownOptions("dosage_forms");
+  // Pharmacy → Settings → Store & Rack Locations
+  const { options: storageLocationOptions } = useDropdownOptions("storage_locations");
+  const findMasterMedicine = (name: string) => {
+    const key = name.trim().toLowerCase();
+    return key ? medicinesMaster.find((m) => m.name.trim().toLowerCase() === key) : undefined;
+  };
+  const unitTypes = useMemo(() => {
+    const merged: string[] = [];
+    const seen = new Set<string>();
+    for (const u of [...dosageFormOptions.map((o) => o.value), ...UNIT_TYPES]) {
+      const key = u.trim().toLowerCase();
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        merged.push(u.trim());
+      }
+    }
+    // Keep "Other" last.
+    return [...merged.filter((u) => u !== "Other"), "Other"];
+  }, [dosageFormOptions]);
 
   // Items in active GRN draft - starts empty without dummy defaults
   const [grnItems, setGrnItems] = useState<GoodsReceiptItem[]>([
@@ -255,7 +252,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
   const totalUnits = prItems.reduce((acc, i) => acc + (parseInt(String(i.quantity)) || 0), 0);
 
   const allMedicineOptions = useMemo(() => {
-    const masterNames = medicinesMaster.map((m) => m.name.trim()).filter(Boolean);
+    const masterNames = medicinesMaster.filter(isActiveMedicine).map((m) => m.name.trim()).filter(Boolean);
     const combined = Array.from(new Set([...DEFAULT_MEDICINES, ...masterNames]));
     return combined.sort((a, b) => a.localeCompare(b));
   }, [medicinesMaster]);
@@ -310,7 +307,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
     if (!match) return null;
     const candidate = match.category || match.dosage_form || match.unit;
     if (!candidate) return null;
-    const known = UNIT_TYPES.find((u) => u.toLowerCase().startsWith(candidate.toLowerCase()) || candidate.toLowerCase().startsWith(u.toLowerCase().split(" ")[0].toLowerCase()));
+    const known = unitTypes.find((u) => u.toLowerCase().startsWith(candidate.toLowerCase()) || candidate.toLowerCase().startsWith(u.toLowerCase().split(" ")[0].toLowerCase()));
     return known || candidate;
   };
 
@@ -339,6 +336,12 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
     if (field === "medicine_name" && typeof val === "string") {
       const suggested = suggestUnitType(val);
       if (suggested) updated[idx].unit_type = suggested;
+      const master = findMasterMedicine(val);
+      updated[idx].medicine_id = master?.id;
+      // Pre-fill GST from the medicine master; the user can still override it.
+      if (master && master.gst_rate !== null && master.gst_rate !== undefined && String(updated[idx].gst_rate ?? "") === "") {
+        updated[idx].gst_rate = master.gst_rate;
+      }
     }
     setGrnItems(updated);
   };
@@ -373,6 +376,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
         purchase_order_id: grnPoId,
         stock_source: grnStockSource,
         items: grnItems.map((it) => ({
+          medicine_id: it.medicine_id ?? findMasterMedicine(it.medicine_name)?.id,
           medicine_name: it.medicine_name,
           batch_no: it.batch_no,
           mfg_date: it.mfg_date || undefined,
@@ -382,8 +386,10 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
           purchase_price: Number(it.unit_cost || 0),
           mrp: Number(it.mrp || 0),
           selling_price: Number(it.selling_price || 0),
-          gst_rate: Number(it.gst_rate || 0),
+          // Blank GST lets the server apply the medicine master's rate.
+          gst_rate: String(it.gst_rate ?? "").trim() === "" ? undefined : Number(it.gst_rate),
           unit_type: it.unit_type,
+          storage_location: it.storage_location || undefined,
         })),
       };
 
@@ -727,7 +733,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
       {/* Topbar / Breadcrumbs */}
       <div className="pharmacy-topbar" style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "1.25rem", flexWrap: "wrap", gap: "1rem" }}>
         <div className="pharmacy-breadcrumb" style={{ display: "flex", alignItems: "center", gap: "0.5rem", fontSize: "0.875rem", color: "#64748b" }}>
-          <span style={{ cursor: "pointer", color: "#3b82f6", fontWeight: 600 }} onClick={() => window.history.back()}>Ayu Polyclinic</span>
+          <span style={{ cursor: "pointer", color: "#3b82f6", fontWeight: 600 }} onClick={() => window.history.back()}>Ayu Polyclinic & Emergency Clinic</span>
           <span>/</span>
           <span style={{ cursor: "pointer", color: "#00828a", fontWeight: 600 }} onClick={() => onNavigate("pharmacy-overview")}>Pharmacy</span>
           <span>/</span>
@@ -896,6 +902,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                   <tr style={{ borderBottom: "2px solid #e2e8f0", textAlign: "left", color: "#64748b" }}>
                     <th style={{ padding: "0.5rem" }}>Medicine Name *</th>
                     <th style={{ padding: "0.5rem", width: "150px" }}>Unit / Form *</th>
+                    <th style={{ padding: "0.5rem", width: "150px" }}>Store / Rack</th>
                     <th style={{ padding: "0.5rem", width: "130px" }}>Batch No *</th>
                     <th style={{ padding: "0.5rem", width: "130px" }}>Expiry Date *</th>
                     <th style={{ padding: "0.5rem", width: "80px", textAlign: "center" }}>Qty *</th>
@@ -927,8 +934,22 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                           value={item.unit_type}
                           onChange={(e) => handleUpdateGrnItem(idx, "unit_type", e.target.value)}
                         >
-                          {UNIT_TYPES.map((u) => (
+                          {[...unitTypes, ...(item.unit_type && !unitTypes.includes(item.unit_type) ? [item.unit_type] : [])].map((u) => (
                             <option key={u} value={u}>{u}</option>
+                          ))}
+                        </select>
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <select
+                          className="ui-input"
+                          style={{ width: "100%", padding: "4px 8px" }}
+                          value={item.storage_location || ""}
+                          onChange={(e) => handleUpdateGrnItem(idx, "storage_location", e.target.value)}
+                          aria-label={`Store or rack, line ${idx + 1}`}
+                        >
+                          <option value="">Not set</option>
+                          {storageLocationOptions.map((loc) => (
+                            <option key={loc.value} value={loc.value}>{loc.label}</option>
                           ))}
                         </select>
                       </td>
@@ -1022,7 +1043,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                 </tbody>
               </table>
               <datalist id="grn-medicine-master-list">
-                {medicinesMaster.map((m) => (
+                {medicinesMaster.filter(isActiveMedicine).map((m) => (
                   <option key={m.id} value={m.name} />
                 ))}
               </datalist>
@@ -1485,8 +1506,10 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                                 unit_cost: po.unit_cost,
                                 mrp: Math.round(po.unit_cost * 1.25),
                                 selling_price: Math.round(po.unit_cost * 1.25),
-                                gst_rate: 12,
-                                unit_type: "Tablet",
+                                gst_rate: findMasterMedicine(po.medicine_name)?.gst_rate ?? "",
+                                medicine_id: findMasterMedicine(po.medicine_name)?.id,
+                                unit_type: suggestUnitType(po.medicine_name) || "Tablet",
+                                storage_location: storageLocationOptions[0]?.value,
                               }]);
                               setActiveTab("grn");
                             }}
@@ -1823,7 +1846,8 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                           {idx + 1}
                         </td>
                         <td style={{ padding: "8px 8px" }}>
-                          <select
+                          <input
+                            type="text"
                             className="ui-input"
                             style={{
                               width: "100%",
@@ -1835,17 +1859,17 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                               fontSize: "0.85rem",
                               color: "#0f172a",
                             }}
+                            placeholder="Type medicine name"
+                            list="pr-medicine-suggestions"
+                            autoComplete="off"
+                            aria-label={`Medicine name, line ${idx + 1}`}
                             value={item.medicine_name}
                             onChange={(e) => handleUpdatePrItem(idx, "medicine_name", e.target.value)}
-                          >
-                            <option value="">Select Medicine</option>
-                            {allMedicineOptions.map((med) => (
-                              <option key={med} value={med}>{med}</option>
-                            ))}
-                          </select>
+                          />
                         </td>
                         <td style={{ padding: "8px 8px" }}>
-                          <select
+                          <input
+                            type="text"
                             className="ui-input"
                             style={{
                               width: "100%",
@@ -1857,14 +1881,12 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                               fontSize: "0.85rem",
                               color: "#0f172a",
                             }}
+                            placeholder="e.g. 500 mg / Tablet"
+                            autoComplete="off"
+                            aria-label={`Strength or form, line ${idx + 1}`}
                             value={item.strength_form}
                             onChange={(e) => handleUpdatePrItem(idx, "strength_form", e.target.value)}
-                          >
-                            <option value="">Select Form</option>
-                            {STRENGTH_FORM_OPTIONS.map((sf) => (
-                              <option key={sf} value={sf}>{sf}</option>
-                            ))}
-                          </select>
+                          />
                         </td>
                         <td style={{ padding: "8px 8px" }}>
                           <input
@@ -1888,7 +1910,8 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                           />
                         </td>
                         <td style={{ padding: "8px 8px" }}>
-                          <select
+                          <input
+                            type="text"
                             className="ui-input"
                             style={{
                               width: "100%",
@@ -1900,14 +1923,13 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                               fontSize: "0.85rem",
                               color: "#0f172a",
                             }}
+                            placeholder="Type or pick unit"
+                            list="pr-unit-suggestions"
+                            autoComplete="off"
+                            aria-label={`Unit, line ${idx + 1}`}
                             value={item.unit}
                             onChange={(e) => handleUpdatePrItem(idx, "unit", e.target.value)}
-                          >
-                            <option value="">Select Unit</option>
-                            {PR_UNIT_OPTIONS.map((u) => (
-                              <option key={u} value={u}>{u}</option>
-                            ))}
-                          </select>
+                          />
                         </td>
                         <td style={{ padding: "8px 8px" }}>
                           <input
@@ -1959,6 +1981,18 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                     ))}
                   </tbody>
                 </table>
+                {/* Typing suggestions only — any value can be entered manually. */}
+                <datalist id="pr-medicine-suggestions">
+                  {allMedicineOptions.map((med) => (
+                    <option key={med} value={med} />
+                  ))}
+                </datalist>
+                {/* Units follow Pharmacy → Settings → Dosage Forms & Categories. */}
+                <datalist id="pr-unit-suggestions">
+                  {dosageFormOptions.map((opt) => (
+                    <option key={opt.value} value={opt.value}>{opt.label !== opt.value ? opt.label : undefined}</option>
+                  ))}
+                </datalist>
               </div>
 
               {/* Card Footer: Add another medicine + dynamic summary */}

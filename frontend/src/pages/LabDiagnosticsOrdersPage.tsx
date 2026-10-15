@@ -324,7 +324,7 @@ export default function LabDiagnosticsOrdersPage({ setNotice, onNavigate }: Prop
       : "";
     printViaIframe(`
       <html><head><title>Estimate</title></head><body style="font-family:sans-serif;padding:24px;">
-      <h2>Ayu Polyclinic -- Estimate (not a bill)</h2>
+      <h2>Ayu Polyclinic & Emergency Clinic -- Estimate (not a bill)</h2>
       <p>Patient: ${[patient.name, patient.last_name].filter(Boolean).join(" ")} (${patient.patient_id})</p>
       <p>Referring clinician: ${referringClinician || "-"}</p>
       <table border="1" cellpadding="8" style="border-collapse:collapse;width:100%;"><thead><tr><th>Service</th><th>Qty</th><th>Rate</th><th>Discount</th><th>Amount</th></tr></thead><tbody>${rows}</tbody></table>
@@ -401,7 +401,7 @@ export default function LabDiagnosticsOrdersPage({ setNotice, onNavigate }: Prop
     const rows = o.items.map((i) => `<tr><td>${i.service_name}</td><td>${i.department_type}</td><td>${money(i.amount)}</td><td>${i.cancelled_at ? "cancelled" : i.progress_status}</td></tr>`).join("");
     printViaIframe(`
       <html><head><title>Order ${o.order_no}</title></head><body style="font-family:sans-serif;padding:24px;">
-      <h2>Ayu Polyclinic -- Diagnostic Order Slip</h2>
+      <h2>Ayu Polyclinic & Emergency Clinic -- Diagnostic Order Slip</h2>
       <p><strong>Order:</strong> ${o.order_no} &nbsp; <strong>Patient UHID:</strong> ${o.patient_id} &nbsp; <strong>Priority:</strong> ${o.priority}</p>
       <p><strong>Referring clinician:</strong> ${o.referring_clinician || "-"} &nbsp; <strong>Clinical indication:</strong> ${o.clinical_indication || "-"}</p>
       ${o.notes ? `<p><strong>Notes:</strong> ${o.notes}</p>` : ""}
@@ -414,7 +414,7 @@ export default function LabDiagnosticsOrdersPage({ setNotice, onNavigate }: Prop
   const printInvoiceReceipt = useCallback((inv: DiagInvoice) => {
     printViaIframe(`
       <html><head><title>Receipt ${inv.invoice_no}</title></head><body style="font-family:sans-serif;padding:24px;">
-      <h2>Ayu Polyclinic -- Payment Receipt</h2>
+      <h2>Ayu Polyclinic & Emergency Clinic -- Payment Receipt</h2>
       <p><strong>Invoice:</strong> ${inv.invoice_no} &nbsp; <strong>Patient UHID:</strong> ${inv.patient_id} &nbsp; <strong>Status:</strong> ${inv.payment_status}</p>
       <div style="max-width:280px;margin-top:16px;">
         <div style="display:flex;justify-content:space-between;"><span>Total billed</span><strong>${money(inv.total_amount)}</strong></div>

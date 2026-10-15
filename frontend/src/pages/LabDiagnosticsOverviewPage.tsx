@@ -242,7 +242,7 @@ export default function LabDiagnosticsOverviewPage({ setNotice, onNavigate }: Pr
       <div className="hosp-dashboard-top" style={{ marginBottom: "18px" }}>
         <div>
           <div className="hosp-dashboard-eyebrow">
-            <span>Ayu Polyclinic</span>
+            <span>Ayu Polyclinic & Emergency Clinic</span>
             <span>/</span>
             <span>Lab & Diagnostics</span>
             <span>/</span>

@@ -3,6 +3,7 @@ import type { Dispatch, FormEvent, SetStateAction } from "react";
 import StatCard from "../components/StatCard";
 import { Button, Input, Label, Select, Table, TableCell, TableHead, TableRow } from "../components/ui";
 import { apiFetch, reportError } from "../lib/api";
+import { useDepartmentNames } from "../lib/departments";
 import { formatDate } from "../lib/format";
 import type { Notice } from "../types";
 
@@ -175,6 +176,7 @@ export default function AccountsPage({ setNotice, view = "ledger" }: Props) {
   const [vendorPayments, setVendorPayments] = useState<VendorPayment[]>([]);
   const [doctorPayouts, setDoctorPayouts] = useState<DoctorPayout[]>([]);
   const [doctorSchedules, setDoctorSchedules] = useState<DoctorSchedule[]>([]);
+  const { departments: masterDepartments } = useDepartmentNames();
   const [loading, setLoading] = useState(true);
   const [ledgerForm, setLedgerForm] = useState<LedgerForm>(DEFAULT_LEDGER_FORM);
   const [vendorForm, setVendorForm] = useState<VendorForm>(DEFAULT_VENDOR_FORM);
@@ -654,7 +656,7 @@ export default function AccountsPage({ setNotice, view = "ledger" }: Props) {
     if (finalPaid > 0 && finalPaid < currentTotal) displayStatus = "Partially Paid";
     if (finalPaid > 0 && finalPaid >= currentTotal) displayStatus = "Paid";
 
-    const uniqueDepartments = Array.from(new Set(doctorSchedules.map(s => s.department).filter(Boolean))) as string[];
+    const uniqueDepartments = Array.from(new Set([...masterDepartments, ...doctorSchedules.map(s => s.department).filter(Boolean)])) as string[];
     uniqueDepartments.sort();
     
     const availableDoctors = doctorSchedules.filter(s => 

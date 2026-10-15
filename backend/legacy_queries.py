@@ -5398,6 +5398,8 @@ def create_medicine(db, data):
             ),
         )
         medicine_id = cursor.lastrowid
+        # Stock already received under this name now belongs to the new master record.
+        link_inventory_to_medicine_master(cursor, medicine_id)
         conn.commit()
         return medicine_id
 
@@ -5442,8 +5444,113 @@ def update_medicine(db, medicine_id, data):
                 medicine_id,
             ),
         )
+        updated = cursor.rowcount > 0
+        # A rename may now match stock that was received under the new name.
+        link_inventory_to_medicine_master(cursor, medicine_id)
         conn.commit()
-        return cursor.rowcount > 0
+        return updated
+
+
+
+# ------------------------------------------------- pharmacy master linkage --
+
+def ensure_pharmacy_master_schema(conn):
+    """Columns/tables that tie stock back to the medicine master and keep
+    pharmacy settings server-side. Idempotent; runs on startup."""
+    cursor = conn.cursor()
+    cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'pharmacy_inventory'")
+    inventory_columns = {row[0] for row in cursor.fetchall()}
+    if "gst_rate" not in inventory_columns:
+        cursor.execute("ALTER TABLE pharmacy_inventory ADD COLUMN gst_rate REAL")
+    if "storage_location" not in inventory_columns:
+        cursor.execute("ALTER TABLE pharmacy_inventory ADD COLUMN storage_location TEXT")
+    cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'goods_receipt_items'")
+    grn_item_columns = {row[0] for row in cursor.fetchall()}
+    if "storage_location" not in grn_item_columns:
+        cursor.execute("ALTER TABLE goods_receipt_items ADD COLUMN storage_location TEXT")
+    cursor.execute(
+        """
+        CREATE TABLE IF NOT EXISTS pharmacy_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT,
+            updated_by TEXT,
+            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        )
+        """
+    )
+    link_inventory_to_medicine_master(cursor)
+    conn.commit()
+
+
+def link_inventory_to_medicine_master(cursor, medicine_id=None):
+    """Attach unlinked stock batches / GRN lines to the medicine master by
+    case-insensitive name. Optionally limited to one master medicine."""
+    scope = " AND m.id = ?" if medicine_id else ""
+    params = (medicine_id,) if medicine_id else ()
+    for table in ("pharmacy_inventory", "goods_receipt_items"):
+        cursor.execute(
+            f"""
+            UPDATE {table} t
+            SET medicine_id = m.id
+            FROM (
+                SELECT MIN(id) AS id, LOWER(TRIM(name)) AS key
+                FROM medicines GROUP BY LOWER(TRIM(name))
+            ) m
+            WHERE t.medicine_id IS NULL
+              AND LOWER(TRIM(t.medicine_name)) = m.key{scope}
+            """,
+            params,
+        )
+
+
+def resolve_master_medicine(cursor, medicine_id=None, medicine_name=None):
+    """Master row for a stock line: by id first, else by case-insensitive name."""
+    if medicine_id:
+        cursor.execute("SELECT * FROM medicines WHERE id = ?", (medicine_id,))
+        row = cursor.fetchone()
+        if row:
+            return row
+    if medicine_name and str(medicine_name).strip():
+        cursor.execute(
+            "SELECT * FROM medicines WHERE LOWER(TRIM(name)) = LOWER(TRIM(?)) ORDER BY id LIMIT 1",
+            (medicine_name,),
+        )
+        return cursor.fetchone()
+    return None
+
+
+PHARMACY_SETTING_KEYS = ("pharmacy_name", "address_line", "dl_number", "gstin")
+
+
+def get_pharmacy_settings(db):
+    with get_connection(db) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT key, value FROM pharmacy_settings")
+        stored = {row["key"]: row["value"] for row in cursor.fetchall()}
+        return {key: stored.get(key) or "" for key in PHARMACY_SETTING_KEYS}
+
+
+def save_pharmacy_settings(db, data, username=None):
+    with get_connection(db) as conn:
+        cursor = conn.cursor()
+        for key in PHARMACY_SETTING_KEYS:
+            if key not in data:
+                continue
+            value = str(data.get(key) or "").strip()
+            cursor.execute(
+                """
+                INSERT INTO pharmacy_settings (key, value, updated_by, updated_at)
+                VALUES (?, ?, ?, CURRENT_TIMESTAMP)
+                ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_by = EXCLUDED.updated_by, updated_at = CURRENT_TIMESTAMP
+                RETURNING key
+                """,
+                # Explicit RETURNING: the legacy cursor would otherwise append
+                # "RETURNING id" (no such column here) and its rollback-retry
+                # would discard the earlier keys written in this loop.
+                (key, value, username),
+            )
+        conn.commit()
+    return get_pharmacy_settings(db)
 
 
 
@@ -5531,7 +5638,9 @@ def list_inventory_items(db, stock_source=None):
     with get_connection(db) as conn:
         cursor = conn.cursor()
         base = """
-            SELECT pi.*, COALESCE(m.reorder_level, pi.reorder_level, 10) AS master_reorder_level
+            SELECT pi.*, COALESCE(m.reorder_level, pi.reorder_level, 10) AS master_reorder_level,
+                   COALESCE(m.gst_rate, pi.gst_rate) AS effective_gst_rate,
+                   m.generic_name AS master_generic_name, m.active AS master_active
             FROM pharmacy_inventory pi
             LEFT JOIN medicines m ON m.id = pi.medicine_id
         """
@@ -5780,16 +5889,21 @@ def create_goods_receipt(db, data):
             qty_received = int(item.get("qty_received", item.get("received_qty", 0)) or 0)
             qty_accepted = int(item.get("qty_accepted", qty_received) or 0)
             purchase_price = float(item.get("purchase_price", item.get("unit_cost", 0)) or 0)
+            master = resolve_master_medicine(cursor, item.get("medicine_id"), item.get("medicine_name"))
+            line_gst = item.get("gst_rate")
+            if line_gst in (None, ""):
+                # Blank on the GRN line: use the medicine master's configured GST.
+                line_gst = master["gst_rate"] if master and master["gst_rate"] is not None else 0
             cursor.execute(
                 """
                 INSERT INTO goods_receipt_items (
                     grn_id, medicine_id, medicine_name, batch_no, mfg_date, expiry_date, qty_received, qty_accepted, qty_damaged, stock_source,
-                    purchase_price, mrp, gst_rate, unit_type
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    purchase_price, mrp, gst_rate, unit_type, storage_location
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     grn_id,
-                    item.get("medicine_id"),
+                    master["id"] if master else item.get("medicine_id"),
                     item["medicine_name"],
                     item.get("batch_no"),
                     item.get("mfg_date"),
@@ -5800,8 +5914,9 @@ def create_goods_receipt(db, data):
                     item_source,
                     purchase_price,
                     float(item.get("mrp", 0) or 0),
-                    float(item.get("gst_rate", 0) or 0),
+                    float(line_gst or 0),
                     item.get("unit_type"),
+                    (str(item.get("storage_location") or "").strip() or None),
                 ),
             )
         conn.commit()
@@ -5861,6 +5976,10 @@ def verify_goods_receipt(db, grn_id, actor=None):
                 raise ValueError(f"Goods-receipt line for {item['medicine_name']} has no valid stock_source.")
             item_unit_type = item["unit_type"]
             item_mfg_date = item["mfg_date"]
+            master = resolve_master_medicine(cursor, item["medicine_id"], item["medicine_name"])
+            master_id = master["id"] if master else item["medicine_id"]
+            item_gst = item["gst_rate"]
+            item_location = item["storage_location"] if "storage_location" in item.keys() else None
             cursor.execute(
                 """
                 SELECT id, qty_available, qty_damaged, unit_price FROM pharmacy_inventory
@@ -5878,10 +5997,12 @@ def verify_goods_receipt(db, grn_id, actor=None):
                     """
                     UPDATE pharmacy_inventory
                     SET qty_available=?, qty_damaged=?, quantity=?, unit_price=?, purchase_price=?, mrp=?, supplier_id=COALESCE(?, supplier_id),
-                        unit_type=COALESCE(?, unit_type), mfg_date=COALESCE(?, mfg_date), updated_at=CURRENT_TIMESTAMP
+                        unit_type=COALESCE(?, unit_type), mfg_date=COALESCE(?, mfg_date), medicine_id=COALESCE(medicine_id, ?),
+                        gst_rate=COALESCE(?, gst_rate), storage_location=COALESCE(?, storage_location), updated_at=CURRENT_TIMESTAMP
                     WHERE id=?
                     """,
-                    (new_available, new_damaged, new_available, up, purchase_price, mrp, supplier_id, item_unit_type, item_mfg_date, existing_batch["id"]),
+                    (new_available, new_damaged, new_available, up, purchase_price, mrp, supplier_id, item_unit_type, item_mfg_date,
+                     master_id, item_gst, item_location, existing_batch["id"]),
                 )
                 batch_id = existing_batch["id"]
             else:
@@ -5890,24 +6011,18 @@ def verify_goods_receipt(db, grn_id, actor=None):
                 # otherwise every medicine looks identically "low" regardless
                 # of its real consumption rate.
                 batch_reorder_level = 10
-                if item["medicine_id"]:
-                    cursor.execute("SELECT reorder_level FROM medicines WHERE id = ?", (item["medicine_id"],))
-                    med_row = cursor.fetchone()
-                    if med_row and med_row["reorder_level"] is not None:
-                        batch_reorder_level = int(med_row["reorder_level"])
-                else:
-                    cursor.execute("SELECT reorder_level FROM medicines WHERE LOWER(name) = LOWER(?) LIMIT 1", (item["medicine_name"],))
-                    med_row = cursor.fetchone()
-                    if med_row and med_row["reorder_level"] is not None:
-                        batch_reorder_level = int(med_row["reorder_level"])
+                if master and master["reorder_level"] is not None:
+                    batch_reorder_level = int(master["reorder_level"])
                 cursor.execute(
                     """
                     INSERT INTO pharmacy_inventory (
                         medicine_id, medicine_name, batch_no, mfg_date, expiry_date, qty_available, qty_damaged, quantity,
-                        reorder_level, unit_price, stock_condition, stock_source, batch_status, purchase_price, mrp, supplier_id, unit_type
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'proper', ?, 'available', ?, ?, ?, ?)
+                        reorder_level, unit_price, stock_condition, stock_source, batch_status, purchase_price, mrp, supplier_id, unit_type,
+                        gst_rate, storage_location
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'proper', ?, 'available', ?, ?, ?, ?, ?, ?)
                     """,
-                    (item["medicine_id"], item["medicine_name"], item["batch_no"], item_mfg_date, item["expiry_date"], accepted, damaged, accepted, batch_reorder_level, unit_price, item_source, purchase_price, mrp, supplier_id, item_unit_type),
+                    (master_id, item["medicine_name"], item["batch_no"], item_mfg_date, item["expiry_date"], accepted, damaged, accepted, batch_reorder_level, unit_price, item_source, purchase_price, mrp, supplier_id, item_unit_type,
+                     item_gst, item_location),
                 )
                 batch_id = cursor.lastrowid
             if accepted:
@@ -6135,8 +6250,12 @@ def create_pharmacy_dispense(db, data, username):
             else:
                 line_discount = 0.0
 
-            # Line tax / GST
-            gst_pct = float(line.get("gst_rate") or line.get("tax_rate") or 0)
+            # Line tax / GST -- fall back to the medicine master's rate when the client sends none
+            raw_gst = line.get("gst_rate") if line.get("gst_rate") is not None else line.get("tax_rate")
+            if raw_gst is None and line.get("tax") is None:
+                master = resolve_master_medicine(cursor, None, medicine_name)
+                raw_gst = master["gst_rate"] if master and master["gst_rate"] is not None else None
+            gst_pct = float(raw_gst or 0)
             if gst_pct > 0:
                 line_tax = round((base_line_amount - line_discount) * (gst_pct / 100.0), 2)
             elif line.get("tax") is not None and qty_needed > 0:

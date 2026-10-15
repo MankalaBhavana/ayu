@@ -648,9 +648,9 @@ export default function BillingPage({ setNotice, view = "record-payment" }: Prop
         <body>
           <main class="sheet">
             <header class="header">
-              <img class="brand-logo" src="${PRINT_BRAND_HEADER_DATA_URI}" alt="Ayu Polyclinic" />
+              <img class="brand-logo" src="${PRINT_BRAND_HEADER_DATA_URI}" alt="Ayu Polyclinic & Emergency Clinic" />
               <div>
-                <p class="brand-title">Ayu Polyclinic</p>
+                <p class="brand-title">Ayu Polyclinic & Emergency Clinic</p>
                 <p class="brand-line">POLYCLINIC &amp;</p>
                 <p class="brand-line">DIAGNOSTICS</p>
               </div>
@@ -681,7 +681,7 @@ export default function BillingPage({ setNotice, view = "record-payment" }: Prop
                 <div class="grand"><span>Balance Due</span><strong>${safePrintText(formatCurrency(invoice.due_amount))}</strong></div>
               </div>
             </section>
-            <footer class="footer">This invoice is generated from live Ayu Polyclinic billing records. Paid invoices remain available in Invoice Generation for audit and reprint.</footer>
+            <footer class="footer">This invoice is generated from live Ayu Polyclinic & Emergency Clinic billing records. Paid invoices remain available in Invoice Generation for audit and reprint.</footer>
           </main>
         </body>
       </html>
@@ -824,7 +824,7 @@ export default function BillingPage({ setNotice, view = "record-payment" }: Prop
         key: order.key_id,
         amount: order.amount,
         currency: order.currency || "INR",
-        name: "Ayu Polyclinic Billing",
+        name: "Ayu Polyclinic & Emergency Clinic Billing",
         description: `Invoice ${linkedInvoice?.invoice_no || `INV-${invoiceId}`}`,
         order_id: order.order_id,
         prefill: {

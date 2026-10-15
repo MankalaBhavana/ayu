@@ -3,6 +3,7 @@ import type { Dispatch, FormEvent, SetStateAction } from "react";
 import StatCard from "../components/StatCard";
 import { Button, Input, Select, Table, TableCell, TableHead, TableRow, Tabs, TabsContent, TabsTrigger } from "../components/ui";
 import { apiFetch, reportError } from "../lib/api";
+import { notifyDepartmentsChanged } from "../lib/departments";
 import { formatDate } from "../lib/format";
 import type { Notice } from "../types";
 
@@ -331,6 +332,7 @@ export default function HrmsPage({ setNotice }: Props) {
       });
       setDepartmentForm({ ...DEFAULT_DEPARTMENT_FORM });
       setNotice({ type: "success", message: departmentId ? "Department updated." : "Department created." });
+      notifyDepartmentsChanged();
       await loadHrms(filters);
     } catch (error) {
       reportError(setNotice, error as { message?: string; status?: number }, "Unable to create department.");
@@ -420,6 +422,7 @@ export default function HrmsPage({ setNotice }: Props) {
     try {
       await apiFetch(`/api/hr/departments/${record.id}`, { method: "DELETE" });
       setNotice({ type: "success", message: "Department deleted." });
+      notifyDepartmentsChanged();
       await loadHrms(filters);
     } catch (error) {
       reportError(setNotice, error as { message?: string; status?: number }, "Unable to delete department.");
