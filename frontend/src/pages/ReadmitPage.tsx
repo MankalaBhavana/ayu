@@ -206,6 +206,18 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
   }, [setNotice]);
 
   useEffect(() => {
+    const handleRefresh = () => {
+      void loadTodayAppointments();
+    };
+    window.addEventListener("focus", handleRefresh);
+    window.addEventListener("storage", handleRefresh);
+    return () => {
+      window.removeEventListener("focus", handleRefresh);
+      window.removeEventListener("storage", handleRefresh);
+    };
+  }, []);
+
+  useEffect(() => {
     if (!doctorDepartment) {
       setDoctorSchedules([]);
       return;
@@ -361,7 +373,24 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
       };
     }
 
-    // 2. Local storage queue check
+    // If the patient has appointments today and none are active (they are completed/cancelled),
+    // then consultation is finished. Clean up any stale localStorage entry and return null.
+    const hasTodayAppts = todayAppointments.some((a) => String(a.patient_id || "").trim().toLowerCase() === cleanId);
+    if (hasTodayAppts) {
+      try {
+        const stored = JSON.parse(localStorage.getItem("hospai_op_queue") || "[]");
+        if (Array.isArray(stored) && stored.some((item) => String(item?.uhid || "").trim().toLowerCase() === cleanId && item?.status !== "Completed")) {
+          localStorage.setItem("hospai_op_queue", JSON.stringify(stored.map((item) =>
+            String(item?.uhid || "").trim().toLowerCase() === cleanId ? { ...item, status: "Completed" } : item
+          )));
+        }
+      } catch {
+        // ignore
+      }
+      return null;
+    }
+
+    // 2. Local storage queue check (fallback only if no appointments for today are in backend)
     const localEntry = getActiveReadmitEntry(patientId);
     if (localEntry) {
       return {
@@ -373,6 +402,46 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
     }
 
     return null;
+  };
+
+  const getCompletedConsultationInfo = (patientId?: string): { completed: boolean; doctor?: string; department?: string; token?: string | number } => {
+    if (!patientId) return { completed: false };
+    const cleanId = String(patientId).trim().toLowerCase();
+
+    // If currently active in queue, it's not completed
+    if (getActiveQueueEntry(patientId)) return { completed: false };
+
+    // Check todayAppointments for completed status
+    const completedAppt = todayAppointments.find((a) => {
+      if (String(a.patient_id || "").trim().toLowerCase() !== cleanId) return false;
+      const s = String(a.status || "").toLowerCase().trim();
+      return ["completed", "done", "consulted", "finished"].includes(s);
+    });
+
+    if (completedAppt) {
+      return {
+        completed: true,
+        doctor: completedAppt.doctor_name || undefined,
+        department: completedAppt.department || undefined,
+        token: completedAppt.token_no != null ? completedAppt.token_no : undefined,
+      };
+    }
+
+    // Check stored queue
+    const storedQueue = getStoredReadmitQueue();
+    const storedCompleted = storedQueue.find(
+      (item) => String(item?.uhid || "").trim().toLowerCase() === cleanId && String(item?.status || "").toLowerCase() === "completed"
+    );
+    if (storedCompleted) {
+      return {
+        completed: true,
+        doctor: storedCompleted.doctor || undefined,
+        department: storedCompleted.department || undefined,
+        token: storedCompleted.token || undefined,
+      };
+    }
+
+    return { completed: false };
   };
 
   const activePatientQueueEntry = activePatient ? getActiveQueueEntry(activePatient.patient_id) : null;
@@ -780,6 +849,7 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
           {results.map((patient) => {
             const expanded = activePatient?.patient_id === patient.patient_id;
             const patientQueueEntry = getActiveQueueEntry(patient.patient_id);
+            const completedInfo = getCompletedConsultationInfo(patient.patient_id);
             return (
               <Fragment key={patient.patient_id}>
                 <TableRow 
@@ -796,23 +866,39 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
                   <TableCell>
                     <div style={{ display: "flex", alignItems: "center", gap: "8px", flexWrap: "wrap" }}>
                       <span>{[patient.name, patient.middle_name, patient.last_name].filter(Boolean).join(" ").trim() || patient.patient_id}</span>
-                      {patientQueueEntry && (
+                      {patientQueueEntry ? (
                         <span
                           className="status-pill status-pill-warning"
                           style={{
                             fontSize: "11px",
                             padding: "2px 8px",
                             borderRadius: "12px",
-                            backgroundColor: "#fef3c7",
-                            color: "#92400e",
-                            border: "1px solid #fcd34d",
+                            backgroundColor: patientQueueEntry.status === "In Consultation" ? "#fef3c7" : "#e0f2fe",
+                            color: patientQueueEntry.status === "In Consultation" ? "#92400e" : "#0369a1",
+                            border: `1px solid ${patientQueueEntry.status === "In Consultation" ? "#fcd34d" : "#bae6fd"}`,
                             fontWeight: 600,
                             whiteSpace: "nowrap"
                           }}
                         >
                           In Queue ({patientQueueEntry.status})
                         </span>
-                      )}
+                      ) : completedInfo.completed ? (
+                        <span
+                          className="status-pill status-pill-success"
+                          style={{
+                            fontSize: "11px",
+                            padding: "2px 8px",
+                            borderRadius: "12px",
+                            backgroundColor: "#dcfce7",
+                            color: "#166534",
+                            border: "1px solid #86efac",
+                            fontWeight: 600,
+                            whiteSpace: "nowrap"
+                          }}
+                        >
+                          Consultation Completed
+                        </span>
+                      ) : null}
                     </div>
                   </TableCell>
                   <TableCell>{patient.patient_id}</TableCell>
@@ -860,6 +946,32 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
                               Please complete or cancel the existing consultation before creating a re-visit.
                             </div>
                           </div>
+                        </div>
+                      )}
+                      {!activePatientQueueEntry && completedInfo.completed && (
+                        <div
+                          className="queue-completed-banner"
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: "10px",
+                            padding: "10px 14px",
+                            backgroundColor: "#f0fdf4",
+                            border: "1px solid #86efac",
+                            borderRadius: "8px",
+                            color: "#166534",
+                            marginBottom: "16px",
+                            fontSize: "12.5px",
+                            fontWeight: 500,
+                          }}
+                        >
+                          <span style={{ fontSize: "16px" }}>✓</span>
+                          <span>
+                            Consultation completed today
+                            {completedInfo.token ? ` (Token #${completedInfo.token})` : ""}
+                            {completedInfo.doctor ? ` with Dr. ${completedInfo.doctor}` : ""}.
+                            You can now schedule a follow-up or re-visit below.
+                          </span>
                         </div>
                       )}
                       <h4>

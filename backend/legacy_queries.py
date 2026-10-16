@@ -751,46 +751,77 @@ def generate_patient_id(db, hospital_id=None):
 
 
 def check_duplicate_patient(db, name, last_name, dob, gender, phone, hospital_id=None):
-    """Reject on either of:
-      1. An exact phone match, regardless of name (same person re-registering
-         under a slightly different name spelling).
-      2. A name + last name match where DOB OR phone also matches (gender is
-         NOT required -- it's sometimes miskeyed and shouldn't block a real
-         duplicate catch).
-    NOTE: dob is a real DATE column and rejects an empty string. Blank DOB is
-    an intentionally allowed, optional field -- normalize to NULL instead of
-    crashing. IS NOT DISTINCT FROM (instead of =) correctly matches NULL to
-    NULL, so DOB-less duplicate detection still works.
+    """Reject duplicate patient registration only when the patient has the SAME name
+    AND either:
+      1. An exact phone match (same name + same phone number).
+      2. The same date of birth (when DOB is provided).
+
+    Allows registering patients with different names even if they share the same
+    phone number (e.g. family members, spouse, or dependents using the same
+    contact number).
     """
     scoped_hospital_id = hospital_id or resolve_hospital_id(db)
     normalized_dob = dob or None
+    if isinstance(normalized_dob, str) and normalized_dob.strip():
+        try:
+            from datetime import date
+            normalized_dob = date.fromisoformat(normalized_dob.strip())
+        except Exception:
+            normalized_dob = None
+
     normalized_phone = "".join(ch for ch in str(phone or "") if ch.isdigit())
+    if len(normalized_phone) == 12 and normalized_phone.startswith("91"):
+        normalized_phone = normalized_phone[2:]
+    elif len(normalized_phone) == 11 and normalized_phone.startswith("0"):
+        normalized_phone = normalized_phone[1:]
+
+    name_clean = str(name or "").strip()
+    last_name_clean = str(last_name or "").strip()
+    if not name_clean:
+        return None
+
+    full_name_clean = f"{name_clean} {last_name_clean}".strip() if last_name_clean else ""
+
+    match_conditions = []
+    params = [
+        scoped_hospital_id,
+        name_clean,
+        last_name_clean,
+        full_name_clean,
+        full_name_clean,
+    ]
+
+    if normalized_phone:
+        match_conditions.append("REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '+91', ''), '+', '') = ?")
+        params.append(normalized_phone)
+
+    if normalized_dob:
+        match_conditions.append("dob = ?")
+        params.append(normalized_dob)
+
+    if not match_conditions:
+        return None
+
+    sql = f"""
+        SELECT patient_id, name, last_name FROM patients
+        WHERE hospital_id = ?
+          AND (
+            (
+              LOWER(TRIM(name)) = LOWER(?)
+              AND COALESCE(LOWER(TRIM(last_name)), '') = LOWER(?)
+            )
+            OR (
+              ? != ''
+              AND LOWER(TRIM(CONCAT(COALESCE(name, ''), ' ', COALESCE(last_name, '')))) = LOWER(?)
+            )
+          )
+          AND ({" OR ".join(match_conditions)})
+        LIMIT 1
+    """
+
     with get_connection(db) as conn:
         cursor = conn.cursor()
-        cursor.execute(
-            """
-            SELECT patient_id, name, last_name FROM patients
-            WHERE hospital_id = ?
-              AND (
-                (? != '' AND REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '+91', ''), '+', '') = ?)
-                OR (
-                  LOWER(name) = LOWER(?)
-                  AND LOWER(last_name) = LOWER(?)
-                  AND (
-                    dob IS NOT DISTINCT FROM ?
-                    OR (? != '' AND REPLACE(REPLACE(REPLACE(REPLACE(COALESCE(phone, ''), ' ', ''), '-', ''), '+91', ''), '+', '') = ?)
-                  )
-                )
-              )
-            LIMIT 1
-            """,
-            (
-                scoped_hospital_id,
-                normalized_phone, normalized_phone,
-                name, last_name, normalized_dob,
-                normalized_phone, normalized_phone,
-            ),
-        )
+        cursor.execute(sql, tuple(params))
         return cursor.fetchone()
 
 
@@ -5730,6 +5761,14 @@ def delete_pharmacy_supplier(db, supplier_id):
     with get_connection(db) as conn:
         cursor = conn.cursor()
         cursor.execute("UPDATE pharmacy_purchases SET supplier_id = NULL WHERE supplier_id = ?", (supplier_id,))
+        try:
+            cursor.execute("UPDATE pharmacy_purchase_requests SET preferred_supplier_id = NULL WHERE preferred_supplier_id = ?", (supplier_id,))
+        except Exception:
+            pass
+        try:
+            cursor.execute("UPDATE pharmacy_purchase_requests SET supplier_id = NULL WHERE supplier_id = ?", (supplier_id,))
+        except Exception:
+            pass
         cursor.execute("DELETE FROM pharmacy_suppliers WHERE id = ?", (supplier_id,))
         deleted = cursor.rowcount > 0
         conn.commit()
@@ -5873,13 +5912,21 @@ def create_goods_receipt(db, data):
                     return existing["id"], existing["grn_no"]
                 raise ValueError("This idempotency key was already used with different request content.")
 
+        supplier_id = data.get("supplier_id")
+        po_id = data.get("purchase_order_id")
+        if not supplier_id and po_id:
+            cursor.execute("SELECT supplier_id FROM pharmacy_purchases WHERE id = ?", (po_id,))
+            po_row = cursor.fetchone()
+            if po_row and po_row.get("supplier_id"):
+                supplier_id = po_row["supplier_id"]
+
         grn_no = f"GRN-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
         cursor.execute(
             """
-            INSERT INTO goods_receipts (grn_no, purchase_order_id, received_date, supplier_invoice_no, status, stock_source, idempotency_key, idempotency_payload_hash)
-            VALUES (?, ?, ?, ?, 'draft', ?, ?, ?)
+            INSERT INTO goods_receipts (grn_no, purchase_order_id, received_date, supplier_invoice_no, status, stock_source, idempotency_key, idempotency_payload_hash, supplier_id)
+            VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?)
             """,
-            (grn_no, data.get("purchase_order_id"), data.get("received_date"), data.get("supplier_invoice_no"), stock_source, idempotency_key, payload_hash),
+            (grn_no, po_id, data.get("received_date"), data.get("supplier_invoice_no"), stock_source, idempotency_key, payload_hash, supplier_id),
         )
         grn_id = cursor.lastrowid
         for item in data.get("items", []):
@@ -6905,24 +6952,27 @@ def list_pharmacy_incoming_prescriptions(db, status=None):
 def get_pharmacy_summary(db):
     with get_connection(db) as conn:
         cursor = conn.cursor()
-        # Low/out-of-stock are medicine-level facts (total across every batch
-        # vs. the medicine's real configured reorder level), not per-batch --
-        # a medicine split across several batches, or a batch stuck with a
-        # placeholder reorder_level, must not be mis-flagged either way.
+        # Low/out-of-stock are medicine-level facts based on unexpired usable stock
+        # vs. the medicine's real configured reorder level. Expired batches cannot be
+        # dispensed, so a medicine whose unexpired quantity is <= reorder level requires reordering.
         cursor.execute("""
             SELECT COUNT(*) AS value FROM (
-                SELECT TRIM(pi.medicine_name) AS med_name, SUM(pi.qty_available) AS total_qty,
+                SELECT TRIM(pi.medicine_name) AS med_name,
+                       COALESCE(SUM(CASE WHEN pi.expiry_date IS NULL OR pi.expiry_date >= CURRENT_DATE THEN pi.qty_available ELSE 0 END), 0) AS usable_qty,
                        COALESCE(MAX(m.reorder_level), MAX(pi.reorder_level), 10) AS effective_reorder_level
                 FROM pharmacy_inventory pi
                 LEFT JOIN medicines m ON m.id = pi.medicine_id
                 GROUP BY TRIM(pi.medicine_name)
-                HAVING SUM(pi.qty_available) <= COALESCE(MAX(m.reorder_level), MAX(pi.reorder_level), 10)
+                HAVING COALESCE(SUM(CASE WHEN pi.expiry_date IS NULL OR pi.expiry_date >= CURRENT_DATE THEN pi.qty_available ELSE 0 END), 0) <= COALESCE(MAX(m.reorder_level), MAX(pi.reorder_level), 10)
             ) t
         """)
         low_stock = cursor.fetchone()["value"]
         cursor.execute("""
             SELECT COUNT(*) AS value FROM (
-                SELECT medicine_name FROM pharmacy_inventory GROUP BY medicine_name HAVING SUM(qty_available) = 0
+                SELECT TRIM(pi.medicine_name) AS med_name
+                FROM pharmacy_inventory pi
+                GROUP BY TRIM(pi.medicine_name)
+                HAVING COALESCE(SUM(CASE WHEN pi.expiry_date IS NULL OR pi.expiry_date >= CURRENT_DATE THEN pi.qty_available ELSE 0 END), 0) = 0
             ) t
         """)
         out_of_stock = cursor.fetchone()["value"]
@@ -7083,27 +7133,30 @@ def get_pharmacy_summary(db):
         # low_stock_count above.
         cursor.execute("""
             SELECT pi.medicine_name, COALESCE(MAX(m.generic_name), MAX(pi.item_category), '-') AS generic_name,
-                   SUM(pi.qty_available) AS qty_available,
+                   COALESCE(SUM(CASE WHEN pi.expiry_date IS NULL OR pi.expiry_date >= CURRENT_DATE THEN pi.qty_available ELSE 0 END), 0) AS qty_available,
+                   COALESCE(SUM(pi.qty_available), 0) AS total_physical_qty,
                    COALESCE(MAX(m.reorder_level), MAX(pi.reorder_level), 10) AS reorder_level
             FROM pharmacy_inventory pi
             LEFT JOIN medicines m ON m.id = pi.medicine_id
             GROUP BY pi.medicine_name
-            HAVING SUM(pi.qty_available) <= COALESCE(MAX(m.reorder_level), MAX(pi.reorder_level), 10)
-            ORDER BY SUM(pi.qty_available) ASC
+            HAVING COALESCE(SUM(CASE WHEN pi.expiry_date IS NULL OR pi.expiry_date >= CURRENT_DATE THEN pi.qty_available ELSE 0 END), 0) <= COALESCE(MAX(m.reorder_level), MAX(pi.reorder_level), 10)
+            ORDER BY qty_available ASC
             LIMIT 10
         """)
         low_stock_rows = cursor.fetchall()
         low_stock_items = []
         for r in low_stock_rows:
             q_avail = int(r["qty_available"] or 0)
+            q_phys = int(r["total_physical_qty"] or 0)
             r_lvl = int(r["reorder_level"] or 10)
             low_stock_items.append({
                 "medicine_name": r["medicine_name"],
                 "generic_name": r["generic_name"] or "-",
                 "current_stock": q_avail,
+                "total_physical_stock": q_phys,
                 "reorder_level": r_lvl,
                 "suggested_reorder": max(r_lvl * 2 - q_avail, 10),
-                "status": "Out of Stock" if q_avail == 0 else "Low Stock",
+                "status": "Out of Stock (Expired)" if (q_avail == 0 and q_phys > 0) else ("Out of Stock" if q_phys == 0 else "Low Stock"),
             })
 
         # Top 10 Medicines This Month with OP/IP/Emergency split
@@ -7232,7 +7285,8 @@ def get_pharmacy_summary(db):
         },
         "needs_attention": {
             "low_stock": low_stock,
-            "near_expiry": expiring_1m + expiring_1_3m,
+            "near_expiry": expired_count + expiring_1m + expiring_1_3m,
+            "expired_stock": expired_count,
             "pending_ward_indents": pending_ward_indents,
             "partially_issued_indents": partially_issued_indents,
             "pending_purchase_requests": pending_pr_count,
@@ -7403,34 +7457,160 @@ def get_supplier_ledger(db, supplier_id):
         if not supplier:
             raise ValueError("Supplier not found.")
 
+        # 1. Purchase Orders (from pharmacy_purchases)
         cursor.execute(
             """
-            SELECT id, medicine_name, quantity, unit_cost, total_cost, status, created_at
+            SELECT id, medicine_name, quantity, unit_cost, total_cost, status, created_at, pr_id
             FROM pharmacy_purchases
             WHERE supplier_id = ?
             ORDER BY created_at DESC
             """,
             (supplier_id,),
         )
-        purchases = [dict(r) for r in cursor.fetchall()]
-        total_purchases = sum(p["total_cost"] for p in purchases if p["status"] != "cancelled")
+        po_rows = [dict(r) for r in cursor.fetchall()]
 
-        # No supplier-payment recording exists yet, so paid stays 0 and the
-        # full purchase total is shown as outstanding -- an honest reflection
-        # of what this system can currently track, not a placeholder guess.
-        total_paid = 0.0
-        outstanding = max(0.0, total_purchases - total_paid)
+        # Track approved PR IDs that already exist as POs to avoid duplicate lines
+        covered_pr_ids = {r["pr_id"] for r in po_rows if r.get("pr_id")}
 
+        # 2. Purchase Requests (from purchase_requests + items)
+        cursor.execute(
+            """
+            SELECT pr.id as pr_id, pr.pr_no, pr.status as pr_status, pr.created_at,
+                   pri.id as item_id, pri.medicine_name, pri.required_qty, pri.estimated_unit_cost, pri.strength_form
+            FROM purchase_requests pr
+            JOIN purchase_request_items pri ON pr.id = pri.pr_id
+            WHERE pr.preferred_supplier_id = ? OR pr.supplier_id = ?
+            ORDER BY pr.created_at DESC
+            """,
+            (supplier_id, supplier_id),
+        )
+        pr_rows = [dict(r) for r in cursor.fetchall()]
+
+        # 3. Goods Receipts / Deliveries (from goods_receipts + items)
+        cursor.execute(
+            """
+            SELECT gr.id as grn_id, gr.grn_no, gr.supplier_invoice_no, gr.received_date, gr.created_at, gr.status as grn_status,
+                   gri.id as item_id, gri.medicine_name, gri.qty_accepted, gri.qty_received, gri.purchase_price, gri.gst_rate
+            FROM goods_receipts gr
+            JOIN goods_receipt_items gri ON gr.id = gri.grn_id
+            WHERE gr.supplier_id = ?
+               OR gr.purchase_order_id IN (SELECT id FROM pharmacy_purchases WHERE supplier_id = ?)
+               OR gr.purchase_order_id IN (SELECT id FROM purchase_requests WHERE preferred_supplier_id = ? OR supplier_id = ?)
+            ORDER BY gr.created_at DESC
+            """,
+            (supplier_id, supplier_id, supplier_id, supplier_id),
+        )
+        grn_rows = [dict(r) for r in cursor.fetchall()]
+
+        # 4. Supplier payments (disbursements)
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(amount), 0.0) as total_paid
+            FROM supplier_payments
+            WHERE supplier_id = ?
+            """,
+            (supplier_id,),
+        )
+        paid_row = cursor.fetchone()
+        total_paid = float(paid_row["total_paid"]) if paid_row and paid_row["total_paid"] is not None else 0.0
+
+        all_entries = []
+
+        # Convert PO rows
+        for po in po_rows:
+            all_entries.append({
+                "id": f"po-{po['id']}",
+                "order_id": po["id"],
+                "entry_type": "Purchase Order",
+                "type": "PO",
+                "ref_no": f"PO-{po['id']}",
+                "medicine_name": po["medicine_name"],
+                "quantity": po["quantity"] or 0,
+                "unit_cost": float(po["unit_cost"] or 0.0),
+                "total_cost": float(po["total_cost"] or 0.0),
+                "status": f"PO: {str(po['status']).capitalize()}" if po.get("status") else "PO: Ordered",
+                "created_at": po["created_at"].isoformat() if hasattr(po["created_at"], "isoformat") else str(po["created_at"]),
+                "_sort_date": str(po["created_at"] or ""),
+            })
+
+        # Convert PR rows (include pending/rejected or any not in covered_pr_ids)
+        for pr in pr_rows:
+            if pr["pr_id"] in covered_pr_ids and pr["pr_status"] == "approved":
+                continue  # already rendered as an approved PO above
+            med_name = pr["medicine_name"]
+            if pr.get("strength_form"):
+                med_name = f"{med_name} ({pr['strength_form']})"
+            qty = pr["required_qty"] or 0
+            unit_cost = float(pr["estimated_unit_cost"] or 0.0)
+            cost = round(qty * unit_cost, 2)
+            all_entries.append({
+                "id": f"pr-{pr['pr_id']}-{pr['item_id']}",
+                "order_id": pr["pr_id"],
+                "entry_type": "Purchase Request",
+                "type": "PR",
+                "ref_no": pr["pr_no"] or f"PR-{pr['pr_id']}",
+                "medicine_name": med_name,
+                "quantity": qty,
+                "unit_cost": unit_cost,
+                "total_cost": cost,
+                "status": f"PR: {str(pr['pr_status']).capitalize()}",
+                "created_at": pr["created_at"].isoformat() if hasattr(pr["created_at"], "isoformat") else str(pr["created_at"]),
+                "_sort_date": str(pr["created_at"] or ""),
+            })
+
+        # Convert GRN rows
+        for gr in grn_rows:
+            qty = gr["qty_accepted"] if gr.get("qty_accepted") is not None else (gr.get("qty_received") or 0)
+            price = float(gr.get("purchase_price") or 0.0)
+            gst = float(gr.get("gst_rate") or 0.0)
+            cost = round(qty * price * (1.0 + (gst / 100.0)), 2)
+            d_date = gr["received_date"] or gr["created_at"]
+            all_entries.append({
+                "id": f"grn-{gr['grn_id']}-{gr['item_id']}",
+                "order_id": gr["grn_id"],
+                "entry_type": "Delivery (GRN)",
+                "type": "GRN",
+                "ref_no": gr["grn_no"] or gr["supplier_invoice_no"] or f"GRN-{gr['grn_id']}",
+                "medicine_name": gr["medicine_name"],
+                "quantity": qty,
+                "unit_cost": price,
+                "total_cost": cost,
+                "status": f"Delivery: {str(gr['grn_status']).capitalize()}",
+                "created_at": d_date.isoformat() if hasattr(d_date, "isoformat") else str(d_date),
+                "_sort_date": str(d_date or ""),
+            })
+
+        all_entries.sort(key=lambda x: x.get("_sort_date", ""), reverse=True)
+        for item in all_entries:
+            item.pop("_sort_date", None)
+
+        # Financial totals calculation:
+        verified_grn_total = sum(
+            round(
+                (gr["qty_accepted"] if gr.get("qty_accepted") is not None else (gr.get("qty_received") or 0))
+                * float(gr.get("purchase_price") or 0.0)
+                * (1.0 + (float(gr.get("gst_rate") or 0.0) / 100.0)),
+                2,
+            )
+            for gr in grn_rows
+            if str(gr.get("grn_status", "")).lower() == "verified"
+        )
+        po_total = sum(float(po["total_cost"] or 0.0) for po in po_rows if po.get("status") != "cancelled")
+
+        total_purchases = round(verified_grn_total + (po_total if verified_grn_total == 0 else 0.0), 2)
+        outstanding = max(0.0, round(total_purchases - total_paid, 2))
+
+        # Recent verified receipts overview
         cursor.execute(
             """
             SELECT gr.id, gr.grn_no, gr.supplier_invoice_no, gr.received_date, gr.stock_source, gr.status
             FROM goods_receipts gr
-            JOIN pharmacy_purchases pp ON pp.id = gr.purchase_order_id
-            WHERE pp.supplier_id = ? AND gr.status = 'verified'
+            WHERE (gr.supplier_id = ? OR gr.purchase_order_id IN (SELECT id FROM pharmacy_purchases WHERE supplier_id = ?))
+              AND gr.status = 'verified'
             ORDER BY gr.received_date DESC
             LIMIT 25
             """,
-            (supplier_id,),
+            (supplier_id, supplier_id),
         )
         recent_receipts = []
         for grn in cursor.fetchall():
@@ -7446,10 +7626,38 @@ def get_supplier_ledger(db, supplier_id):
             "supplier": dict(supplier),
             "total_purchases": total_purchases,
             "total_paid": total_paid,
+            "outstanding": outstanding,
             "outstanding_balance": outstanding,
-            "purchases": purchases,
+            "purchases": all_entries,
             "recent_receipts": recent_receipts,
         }
+
+
+def record_supplier_payment(db, supplier_id, data, username=None):
+    amount = float(data.get("amount", 0.0))
+    if amount <= 0:
+        raise ValueError("Payment amount must be greater than 0.")
+    with get_connection(db) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT id FROM pharmacy_suppliers WHERE id = ?", (supplier_id,))
+        if not cursor.fetchone():
+            raise ValueError("Supplier not found.")
+        cursor.execute(
+            """
+            INSERT INTO supplier_payments (supplier_id, amount, payment_mode, reference_no, notes)
+            VALUES (?, ?, ?, ?, ?)
+            """,
+            (
+                supplier_id,
+                amount,
+                data.get("payment_mode", "BANK_TRANSFER"),
+                data.get("reference_no"),
+                data.get("notes"),
+            ),
+        )
+        payment_id = cursor.lastrowid
+        conn.commit()
+        return payment_id
 
 
 # ==================== Enterprise IPD Ward Indenting & eMAR ====================

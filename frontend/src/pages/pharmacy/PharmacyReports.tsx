@@ -3,6 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { Button, Input } from "../../components/ui";
 import { apiFetch, reportError } from "../../lib/api";
 import type { Notice } from "../../types";
+import { generatePDFBlob, printPDF } from "../../lib/exportService";
 import { printViaIframe } from "../../lib/printViaIframe";
 import { buildPrintDocumentHtml } from "../../lib/printTemplates";
 import { PRINT_BRAND_HEADER_DATA_URI } from "../../lib/printBrand";
@@ -217,62 +218,239 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
     returns: "Pharmacy Returns & Reversals Report",
   };
 
-  // Same pipeline the Main Dashboard's own Print button uses (a real
-  // backend-rendered PDF via generatePDFBlob, then printPDF opens it) --
-  // every report in the app shares one template, not a second one just here.
-  const handlePrintReport = async () => {
-    let columns: string[] = [];
-    let rows: (string | number)[][] = [];
-    let grandTotalLabel = "";
-    let grandTotalValue = "";
+  const [printing, setPrinting] = useState<"" | "current" | "all">("");
 
-    if (reportCategory === "sales") {
-      columns = ["Medicine", "Qty", "Unit Price", "Amount", "Source", "Type", "Date"];
-      let grandTotal = 0;
-      rows = filteredSales.map((s) => {
-        const amount = s.amount || 0;
-        grandTotal += amount;
-        return [s.medicine_name, s.quantity, `₹${(s.unit_price || 0).toFixed(2)}`, `₹${amount.toFixed(2)}`, s.stock_source || "CASH", "OP Dispense", s.sold_at ? new Date(s.sold_at).toLocaleDateString("en-IN") : "-"];
-      });
-      grandTotalLabel = "Total Revenue"; grandTotalValue = `₹${grandTotal.toFixed(2)}`;
-    } else if (reportCategory === "inventory") {
-      columns = ["Medicine", "Qty Available", "Unit Cost", "MRP", "Total Cost Value", "Expiry"];
-      let grandTotal = 0;
-      rows = stock.map((b) => {
-        const value = (b.qty_available || 0) * (b.unit_price || 0);
-        grandTotal += value;
-        return [b.medicine_name, b.qty_available, `₹${(b.unit_price || 0).toFixed(2)}`, `₹${(b.mrp || b.unit_price || 0).toFixed(2)}`, `₹${value.toFixed(2)}`, b.expiry_date || "-"];
-      });
-      grandTotalLabel = "Total Stock Value"; grandTotalValue = `₹${grandTotal.toFixed(2)}`;
-
-    } else {
-      columns = ["Return ID", "Original Sale", "Qty", "Reason", "Status", "Date"];
-      rows = returns.map((r) => [r.id, r.original_sale_id, r.quantity, r.reason || "-", r.status, r.created_at || "-"]);
-    }
-
+  // Standard PDF Export pipeline using generatePDFBlob & printPDF
+  const handlePrintReport = async (mode: "current" | "all" = "current") => {
+    if (printing) return;
+    setPrinting(mode);
     try {
-      printViaIframe(buildPrintDocumentHtml({
-        title: CATEGORY_TITLES[reportCategory] || "Pharmacy Report",
-        subtitleLines: [
-          `Category: ${CATEGORY_TITLES[reportCategory]}`,
-          `Records: ${rows.length}`,
-          `Filter: ${dateFilter === "all" ? "All dates" : dateFilter}`,
-          `Generated: ${new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })}`,
-        ],
-        columns,
-        rows,
-        totals: grandTotalValue ? [{ label: grandTotalLabel || "Grand Total", value: grandTotalValue, grand: true }] : undefined,
-        emptyMessage: "No report records found for the selected category and filter.",
-        brandLogoDataUri: PRINT_BRAND_HEADER_DATA_URI,
-        brandName: "AYU CLINIC",
-      }), "__hospai_pharmacy_reports_print_frame__", {
-        suppressBrowserHeadersAndFooters: true,
-        preserveDocumentHeader: true,
-        footerAtBottom: true,
-        includeSignature: false,
+      const now = new Date();
+      const dateStr = now.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
       });
+
+      const filterLabel =
+        dateFilter === "all"
+          ? "All Time"
+          : dateFilter === "today"
+          ? "Today"
+          : dateFilter === "week"
+          ? "Last 7 Days"
+          : "This Month";
+
+      let payload: any;
+
+      if (mode === "all") {
+        // Consolidated Master PDF containing ALL related pharmacy report pages
+        payload = {
+          title: "Pharmacy Consolidated Master Report",
+          subtitle: `Complete Operational, Revenue, Valuation & Audit Master Report · Generated on ${dateStr}`,
+          brand_logo: "ayu",
+          document_type: "Pharmacy Comprehensive Report",
+          filename: `Pharmacy_Master_Report_${now.toISOString().split("T")[0]}`,
+          sections: [
+            {
+              title: "Revenue & Sales Performance Summary",
+              headers: ["Metric", "Amount", "Operational Context"],
+              rows: [
+                ["Total Pharmacy Revenue", `₹${salesMetrics.totalRevenue.toFixed(2)}`, "Net revenue after returns/refunds"],
+                ["OP Counter Sales", `₹${salesMetrics.opRevenue.toFixed(2)}`, "Outpatient dispensations"],
+                ["Cash Counter Revenue", `₹${salesMetrics.cashRevenue.toFixed(2)}`, "Cash stock counter sales"],
+                ["Insurance Counter Revenue", `₹${salesMetrics.insuranceRevenue.toFixed(2)}`, "Insurance stock counter sales"],
+                ["Returned / Refunded", `-₹${salesMetrics.totalReturned.toFixed(2)}`, "Total processed refunds"],
+                ["Total Completed Transactions", `${filteredSales.length} sales`, `Time filter: ${filterLabel}`],
+              ],
+            },
+            {
+              title: `Itemized Sales Breakdown (${filterLabel})`,
+              headers: ["Medicine", "Qty", "Unit Price", "Total Amount", "Source", "Patient UHID", "Date / Time"],
+              rows: filteredSales.map((s) => [
+                s.medicine_name,
+                s.quantity,
+                `₹${(s.unit_price || 0).toFixed(2)}`,
+                `₹${(s.amount || 0).toFixed(2)}`,
+                s.stock_source || "CASH",
+                s.patient_id || "-",
+                s.sold_at ? new Date(s.sold_at).toLocaleString("en-IN") : "-",
+              ]),
+            },
+            {
+              title: "Inventory Stock Valuation Summary",
+              headers: ["Metric", "Quantity / Valuation", "Basis & Context"],
+              rows: [
+                ["Total Physical Stock Units", `${inventoryValuation.totalQty.toLocaleString("en-IN")} units`, "Active physical inventory"],
+                ["Stock Cost Valuation (Cost Basis)", `₹${inventoryValuation.costVal.toFixed(2)}`, "Acquisition cost basis"],
+                ["Potential Retail MRP Value", `₹${inventoryValuation.mrpVal.toFixed(2)}`, "Max retail realization"],
+                ["Estimated Gross Margin Potential", `₹${Math.max(0, inventoryValuation.mrpVal - inventoryValuation.costVal).toFixed(2)}`, "MRP value minus cost"],
+                ["Total Distinct Batches", `${stock.length} active batches`, "Across Cash & Insurance counters"],
+              ],
+            },
+            {
+              title: "Stock Valuation by Batch",
+              headers: ["Medicine", "Available Qty", "Cost Price", "Cost Value", "Retail MRP", "Total MRP", "Expiry"],
+              rows: stock.map((b) => [
+                b.medicine_name,
+                b.qty_available,
+                `₹${(b.unit_price || 0).toFixed(2)}`,
+                `₹${((b.qty_available || 0) * (b.unit_price || 0)).toFixed(2)}`,
+                `₹${(b.mrp || b.unit_price || 0).toFixed(2)}`,
+                `₹${((b.qty_available || 0) * (b.mrp || b.unit_price || 0)).toFixed(2)}`,
+                b.expiry_date || "-",
+              ]),
+            },
+            {
+              title: "Pharmacy Returns & Reversals Audit Log",
+              headers: ["Return ID", "Sale Ref", "Qty", "Reason", "Status", "Date"],
+              rows:
+                returns.length > 0
+                  ? returns.map((r) => [
+                      `RET-${r.id}`,
+                      `Sale #${r.original_sale_id}`,
+                      r.quantity,
+                      r.reason || "Return",
+                      r.status || "Processed",
+                      r.created_at ? new Date(r.created_at).toLocaleDateString("en-IN") : "-",
+                    ])
+                  : [["-", "-", "-", "No returns recorded", "-", "-"]],
+            },
+          ],
+          totals: {
+            subtotal: `₹${salesMetrics.totalRevenue.toFixed(2)}`,
+            grand_total: `₹${(salesMetrics.totalRevenue + inventoryValuation.costVal).toFixed(2)}`,
+            amount_received: `₹${salesMetrics.opRevenue.toFixed(2)}`,
+          },
+        };
+      } else if (reportCategory === "sales") {
+        payload = {
+          title: "Pharmacy Sales & Revenue Report",
+          subtitle: `Category: Sales & Revenue · Filter: ${filterLabel} · Generated on ${dateStr}`,
+          brand_logo: "ayu",
+          document_type: "Sales & Revenue Report",
+          filename: `Pharmacy_Sales_Report_${filterLabel.replace(/\s+/g, "_")}`,
+          sections: [
+            {
+              title: "Revenue & Sales Performance Summary",
+              headers: ["Metric", "Amount", "Operational Context"],
+              rows: [
+                ["Total Pharmacy Revenue", `₹${salesMetrics.totalRevenue.toFixed(2)}`, "Net revenue after returns"],
+                ["OP Counter Sales", `₹${salesMetrics.opRevenue.toFixed(2)}`, "Outpatient dispensations"],
+                ["Cash Counter Revenue", `₹${salesMetrics.cashRevenue.toFixed(2)}`, "Cash sales counter"],
+                ["Insurance Counter Revenue", `₹${salesMetrics.insuranceRevenue.toFixed(2)}`, "Insurance billing counter"],
+                ["Returned / Refunded", `-₹${salesMetrics.totalReturned.toFixed(2)}`, "Total processed refunds"],
+                ["Total Completed Sales", `${filteredSales.length} sales`, `Time filter: ${filterLabel}`],
+              ],
+            },
+            {
+              title: "Itemized Sales Transactions",
+              headers: ["Medicine", "Qty", "Unit Price", "Total Amount", "Source", "Patient UHID", "Date / Time"],
+              rows: filteredSales.map((s) => [
+                s.medicine_name,
+                s.quantity,
+                `₹${(s.unit_price || 0).toFixed(2)}`,
+                `₹${(s.amount || 0).toFixed(2)}`,
+                s.stock_source || "CASH",
+                s.patient_id || "-",
+                s.sold_at ? new Date(s.sold_at).toLocaleString("en-IN") : "-",
+              ]),
+            },
+          ],
+          totals: {
+            grand_total: `₹${salesMetrics.totalRevenue.toFixed(2)}`,
+            amount_received: `₹${salesMetrics.opRevenue.toFixed(2)}`,
+          },
+        };
+      } else if (reportCategory === "inventory") {
+        payload = {
+          title: "Pharmacy Inventory Valuation Report",
+          subtitle: `Category: Inventory Valuation · Total Batches: ${stock.length} · Generated on ${dateStr}`,
+          brand_logo: "ayu",
+          document_type: "Inventory Valuation Report",
+          filename: "Pharmacy_Inventory_Valuation_Report",
+          sections: [
+            {
+              title: "Inventory Stock Valuation Summary",
+              headers: ["Metric", "Quantity / Valuation", "Basis & Context"],
+              rows: [
+                ["Total Physical Stock Units", `${inventoryValuation.totalQty.toLocaleString("en-IN")} units`, "Active physical inventory"],
+                ["Stock Cost Valuation (Cost Basis)", `₹${inventoryValuation.costVal.toFixed(2)}`, "Acquisition cost basis"],
+                ["Potential Retail MRP Value", `₹${inventoryValuation.mrpVal.toFixed(2)}`, "Max retail realization"],
+                ["Estimated Gross Margin Potential", `₹${Math.max(0, inventoryValuation.mrpVal - inventoryValuation.costVal).toFixed(2)}`, "MRP value minus cost"],
+                ["Total Distinct Batches", `${stock.length} active batches`, "Across Cash & Insurance counters"],
+              ],
+            },
+            {
+              title: "Stock Valuation by Batch",
+              headers: ["Medicine", "Available Qty", "Cost Price", "Cost Value", "Retail MRP", "Total MRP", "Expiry"],
+              rows: stock.map((b) => [
+                b.medicine_name,
+                b.qty_available,
+                `₹${(b.unit_price || 0).toFixed(2)}`,
+                `₹${((b.qty_available || 0) * (b.unit_price || 0)).toFixed(2)}`,
+                `₹${(b.mrp || b.unit_price || 0).toFixed(2)}`,
+                `₹${((b.qty_available || 0) * (b.mrp || b.unit_price || 0)).toFixed(2)}`,
+                b.expiry_date || "-",
+              ]),
+            },
+          ],
+          totals: {
+            subtotal: `₹${inventoryValuation.costVal.toFixed(2)}`,
+            grand_total: `₹${inventoryValuation.mrpVal.toFixed(2)}`,
+          },
+        };
+      } else {
+        payload = {
+          title: "Pharmacy Returns & Reversals Report",
+          subtitle: `Category: Returns & Reversals · Total Records: ${returns.length} · Generated on ${dateStr}`,
+          brand_logo: "ayu",
+          document_type: "Returns & Reversals Report",
+          filename: "Pharmacy_Returns_Report",
+          sections: [
+            {
+              title: "Returns & Refund Summary",
+              headers: ["Metric", "Value", "Operational Impact"],
+              rows: [
+                ["Total Return Incidents", `${returns.length} entries`, "Logged patient/counter returns"],
+                ["Total Refund Amount Deducted", `₹${salesMetrics.totalReturned.toFixed(2)}`, "Deducted from sales receipts"],
+              ],
+            },
+            {
+              title: "Pharmacy Returns & Reversals Audit Log",
+              headers: ["Return ID", "Sale Ref", "Qty", "Reason", "Status", "Date"],
+              rows:
+                returns.length > 0
+                  ? returns.map((r) => [
+                      `RET-${r.id}`,
+                      `Sale #${r.original_sale_id}`,
+                      r.quantity,
+                      r.reason || "Return",
+                      r.status || "Processed",
+                      r.created_at ? new Date(r.created_at).toLocaleDateString("en-IN") : "-",
+                    ])
+                  : [["-", "-", "-", "No returns recorded", "-", "-"]],
+            },
+          ],
+          totals: {
+            grand_total: `₹${salesMetrics.totalReturned.toFixed(2)}`,
+          },
+        };
+      }
+
+      const { blob } = await generatePDFBlob(payload);
+      printPDF(blob);
+      setNotice({ type: "success", message: `Generated ${payload.title} for printing.` });
     } catch (error) {
-      setNotice({ type: "error", message: error instanceof Error ? error.message : "Unable to print the report." });
+      console.error("Print report failed:", error);
+      setNotice({
+        type: "error",
+        message: error instanceof Error ? error.message : "Unable to generate and print PDF report.",
+      });
+    } finally {
+      setPrinting("");
     }
   };
 
@@ -294,11 +472,22 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
           </Button>
           <Button
             type="button"
+            variant="secondary"
+            onClick={() => void handlePrintReport("all")}
+            disabled={printing !== ""}
+            title="Generate and print a consolidated PDF containing all related report pages"
+          >
+            {printing === "all" ? "Generating..." : "Print All Pages"}
+          </Button>
+          <Button
+            type="button"
             className="primary"
             style={{ background: "#00828a", borderColor: "#00828a" }}
-            onClick={handlePrintReport}
+            onClick={() => void handlePrintReport("current")}
+            disabled={printing !== ""}
+            title={`Generate and print PDF for ${CATEGORY_TITLES[reportCategory]}`}
           >
-            Print Report
+            {printing === "current" ? "Generating..." : "Print Report"}
           </Button>
         </div>
       </div>

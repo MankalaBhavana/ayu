@@ -911,8 +911,24 @@ class GoodsReceipts(Base):
     supplier_invoice_no: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
     stock_source: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'CASH'::text"))
+    supplier_id: Mapped[Optional[int]] = mapped_column(Integer)
     idempotency_key: Mapped[Optional[str]] = mapped_column(Text)
     idempotency_payload_hash: Mapped[Optional[str]] = mapped_column(Text)
+
+
+class SupplierPayments(Base):
+    __tablename__ = 'supplier_payments'
+    __table_args__ = (
+        PrimaryKeyConstraint('id', name='supplier_payments_pkey'),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    supplier_id: Mapped[int] = mapped_column(Integer, nullable=False)
+    amount: Mapped[float] = mapped_column(Double(53), nullable=False)
+    payment_mode: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'BANK_TRANSFER'::text"))
+    reference_no: Mapped[Optional[str]] = mapped_column(Text)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
 
 
 class HospitalBeds(Base):

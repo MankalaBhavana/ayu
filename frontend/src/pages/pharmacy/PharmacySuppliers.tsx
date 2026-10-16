@@ -4,6 +4,7 @@ import { Button, Input, Modal } from "../../components/ui";
 import { apiFetch, reportError } from "../../lib/api";
 import { downloadCsv } from "../../lib/csvExport";
 import type { Notice } from "../../types";
+import { generatePDFBlob, printPDF } from "../../lib/exportService";
 
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
@@ -28,9 +29,22 @@ type SupplierLedger = {
   supplier: Supplier;
   total_purchases: number;
   total_paid: number;
-  outstanding: number;
-  purchases: any[];
-  goods_receipts: any[];
+  outstanding?: number;
+  outstanding_balance?: number;
+  purchases: Array<{
+    id: string | number;
+    order_id?: number;
+    entry_type?: string;
+    type?: string;
+    ref_no?: string;
+    medicine_name: string;
+    quantity: number;
+    unit_cost?: number;
+    total_cost: number;
+    status: string;
+    created_at: string;
+  }>;
+  recent_receipts?: any[];
 };
 
 export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
@@ -48,7 +62,13 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
   const [formGst, setFormGst] = useState("");
   const [formDrugLic, setFormDrugLic] = useState("");
   const [formAddress, setFormAddress] = useState("");
+  const [formStatus, setFormStatus] = useState<"active" | "inactive">("active");
   const [submittingForm, setSubmittingForm] = useState(false);
+
+  // Status & Delete management
+  const [updatingStatusId, setUpdatingStatusId] = useState<number | null>(null);
+  const [supplierToDelete, setSupplierToDelete] = useState<Supplier | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   // Selected Supplier Ledger Modal / View
   const [ledgerModalOpen, setLedgerModalOpen] = useState(false);
@@ -114,6 +134,7 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
     setFormGst("");
     setFormDrugLic("");
     setFormAddress("");
+    setFormStatus("active");
     setModalOpen(true);
   };
 
@@ -127,7 +148,61 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
     setFormGst(s.gst_number || "");
     setFormDrugLic(s.drug_license_no || "");
     setFormAddress(s.address || "");
+    setFormStatus(s.status || "active");
     setModalOpen(true);
+  };
+
+  // Toggle Supplier Status (active <-> inactive)
+  const handleToggleStatus = async (s: Supplier) => {
+    const nextStatus: "active" | "inactive" = s.status === "active" ? "inactive" : "active";
+    setUpdatingStatusId(s.id);
+    try {
+      await apiFetch(`/api/pharmacy/suppliers/${s.id}`, {
+        method: "PUT",
+        body: JSON.stringify({
+          supplier_name: s.supplier_name,
+          contact_person: s.contact_person,
+          phone: s.phone,
+          email: s.email,
+          gst_number: s.gst_number,
+          drug_license_no: s.drug_license_no,
+          address: s.address,
+          status: nextStatus,
+        }),
+      });
+      setSuppliers((prev) =>
+        prev.map((item) => (item.id === s.id ? { ...item, status: nextStatus } : item))
+      );
+      setNotice({
+        type: "success",
+        message: `Supplier "${s.supplier_name}" status set to ${nextStatus}.`,
+      });
+    } catch (err) {
+      reportError(setNotice, err as any, "Failed to update supplier status");
+    } finally {
+      setUpdatingStatusId(null);
+    }
+  };
+
+  // Delete Supplier
+  const handleConfirmDelete = async () => {
+    if (!supplierToDelete) return;
+    setDeleting(true);
+    try {
+      await apiFetch(`/api/pharmacy/suppliers/${supplierToDelete.id}`, {
+        method: "DELETE",
+      });
+      setSuppliers((prev) => prev.filter((s) => s.id !== supplierToDelete.id));
+      setNotice({
+        type: "success",
+        message: `Supplier "${supplierToDelete.supplier_name}" deleted successfully.`,
+      });
+      setSupplierToDelete(null);
+    } catch (err) {
+      reportError(setNotice, err as any, "Failed to delete supplier");
+    } finally {
+      setDeleting(false);
+    }
   };
 
   // Save Supplier (Create or Update)
@@ -152,7 +227,7 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
         gst_number: formGst,
         drug_license_no: formDrugLic,
         address: formAddress,
-        status: "active",
+        status: formStatus,
       };
 
       if (editingSupplier) {
@@ -194,23 +269,152 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
   };
 
   // Record Payment
-  const handleRecordPayment = () => {
+  const handleRecordPayment = async () => {
     const amountNum = parseFloat(payAmount) || 0;
     if (amountNum <= 0) {
       setNotice({ type: "warning", message: "Payment amount must be greater than 0" });
       return;
     }
-    setNotice({
-      type: "success",
-      message: `Disbursement of ₹${amountNum.toFixed(2)} recorded via ${payMode}. Ref #${payRef || "N/A"}.`,
-    });
-    setPaymentModalOpen(false);
-    if (selectedLedger) {
-      setSelectedLedger({
-        ...selectedLedger,
-        total_paid: selectedLedger.total_paid + amountNum,
-        outstanding: Math.max(0, selectedLedger.outstanding - amountNum),
+    if (!selectedLedger) return;
+
+    try {
+      await apiFetch(`/api/pharmacy/suppliers/${selectedLedger.supplier.id}/payments`, {
+        method: "POST",
+        body: JSON.stringify({
+          amount: amountNum,
+          payment_mode: payMode,
+          reference_no: payRef,
+        }),
       });
+      setNotice({
+        type: "success",
+        message: `Disbursement of ₹${amountNum.toFixed(2)} recorded via ${payMode}. Ref #${payRef || "N/A"}.`,
+      });
+      setPaymentModalOpen(false);
+      // Reload updated ledger from server to refresh live totals
+      await handleOpenLedger(selectedLedger.supplier.id);
+    } catch (err) {
+      reportError(setNotice, err as any, "Failed to record payment");
+    }
+  };
+
+  const [printingSuppliers, setPrintingSuppliers] = useState(false);
+  const [printingLedger, setPrintingLedger] = useState(false);
+
+  const handlePrintSuppliersReport = async () => {
+    if (printingSuppliers) return;
+    setPrintingSuppliers(true);
+    try {
+      const now = new Date();
+      const dateStr = now.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      const payload = {
+        title: "Pharmacy Registered Suppliers Directory",
+        subtitle: `Total Registered Suppliers: ${suppliers.length} · Active: ${suppliers.filter((s) => s.status === "active").length} · Generated on ${dateStr}`,
+        brand_logo: "ayu" as const,
+        document_type: "Suppliers Directory Report",
+        filename: `Pharmacy_Suppliers_${now.toISOString().split("T")[0]}`,
+        sections: [
+          {
+            title: "Registered Pharmacy Suppliers",
+            headers: ["Supplier Name", "Contact Person", "Phone", "GST Number", "Drug License", "Status"],
+            rows: filteredSuppliers.map((s) => [
+              s.supplier_name,
+              s.contact_person || "-",
+              s.phone || "-",
+              s.gst_number || "-",
+              s.drug_license_no || "-",
+              s.status.toUpperCase(),
+            ]),
+          },
+        ],
+      };
+
+      const { blob } = await generatePDFBlob(payload);
+      printPDF(blob);
+      setNotice({ type: "success", message: "Generated Suppliers Directory report for printing." });
+    } catch (error) {
+      console.error("Print suppliers failed:", error);
+      setNotice({
+        type: "error",
+        message: error instanceof Error ? error.message : "Unable to generate and print suppliers report.",
+      });
+    } finally {
+      setPrintingSuppliers(false);
+    }
+  };
+
+  const handlePrintSupplierLedger = async () => {
+    if (!selectedLedger || printingLedger) return;
+    setPrintingLedger(true);
+    try {
+      const now = new Date();
+      const dateStr = now.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      const outstanding = (selectedLedger.outstanding ?? selectedLedger.outstanding_balance) || 0;
+
+      const payload = {
+        title: `Supplier Account Ledger — ${selectedLedger.supplier.supplier_name}`,
+        subtitle: `Supplier ID: #${selectedLedger.supplier.id} · Contact: ${selectedLedger.supplier.phone || "-"} · GST: ${selectedLedger.supplier.gst_number || "-"} · Generated on ${dateStr}`,
+        brand_logo: "ayu" as const,
+        document_type: "Supplier Statement of Account",
+        filename: `Supplier_Ledger_${selectedLedger.supplier.supplier_name.replace(/\s+/g, "_")}`,
+        sections: [
+          {
+            title: "Financial Statement Summary",
+            headers: ["Metric", "Amount", "Description"],
+            rows: [
+              ["Total Inward Purchases", `₹${(selectedLedger.total_purchases || 0).toFixed(2)}`, "Cumulative verified delivered orders"],
+              ["Total Payments Made", `₹${(selectedLedger.total_paid || 0).toFixed(2)}`, "Cumulative disbursements to supplier"],
+              ["Outstanding Balance Payable", `₹${outstanding.toFixed(2)}`, "Net balance payable"],
+            ],
+          },
+          {
+            title: "Recent Orders, Deliveries & Requisitions",
+            headers: ["Date", "Type / Ref", "Medicine / Product", "Qty", "Total Cost", "Status"],
+            rows:
+              selectedLedger.purchases && selectedLedger.purchases.length > 0
+                ? selectedLedger.purchases.map((p) => [
+                    p.created_at ? new Date(p.created_at).toLocaleDateString("en-IN") : "-",
+                    p.entry_type || p.ref_no || p.type || "Order",
+                    p.medicine_name,
+                    p.quantity,
+                    `₹${Number(p.total_cost || 0).toFixed(2)}`,
+                    p.status,
+                  ])
+                : [["-", "-", "No transaction history recorded", "-", "-", "-"]],
+          },
+        ],
+        totals: {
+          subtotal: `₹${(selectedLedger.total_purchases || 0).toFixed(2)}`,
+          amount_received: `₹${(selectedLedger.total_paid || 0).toFixed(2)}`,
+          grand_total: `₹${outstanding.toFixed(2)}`,
+        },
+      };
+
+      const { blob } = await generatePDFBlob(payload);
+      printPDF(blob);
+      setNotice({ type: "success", message: `Generated Ledger for ${selectedLedger.supplier.supplier_name} for printing.` });
+    } catch (error) {
+      console.error("Print ledger failed:", error);
+      setNotice({
+        type: "error",
+        message: error instanceof Error ? error.message : "Unable to generate and print supplier ledger.",
+      });
+    } finally {
+      setPrintingLedger(false);
     }
   };
 
@@ -234,6 +438,15 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
             onClick={handleOpenAdd}
           >
             + Add Supplier
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => void handlePrintSuppliersReport()}
+            disabled={printingSuppliers || filteredSuppliers.length === 0}
+            title="Generate and print suppliers directory PDF"
+          >
+            {printingSuppliers ? "Generating..." : "Print Directory"}
           </Button>
           <Button type="button" variant="secondary" onClick={() => void loadSuppliers()}>
             Refresh
@@ -290,18 +503,38 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
                       {s.gst_number || "-"}
                     </td>
                     <td style={{ padding: "0.6rem 0.75rem" }}>
-                      <span
+                      <button
+                        type="button"
+                        disabled={updatingStatusId === s.id}
+                        onClick={() => void handleToggleStatus(s)}
+                        title={`Click to switch status to ${s.status === "active" ? "inactive" : "active"}`}
                         style={{
-                          padding: "2px 8px",
-                          borderRadius: "10px",
+                          padding: "3px 10px",
+                          borderRadius: "12px",
                           fontSize: "0.75rem",
                           fontWeight: 700,
+                          cursor: updatingStatusId === s.id ? "wait" : "pointer",
+                          border: s.status === "active" ? "1px solid #86efac" : "1px solid #cbd5e1",
                           background: s.status === "active" ? "#dcfce7" : "#f1f5f9",
                           color: s.status === "active" ? "#166534" : "#64748b",
+                          display: "inline-flex",
+                          alignItems: "center",
+                          gap: "5px",
+                          textTransform: "capitalize",
+                          transition: "all 0.15s ease",
                         }}
                       >
-                        {s.status}
-                      </span>
+                        <span
+                          style={{
+                            display: "inline-block",
+                            width: "7px",
+                            height: "7px",
+                            borderRadius: "50%",
+                            background: s.status === "active" ? "#22c55e" : "#94a3b8",
+                          }}
+                        />
+                        {updatingStatusId === s.id ? "Updating..." : s.status}
+                      </button>
                     </td>
                     <td style={{ padding: "0.6rem 0.75rem", textAlign: "right" }}>
                       <div style={{ display: "inline-flex", gap: "0.5rem" }}>
@@ -320,6 +553,20 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
                           onClick={() => handleOpenEdit(s)}
                         >
                           Edit
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          style={{
+                            padding: "2px 10px",
+                            fontSize: "0.78rem",
+                            color: "#dc2626",
+                            borderColor: "#fecaca",
+                            backgroundColor: "#fff5f5",
+                          }}
+                          onClick={() => setSupplierToDelete(s)}
+                        >
+                          Delete
                         </Button>
                       </div>
                     </td>
@@ -395,6 +642,33 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
 
               <div>
                 <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
+                  Email Address:
+                </label>
+                <Input
+                  type="email"
+                  value={formEmail}
+                  onChange={(e) => setFormEmail(e.target.value)}
+                  placeholder="orders@supplier.com"
+                />
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
+                  Status:
+                </label>
+                <select
+                  className="ui-input"
+                  style={{ width: "100%", padding: "0.45rem 0.6rem", borderRadius: "6px", border: "1px solid #cbd5e1", background: "#ffffff", fontSize: "0.85rem" }}
+                  value={formStatus}
+                  onChange={(e) => setFormStatus(e.target.value as "active" | "inactive")}
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                </select>
+              </div>
+
+              <div>
+                <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
                   GST Number:
                 </label>
                 <Input
@@ -445,10 +719,46 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
         </Modal>
       )}
 
+      {/* Delete Confirmation Modal */}
+      {supplierToDelete && (
+        <Modal open={Boolean(supplierToDelete)} onClose={() => !deleting && setSupplierToDelete(null)}>
+          <div style={{ padding: "1.5rem", maxWidth: "460px" }}>
+            <h3 style={{ margin: "0 0 0.5rem 0", color: "#dc2626" }}>Delete Supplier</h3>
+            <p style={{ margin: "0 0 1.25rem 0", fontSize: "0.875rem", color: "#475569", lineHeight: "1.5" }}>
+              Are you sure you want to delete supplier <strong>{supplierToDelete.supplier_name}</strong>?
+              This action will permanently remove the supplier record.
+            </p>
+            <div style={{ display: "flex", gap: "0.75rem", justifyContent: "flex-end" }}>
+              <Button
+                type="button"
+                variant="secondary"
+                disabled={deleting}
+                onClick={() => setSupplierToDelete(null)}
+              >
+                Cancel
+              </Button>
+              <Button
+                type="button"
+                style={{
+                  background: "#dc2626",
+                  borderColor: "#dc2626",
+                  color: "#ffffff",
+                  fontWeight: 700,
+                }}
+                disabled={deleting}
+                onClick={() => void handleConfirmDelete()}
+              >
+                {deleting ? "Deleting..." : "Confirm Delete"}
+              </Button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
       {/* Supplier Ledger Modal */}
       {ledgerModalOpen && (
         <Modal open={ledgerModalOpen} onClose={() => setLedgerModalOpen(false)}>
-          <div style={{ padding: "1.5rem", maxWidth: "750px" }}>
+          <div style={{ padding: "1.5rem", maxWidth: "820px" }}>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "1rem" }}>
               <div>
                 <h3 style={{ margin: "0 0 2px 0", color: "#0f172a" }}>
@@ -458,18 +768,30 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
                   GST: {selectedLedger?.supplier?.gst_number || "N/A"} · Contact: {selectedLedger?.supplier?.phone || "N/A"}
                 </span>
               </div>
-              <Button
-                type="button"
-                className="primary"
-                style={{ background: "#00828a", borderColor: "#00828a", padding: "4px 12px", fontSize: "0.8rem" }}
-                onClick={() => {
-                  setPayAmount("");
-                  setPayRef("");
-                  setPaymentModalOpen(true);
-                }}
-              >
-                + Record Payment
-              </Button>
+              <div style={{ display: "flex", gap: "0.5rem" }}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  style={{ padding: "4px 12px", fontSize: "0.8rem" }}
+                  onClick={() => void handlePrintSupplierLedger()}
+                  disabled={printingLedger}
+                  title="Generate and print supplier account ledger PDF"
+                >
+                  {printingLedger ? "Generating..." : "Print Ledger"}
+                </Button>
+                <Button
+                  type="button"
+                  className="primary"
+                  style={{ background: "#00828a", borderColor: "#00828a", padding: "4px 12px", fontSize: "0.8rem" }}
+                  onClick={() => {
+                    setPayAmount("");
+                    setPayRef("");
+                    setPaymentModalOpen(true);
+                  }}
+                >
+                  + Record Payment
+                </Button>
+              </div>
             </div>
 
             {/* Financial Balance Summary */}
@@ -489,7 +811,7 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
               <div style={{ background: "#fef2f2", padding: "0.85rem", borderRadius: "8px", border: "1px solid #fecaca" }}>
                 <div style={{ fontSize: "0.75rem", color: "#991b1b", fontWeight: 600 }}>Outstanding Balance</div>
                 <div style={{ fontSize: "1.3rem", fontWeight: 800, color: "#dc2626" }}>
-                  ₹{(selectedLedger?.outstanding || 0).toFixed(2)}
+                  ₹{((selectedLedger?.outstanding ?? selectedLedger?.outstanding_balance) || 0).toFixed(2)}
                 </div>
               </div>
             </div>
@@ -498,33 +820,86 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
             <h4 style={{ margin: "0 0 0.5rem 0", fontSize: "0.95rem", color: "#0f172a" }}>
               Recent Purchase Orders & Deliveries
             </h4>
-            <div style={{ maxHeight: "250px", overflowY: "auto" }}>
+            <div style={{ maxHeight: "300px", overflowY: "auto" }}>
               <table className="pharmacy-data-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.8rem" }}>
                 <thead>
                   <tr style={{ borderBottom: "1.5px solid #e2e8f0", textAlign: "left", color: "#64748b" }}>
-                    <th style={{ padding: "0.4rem" }}>Date</th>
-                    <th style={{ padding: "0.4rem" }}>Medicine</th>
-                    <th style={{ padding: "0.4rem", textAlign: "center" }}>Qty</th>
-                    <th style={{ padding: "0.4rem", textAlign: "right" }}>Total Cost</th>
-                    <th style={{ padding: "0.4rem" }}>Status</th>
+                    <th style={{ padding: "0.45rem" }}>Date</th>
+                    <th style={{ padding: "0.45rem" }}>Ref / Type</th>
+                    <th style={{ padding: "0.45rem" }}>Medicine</th>
+                    <th style={{ padding: "0.45rem", textAlign: "center" }}>Qty</th>
+                    <th style={{ padding: "0.45rem", textAlign: "right" }}>Total Cost</th>
+                    <th style={{ padding: "0.45rem" }}>Status</th>
                   </tr>
                 </thead>
                 <tbody>
                   {selectedLedger?.purchases && selectedLedger.purchases.length > 0 ? (
-                    selectedLedger.purchases.map((p) => (
-                      <tr key={p.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                        <td style={{ padding: "0.4rem", color: "#64748b" }}>
-                          {p.created_at ? new Date(p.created_at).toLocaleDateString() : "-"}
-                        </td>
-                        <td style={{ padding: "0.4rem", fontWeight: 600 }}>{p.medicine_name}</td>
-                        <td style={{ padding: "0.4rem", textAlign: "center" }}>{p.quantity}</td>
-                        <td style={{ padding: "0.4rem", textAlign: "right", fontWeight: 700 }}>₹{p.total_cost}</td>
-                        <td style={{ padding: "0.4rem", textTransform: "capitalize" }}>{p.status}</td>
-                      </tr>
-                    ))
+                    selectedLedger.purchases.map((p) => {
+                      const isGrn = p.type === "GRN" || (p.entry_type && p.entry_type.includes("Delivery"));
+                      const isPr = p.type === "PR" || (p.entry_type && p.entry_type.includes("Request"));
+                      const badgeColor = isGrn
+                        ? { bg: "#ecfdf5", text: "#065f46", border: "#a7f3d0", label: "Delivery" }
+                        : isPr
+                        ? { bg: "#eff6ff", text: "#1e40af", border: "#bfdbfe", label: "Requisition" }
+                        : { bg: "#f0fdfa", text: "#0f766e", border: "#99f6e4", label: "PO Order" };
+
+                      const statusLower = (p.status || "").toLowerCase();
+                      const isPositive = statusLower.includes("verified") || statusLower.includes("approved") || statusLower.includes("ordered");
+                      const isNegative = statusLower.includes("rejected") || statusLower.includes("cancelled");
+
+                      return (
+                        <tr key={p.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                          <td style={{ padding: "0.45rem", color: "#64748b", whiteSpace: "nowrap" }}>
+                            {p.created_at ? new Date(p.created_at).toLocaleDateString() : "-"}
+                          </td>
+                          <td style={{ padding: "0.45rem", whiteSpace: "nowrap" }}>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "0.15rem 0.45rem",
+                                borderRadius: "4px",
+                                fontSize: "0.7rem",
+                                fontWeight: 700,
+                                background: badgeColor.bg,
+                                color: badgeColor.text,
+                                border: `1px solid ${badgeColor.border}`,
+                              }}
+                            >
+                              {p.entry_type || badgeColor.label}
+                            </span>
+                            {p.ref_no && (
+                              <div style={{ fontSize: "0.68rem", color: "#94a3b8", marginTop: "2px" }}>
+                                {p.ref_no}
+                              </div>
+                            )}
+                          </td>
+                          <td style={{ padding: "0.45rem", fontWeight: 600 }}>{p.medicine_name}</td>
+                          <td style={{ padding: "0.45rem", textAlign: "center" }}>{p.quantity}</td>
+                          <td style={{ padding: "0.45rem", textAlign: "right", fontWeight: 700 }}>
+                            ₹{Number(p.total_cost || 0).toFixed(2)}
+                          </td>
+                          <td style={{ padding: "0.45rem" }}>
+                            <span
+                              style={{
+                                display: "inline-block",
+                                padding: "0.15rem 0.45rem",
+                                borderRadius: "4px",
+                                fontSize: "0.72rem",
+                                fontWeight: 600,
+                                background: isPositive ? "#f0fdf4" : isNegative ? "#fef2f2" : "#fffbeb",
+                                color: isPositive ? "#166534" : isNegative ? "#991b1b" : "#92400e",
+                                border: `1px solid ${isPositive ? "#bbf7d0" : isNegative ? "#fecaca" : "#fef08a"}`,
+                              }}
+                            >
+                              {p.status}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
                   ) : (
                     <tr>
-                      <td colSpan={5} style={{ padding: "1.5rem", textAlign: "center", color: "#94a3b8" }}>
+                      <td colSpan={6} style={{ padding: "1.5rem", textAlign: "center", color: "#94a3b8" }}>
                         No orders recorded for this supplier.
                       </td>
                     </tr>

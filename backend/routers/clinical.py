@@ -374,14 +374,19 @@ def prescriptions_create(payload: dict = Body(...), db: Session = Depends(get_db
                 )
 
             if payload.get("complete_consultation"):
-                if not appointment_id:
-                    raise HTTPException(status_code=400, detail="appointment_id is required to complete consultation")
-                cursor.execute("UPDATE appointments SET status = 'completed' WHERE id = ?", (appointment_id,))
-                if cursor.rowcount != 1:
-                    raise HTTPException(status_code=404, detail="Appointment not found")
+                if appointment_id:
+                    cursor.execute("UPDATE appointments SET status = 'completed' WHERE id = ?", (appointment_id,))
+                elif patient_id:
+                    cursor.execute(
+                        """
+                        UPDATE appointments SET status = 'completed'
+                        WHERE patient_id = ? AND (status IS NULL OR LOWER(status) != 'completed')
+                        """,
+                        (patient_id,)
+                    )
 
             conn.commit()
-            return {"success": True}
+            return {"success": True, "appointment_id": appointment_id}
         except HTTPException:
             conn.rollback()
             raise

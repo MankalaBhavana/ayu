@@ -5,6 +5,7 @@ import { apiFetch, reportError } from "../../lib/api";
 import { downloadCsv } from "../../lib/csvExport";
 import { useDropdownOptions } from "../../lib/dropdownService";
 import type { Notice } from "../../types";
+import { generatePDFBlob, printPDF } from "../../lib/exportService";
 
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
@@ -132,7 +133,19 @@ type GoodsReceipt = {
 };
 
 export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
-  const [activeTab, setActiveTab] = useState<"grn" | "grn_history" | "pr" | "po" | "returns">("grn");
+  const [activeTab, setActiveTab] = useState<"grn" | "grn_history" | "pr" | "po" | "returns">(() => {
+    const shouldOpen = typeof window !== "undefined" ? sessionStorage.getItem("pharmacy_purchases_open_new_pr") : null;
+    if (shouldOpen === "true") return "pr";
+    const saved = typeof window !== "undefined" ? sessionStorage.getItem("pharmacy_purchases_tab") : null;
+    if (saved === "pr" || saved === "po" || saved === "grn" || saved === "grn_history" || saved === "returns") {
+      sessionStorage.removeItem("pharmacy_purchases_tab");
+      return saved as any;
+    }
+    if (typeof window !== "undefined" && window.location.pathname.includes("pharmacy-purchases-pr")) {
+      return "pr";
+    }
+    return "grn";
+  });
 
   // Suppliers & Orders
   const [suppliers, setSuppliers] = useState<Supplier[]>([]);
@@ -144,12 +157,30 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
   const [grnToDate, setGrnToDate] = useState("");
 
   // New PR Modal State
-  const [newPrModalOpen, setNewPrModalOpen] = useState(false);
-  const [prItems, setPrItems] = useState<PrLineItem[]>(INITIAL_PR_ITEMS);
+  const [newPrModalOpen, setNewPrModalOpen] = useState<boolean>(() => {
+    const shouldOpen = typeof window !== "undefined" ? sessionStorage.getItem("pharmacy_purchases_open_new_pr") : null;
+    if (shouldOpen === "true") {
+      sessionStorage.removeItem("pharmacy_purchases_open_new_pr");
+      return true;
+    }
+    if (typeof window !== "undefined" && (window.location.pathname.includes("pharmacy-purchases-pr") || window.location.search.includes("new_pr=true"))) {
+      return true;
+    }
+    return false;
+  });
+  const [prItems, setPrItems] = useState<PrLineItem[]>(() => {
+    const prefillMed = typeof window !== "undefined" ? sessionStorage.getItem("pharmacy_purchases_prefill_med") : null;
+    if (prefillMed) {
+      sessionStorage.removeItem("pharmacy_purchases_prefill_med");
+      return [{ medicine_name: prefillMed, strength_form: "", quantity: "", unit: "", notes: "Stock reorder" }];
+    }
+    return INITIAL_PR_ITEMS;
+  });
   const [prUrgency, setPrUrgency] = useState<string>("normal");
   const [prNotes, setPrNotes] = useState<string>("");
   const [prSupplierId, setPrSupplierId] = useState<number | null>(null);
   const [prSupplierPhone, setPrSupplierPhone] = useState<string>("");
+  const [prShareWhatsApp, setPrShareWhatsApp] = useState<boolean>(true);
   const [submittingPr, setSubmittingPr] = useState(false);
   const [prModalError, setPrModalError] = useState<string | null>(null);
   const [latestPrShareUrl, setLatestPrShareUrl] = useState<string | null>(null);
@@ -244,6 +275,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
     setPrUrgency("normal");
     setPrNotes("");
     setPrItems([{ medicine_name: "", strength_form: "", quantity: "", unit: "", notes: "" }]);
+    setPrShareWhatsApp(true);
     setPrModalError(null);
     setNewPrModalOpen(true);
   };
@@ -279,6 +311,38 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
 
   useEffect(() => {
     void loadData();
+
+    // Check on mount or navigation if PR modal should open or tab switch
+    const shouldOpen = typeof window !== "undefined" ? sessionStorage.getItem("pharmacy_purchases_open_new_pr") : null;
+    const targetTab = typeof window !== "undefined" ? sessionStorage.getItem("pharmacy_purchases_tab") : null;
+    const prefillMed = typeof window !== "undefined" ? sessionStorage.getItem("pharmacy_purchases_prefill_med") : null;
+
+    if (targetTab === "pr" || targetTab === "po" || targetTab === "grn" || targetTab === "grn_history" || targetTab === "returns") {
+      setActiveTab(targetTab as any);
+      sessionStorage.removeItem("pharmacy_purchases_tab");
+    }
+
+    if (
+      shouldOpen === "true" ||
+      (typeof window !== "undefined" &&
+        (window.location.pathname.includes("pharmacy-purchases-pr") || window.location.search.includes("new_pr=true")))
+    ) {
+      if (typeof window !== "undefined") sessionStorage.removeItem("pharmacy_purchases_open_new_pr");
+      setActiveTab("pr");
+      setPrSupplierId(null);
+      setPrSupplierPhone("");
+      setPrUrgency("normal");
+      setPrNotes("");
+      if (prefillMed) {
+        if (typeof window !== "undefined") sessionStorage.removeItem("pharmacy_purchases_prefill_med");
+        setPrItems([{ medicine_name: prefillMed, strength_form: "", quantity: "", unit: "", notes: "Stock reorder" }]);
+      } else {
+        setPrItems([{ medicine_name: "", strength_form: "", quantity: "", unit: "", notes: "" }]);
+      }
+      setPrShareWhatsApp(true);
+      setPrModalError(null);
+      setNewPrModalOpen(true);
+    }
   }, []);
 
   const filteredGoodsReceipts = useMemo(() => {
@@ -328,6 +392,94 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
         gst_rate: "",
       },
     ]);
+  };
+
+  // When a Purchase Order is selected in "Link to Purchase Order (optional)",
+  // auto-reflect the selected medicine, quantity, unit form, and cost into the GRN lines!
+  const handleLinkPurchaseOrder = (id: number | null) => {
+    setGrnPoId(id);
+    if (!id) return;
+
+    const po = purchaseOrders.find((p) => p.id === id);
+    if (!po) return;
+
+    // 1. Auto-set supplier
+    if (po.supplier_id) {
+      setGrnSupplierId(po.supplier_id);
+    }
+
+    // 2. Auto-set stock classification if set on PO
+    if ((po as any).stock_source === "CASH" || (po as any).stock_source === "INSURANCE") {
+      setGrnStockSource((po as any).stock_source);
+    }
+
+    // 3. Resolve master details and linked PR item details
+    const master = findMasterMedicine(po.medicine_name);
+    const linkedPr = (po as any).pr_id
+      ? purchaseRequests.find((pr) => pr.id === (po as any).pr_id)
+      : undefined;
+    const linkedPrItem = linkedPr?.items?.find(
+      (it) => it.medicine_name.trim().toLowerCase() === po.medicine_name.trim().toLowerCase()
+    );
+
+    const unitType =
+      linkedPrItem?.unit ||
+      suggestUnitType(po.medicine_name) ||
+      master?.dosage_form ||
+      master?.unit ||
+      "Tablet";
+
+    const costVal =
+      po.unit_cost && Number(po.unit_cost) > 0
+        ? po.unit_cost
+        : linkedPrItem?.estimated_unit_cost && Number(linkedPrItem.estimated_unit_cost) > 0
+        ? linkedPrItem.estimated_unit_cost
+        : "";
+
+    const gstVal =
+      master && master.gst_rate !== null && master.gst_rate !== undefined
+        ? master.gst_rate
+        : "";
+
+    const newLine: GoodsReceiptItem = {
+      medicine_id: master?.id,
+      medicine_name: po.medicine_name,
+      batch_no: "",
+      expiry_date: "",
+      received_qty: po.quantity || 1,
+      free_qty: "",
+      unit_type: unitType,
+      unit_cost: costVal,
+      mrp: "",
+      selling_price: "",
+      gst_rate: gstVal,
+      storage_location: "",
+    };
+
+    // If lines are empty or single default blank row, replace it
+    const isSingleBlank =
+      grnItems.length <= 1 &&
+      (!grnItems[0] || (!grnItems[0].medicine_name.trim() && !grnItems[0].batch_no.trim()));
+
+    if (isSingleBlank) {
+      setGrnItems([newLine]);
+    } else {
+      const emptyIdx = grnItems.findIndex(
+        (it) => !it.medicine_name.trim() && !it.batch_no.trim()
+      );
+      if (emptyIdx !== -1) {
+        const copy = [...grnItems];
+        copy[emptyIdx] = newLine;
+        setGrnItems(copy);
+      } else {
+        setGrnItems([newLine]);
+      }
+    }
+
+    setNotice({
+      type: "info",
+      message: `Selected PO-${po.id}: Auto-reflected "${po.medicine_name}" (Qty: ${po.quantity}) into Received Medicine Batches.`,
+    });
   };
 
   const handleUpdateGrnItem = (idx: number, field: keyof GoodsReceiptItem, val: any) => {
@@ -476,7 +628,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
     supplierName?: string,
     phone?: string,
     notes?: string,
-    useDirectPhone: boolean = false
+    useDirectPhone: boolean = true
   ) => {
     const message = buildPrWhatsAppMessage(prNo, items, priority, supplierName, phone, notes);
     const encoded = encodeURIComponent(message);
@@ -505,7 +657,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
     notes?: string
   ) => {
     const message = buildPrWhatsAppMessage(prNo, items, priority, supplierName, phone, notes);
-    const waUrl = getWhatsAppPrUrl(prNo, items, priority, supplierName, phone, notes, false);
+    const waUrl = getWhatsAppPrUrl(prNo, items, priority, supplierName, phone, notes, true);
 
     // Copy requisition text to clipboard so it's always ready to paste
     try {
@@ -528,7 +680,8 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
   };
 
   // Submit Purchase Request
-  const handleCreatePr = async (shareOnWhatsApp: boolean = false) => {
+  const handleCreatePr = async (shareOnWhatsApp?: boolean) => {
+    const shouldShare = shareOnWhatsApp !== undefined ? shareOnWhatsApp : prShareWhatsApp;
     setPrModalError(null);
 
     if (!prSupplierId) {
@@ -558,7 +711,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
 
     // Pre-open blank tab synchronously during user click gesture to avoid browser popup blockers!
     let waWindow: Window | null = null;
-    if (shareOnWhatsApp) {
+    if (shouldShare) {
       try {
         waWindow = window.open("about:blank", "_blank");
         if (waWindow) {
@@ -614,15 +767,6 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
         prSupplierPhone.trim(),
         prNotes
       );
-      const waChatUrl = getWhatsAppPrUrl(
-        prNo,
-        validItems,
-        prUrgency,
-        supplierName,
-        prSupplierPhone.trim(),
-        prNotes,
-        false
-      );
       const waDirectUrl = prSupplierPhone.trim()
         ? getWhatsAppPrUrl(
             prNo,
@@ -634,6 +778,16 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
             true
           )
         : null;
+      const waChatUrl = getWhatsAppPrUrl(
+        prNo,
+        validItems,
+        prUrgency,
+        supplierName,
+        prSupplierPhone.trim(),
+        prNotes,
+        false
+      );
+      const finalUrl = waDirectUrl || waChatUrl;
 
       // Copy requisition text to clipboard automatically
       try {
@@ -644,18 +798,18 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
         console.warn("Clipboard write failed:", clipErr);
       }
 
-      if (shareOnWhatsApp) {
-        setLatestPrShareUrl(waChatUrl);
+      if (shouldShare) {
+        setLatestPrShareUrl(finalUrl);
         setLatestPrNo(prNo);
         setLatestPrText(message);
         setLatestPrDirectPhoneUrl(waDirectUrl);
 
         if (waWindow && !waWindow.closed) {
-          waWindow.location.href = waChatUrl;
+          waWindow.location.href = finalUrl;
         } else {
           // If popup window was blocked, trigger link directly
           const link = document.createElement("a");
-          link.href = waChatUrl;
+          link.href = finalUrl;
           link.target = "_blank";
           link.rel = "noopener noreferrer";
           document.body.appendChild(link);
@@ -666,7 +820,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
 
       setNotice({
         type: "success",
-        message: shareOnWhatsApp
+        message: shouldShare
           ? `Purchase Request ${prNo} submitted! WhatsApp chat opened and requisition copied to clipboard.`
           : `Purchase Request ${prNo} submitted for approval.`,
       });
@@ -728,6 +882,163 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
     }
   };
 
+  const [printingReport, setPrintingReport] = useState(false);
+
+  const handlePrintPurchasesReport = async () => {
+    if (printingReport) return;
+    setPrintingReport(true);
+    try {
+      const now = new Date();
+      const dateStr = now.toLocaleDateString("en-IN", {
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+        hour: "2-digit",
+        minute: "2-digit",
+      });
+
+      let payload: any;
+
+      if (activeTab === "pr") {
+        payload = {
+          title: "Pharmacy Purchase Requests Report",
+          subtitle: `Total Purchase Requests: ${purchaseRequests.length} · Generated on ${dateStr}`,
+          brand_logo: "ayu" as const,
+          document_type: "Purchase Requests Report",
+          filename: `Pharmacy_Purchase_Requests_${now.toISOString().split("T")[0]}`,
+          sections: [
+            {
+              title: "Purchase Requisitions Summary",
+              headers: ["PR No", "Priority", "Preferred Supplier", "Status", "Items Count", "Requested Date"],
+              rows: purchaseRequests.map((pr) => [
+                pr.pr_no,
+                (pr.priority || "NORMAL").toUpperCase(),
+                pr.supplier_name || "-",
+                (pr.status || "PENDING").toUpperCase(),
+                `${pr.items?.length || 0} items`,
+                pr.created_at ? new Date(pr.created_at).toLocaleDateString("en-IN") : "-",
+              ]),
+            },
+          ],
+        };
+      } else if (activeTab === "po") {
+        const totalCost = purchaseOrders.reduce((sum, p) => sum + (p.total_cost || 0), 0);
+        payload = {
+          title: "Pharmacy Purchase Orders Report",
+          subtitle: `Total Purchase Orders: ${purchaseOrders.length} · Generated on ${dateStr}`,
+          brand_logo: "ayu" as const,
+          document_type: "Purchase Orders Report",
+          filename: `Pharmacy_Purchase_Orders_${now.toISOString().split("T")[0]}`,
+          sections: [
+            {
+              title: "Approved & Active Purchase Orders",
+              headers: ["PO Ref", "Medicine", "Qty", "Unit Cost", "Total Cost", "Supplier", "Status", "Order Date"],
+              rows: purchaseOrders.map((p) => [
+                `PO-${p.id}`,
+                p.medicine_name,
+                p.quantity,
+                `₹${(p.unit_cost || 0).toFixed(2)}`,
+                `₹${(p.total_cost || 0).toFixed(2)}`,
+                p.supplier_name || "-",
+                (p.status || "ORDERED").toUpperCase(),
+                p.created_at ? new Date(p.created_at).toLocaleDateString("en-IN") : "-",
+              ]),
+            },
+          ],
+          totals: {
+            grand_total: `₹${totalCost.toFixed(2)}`,
+          },
+        };
+      } else if (activeTab === "grn_history") {
+        payload = {
+          title: "Pharmacy Goods Receipt Notes (GRN) Inward History",
+          subtitle: `Total GRN Deliveries: ${goodsReceipts.length} · Generated on ${dateStr}`,
+          brand_logo: "ayu" as const,
+          document_type: "GRN Inward History Report",
+          filename: `Pharmacy_GRN_History_${now.toISOString().split("T")[0]}`,
+          sections: [
+            {
+              title: "Inward Goods Receipt Notes",
+              headers: ["GRN Number", "Supplier Invoice", "Supplier", "Stock Source", "Receipt Date", "Status", "Items"],
+              rows: goodsReceipts.map((g) => [
+                g.grn_no,
+                g.supplier_invoice_no || "-",
+                g.supplier_name || "-",
+                g.stock_source,
+                g.received_date || "-",
+                g.status.toUpperCase(),
+                `${g.items?.length || 0} batches`,
+              ]),
+            },
+          ],
+        };
+      } else {
+        const totalPOCost = purchaseOrders.reduce((sum, p) => sum + (p.total_cost || 0), 0);
+        payload = {
+          title: "Pharmacy Purchases & Procurement Report",
+          subtitle: `Inward Deliveries, Orders & Requisitions Comprehensive Report · Generated on ${dateStr}`,
+          brand_logo: "ayu" as const,
+          document_type: "Procurement Report",
+          filename: `Pharmacy_Purchases_Report_${now.toISOString().split("T")[0]}`,
+          sections: [
+            {
+              title: "Goods Receipt Notes (Recent Inward Deliveries)",
+              headers: ["GRN Number", "Supplier Invoice", "Supplier", "Stock Source", "Date", "Status"],
+              rows: goodsReceipts.slice(0, 15).map((g) => [
+                g.grn_no,
+                g.supplier_invoice_no || "-",
+                g.supplier_name || "-",
+                g.stock_source,
+                g.received_date || "-",
+                g.status.toUpperCase(),
+              ]),
+            },
+            {
+              title: "Active Purchase Orders",
+              headers: ["PO Ref", "Medicine", "Qty", "Unit Cost", "Total Cost", "Supplier", "Status"],
+              rows: purchaseOrders.slice(0, 15).map((p) => [
+                `PO-${p.id}`,
+                p.medicine_name,
+                p.quantity,
+                `₹${(p.unit_cost || 0).toFixed(2)}`,
+                `₹${(p.total_cost || 0).toFixed(2)}`,
+                p.supplier_name || "-",
+                (p.status || "ORDERED").toUpperCase(),
+              ]),
+            },
+            {
+              title: "Purchase Requisitions",
+              headers: ["PR No", "Priority", "Supplier", "Status", "Items", "Date"],
+              rows: purchaseRequests.slice(0, 15).map((pr) => [
+                pr.pr_no,
+                (pr.priority || "NORMAL").toUpperCase(),
+                pr.supplier_name || "-",
+                (pr.status || "PENDING").toUpperCase(),
+                `${pr.items?.length || 0} items`,
+                pr.created_at ? new Date(pr.created_at).toLocaleDateString("en-IN") : "-",
+              ]),
+            },
+          ],
+          totals: {
+            grand_total: `₹${totalPOCost.toFixed(2)}`,
+          },
+        };
+      }
+
+      const { blob } = await generatePDFBlob(payload);
+      printPDF(blob);
+      setNotice({ type: "success", message: `Generated ${payload.title} for printing.` });
+    } catch (error) {
+      console.error("Print purchases report failed:", error);
+      setNotice({
+        type: "error",
+        message: error instanceof Error ? error.message : "Unable to generate and print report PDF.",
+      });
+    } finally {
+      setPrintingReport(false);
+    }
+  };
+
   return (
     <div className="pharmacy-theme-page" style={{ padding: "1.5rem", maxWidth: "1400px", margin: "0 auto" }}>
       {/* Topbar / Breadcrumbs */}
@@ -748,6 +1059,15 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
             onClick={handleOpenNewPrModal}
           >
             + New Purchase Request
+          </Button>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => void handlePrintPurchasesReport()}
+            disabled={printingReport}
+            title="Generate and print standard PDF report"
+          >
+            {printingReport ? "Generating..." : "Print Report"}
           </Button>
           <Button type="button" variant="secondary" onClick={() => void loadData()}>
             Refresh
@@ -856,18 +1176,17 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
             </div>
 
             <div>
-              <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
+              <label htmlFor="grn-po-id-select" style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
                 Link to Purchase Order (optional):
               </label>
               <select
+                id="grn-po-id-select"
                 className="ui-input"
                 style={{ width: "100%", padding: "0.45rem", borderRadius: "6px", border: "1px solid #cbd5e1" }}
                 value={grnPoId || ""}
                 onChange={(e) => {
                   const id = parseInt(e.target.value) || null;
-                  setGrnPoId(id);
-                  const po = purchaseOrders.find((p) => p.id === id);
-                  if (po && !grnSupplierId && po.supplier_id) setGrnSupplierId(po.supplier_id);
+                  handleLinkPurchaseOrder(id);
                 }}
               >
                 <option value="">Not linked to an order</option>
@@ -2048,6 +2367,40 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
               />
             </div>
 
+            {/* WhatsApp Share Option */}
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                gap: "10px",
+                marginBottom: "20px",
+                padding: "10px 14px",
+                background: "#f0fdf4",
+                borderRadius: "8px",
+                border: "1px solid #86efac",
+              }}
+            >
+              <input
+                type="checkbox"
+                id="pr-share-whatsapp"
+                checked={prShareWhatsApp}
+                onChange={(e) => setPrShareWhatsApp(e.target.checked)}
+                style={{ width: "17px", height: "17px", accentColor: "#16a34a", cursor: "pointer" }}
+              />
+              <label htmlFor="pr-share-whatsapp" style={{ fontSize: "0.85rem", color: "#166534", fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+                <span>Send requisition to Supplier via WhatsApp</span>
+                {prSupplierPhone.trim() ? (
+                  <span style={{ fontWeight: 500, color: "#15803d", fontSize: "0.82rem" }}>
+                    (📱 {prSupplierPhone.trim()})
+                  </span>
+                ) : (
+                  <span style={{ fontWeight: 400, color: "#64748b", fontSize: "0.8rem" }}>
+                    (Opens WhatsApp chat picker)
+                  </span>
+                )}
+              </label>
+            </div>
+
             {/* Footer Buttons */}
             <div style={{ display: "flex", gap: "12px", justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
               <button
@@ -2070,7 +2423,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
               <button
                 type="button"
                 disabled={submittingPr}
-                onClick={() => handleCreatePr(false)}
+                onClick={() => handleCreatePr()}
                 style={{
                   background: "#2563eb",
                   border: "1px solid #2563eb",

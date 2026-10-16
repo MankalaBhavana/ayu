@@ -195,6 +195,15 @@ export default function OpQueuePage({ setNotice, onOpenPatient, onNavigate }: Pr
 
   useEffect(() => {
     void fetchLiveAppointments(selectedDate);
+    const handleSync = () => {
+      void fetchLiveAppointments(selectedDate);
+    };
+    window.addEventListener("storage", handleSync);
+    window.addEventListener("focus", handleSync);
+    return () => {
+      window.removeEventListener("storage", handleSync);
+      window.removeEventListener("focus", handleSync);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedDate]);
 
@@ -357,20 +366,24 @@ export default function OpQueuePage({ setNotice, onOpenPatient, onNavigate }: Pr
       }
     }
 
-    if (id.startsWith("readmit:")) {
-      try {
-        const stored = JSON.parse(localStorage.getItem("hospai_op_queue") || "[]");
-        if (Array.isArray(stored)) {
-          const token = id.slice("readmit:".length);
-          localStorage.setItem("hospai_op_queue", JSON.stringify(stored.map((entry) =>
-            String(entry?.token || entry?.uhid) === token
-              ? { ...entry, status: newStatus === "Waiting" ? "In Queue" : newStatus }
-              : entry
-          )));
-        }
-      } catch {
-        // Keep queue status usable if local storage is unavailable.
+    try {
+      const stored = JSON.parse(localStorage.getItem("hospai_op_queue") || "[]");
+      if (Array.isArray(stored)) {
+        const token = id.startsWith("readmit:") ? id.slice("readmit:".length) : "";
+        localStorage.setItem("hospai_op_queue", JSON.stringify(stored.map((entry) => {
+          const match =
+            (token && String(entry?.token || entry?.uhid) === token) ||
+            (item?.uhid && String(entry?.uhid || "").trim().toLowerCase() === String(item.uhid).trim().toLowerCase()) ||
+            (item?.token && String(entry?.token || "").trim() === String(item.token).trim()) ||
+            (apptId && String(entry?.appointmentId || "") === String(apptId));
+          return match
+            ? { ...entry, status: newStatus === "Waiting" ? "In Queue" : newStatus }
+            : entry;
+        })));
+        window.dispatchEvent(new Event("storage"));
       }
+    } catch {
+      // Keep queue status usable if local storage is unavailable.
     }
 
     setNotice({

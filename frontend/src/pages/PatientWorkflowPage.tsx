@@ -98,11 +98,14 @@ export const buildPrescriptionHtml = (data: {
   medsHtml?: string;
   advice?: string;
   followUpDate?: string;
+  labTests?: string;
 }) => {
-  const docName = data.doctorName && data.doctorName.trim() && data.doctorName !== "-" ? data.doctorName : "Dr. Sushanth. B";
+  // Principal doctor name displayed on all clinic letterheads and PDFs
+  const docName = "Dr. Sushanth. B";
   const validMeds: PrescriptionMedicine[] = data.medicines ? data.medicines.filter(m => m.medicine_name.trim()) : [];
   const adviceLines = (data.advice || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  const hasAdvice = adviceLines.length > 0 || Boolean(data.followUpDate);
+  const extraLines = adviceLines.length + (data.labTests ? 1 : 0) + (data.followUpDate ? 1 : 0);
+  const hasAdvice = adviceLines.length > 0 || Boolean(data.followUpDate) || Boolean(data.labTests);
 
   const renderMedsRows = (items: PrescriptionMedicine[], startIndex: number) => {
     return items.map((medicine, idx) => {
@@ -147,9 +150,9 @@ export const buildPrescriptionHtml = (data: {
   // Determine pagination: single page vs multi-page
   const fitsOnSinglePage = validMeds.length === 0
     ? true
-    : (validMeds.length <= 6 && adviceLines.length <= 6)
-      || (validMeds.length <= 8 && adviceLines.length <= 2)
-      || (validMeds.length <= 4 && adviceLines.length <= 10);
+    : (validMeds.length <= 6 && extraLines <= 6)
+      || (validMeds.length <= 8 && extraLines <= 2)
+      || (validMeds.length <= 4 && extraLines <= 10);
 
   type RxPagePlan = {
     pageIndex: number;
@@ -284,11 +287,12 @@ export const buildPrescriptionHtml = (data: {
       ? `<img src="${PRINT_RX_SYMBOL_DATA_URI}" class="rx-symbol-img" alt="Rx" />`
       : "";
 
-    const adviceHtml = plan.showAdvice && (data.advice || data.followUpDate)
+    const adviceHtml = plan.showAdvice && (data.advice || data.followUpDate || data.labTests)
       ? `
       <div class="rx-advice-block">
         ${data.advice ? `<div class="rx-advice-heading">Advice:</div>${data.advice.split(/\r?\n/).filter(Boolean).map(line => `<div>• ${escapePrescriptionHtml(line)}</div>`).join('')}` : ""}
-        ${data.followUpDate ? `<div style="margin-top: 10px;"><span class="rx-advice-heading">Next Review:</span> ${escapePrescriptionHtml(data.followUpDate)}</div>` : ""}
+        ${data.labTests ? `<div style="margin-top: 8px;"><span class="rx-advice-heading">Tests to be taken for next visit:</span> <span style="font-weight: 600; color: #1e293b;">${escapePrescriptionHtml(data.labTests)}</span></div>` : ""}
+        ${data.followUpDate ? `<div style="margin-top: 8px;"><span class="rx-advice-heading">Next Review:</span> ${escapePrescriptionHtml(data.followUpDate)}</div>` : ""}
       </div>
       `
       : "";
@@ -629,6 +633,15 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
   const [uploadingScan, setUploadingScan] = useState(false);
   const MAX_SCAN_SIZE_BYTES = 10 * 1024 * 1024;
 
+  const minFollowUpDate = useMemo(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, "0");
+    const day = String(d.getDate()).padStart(2, "0");
+    return `${y}-${m}-${day}`;
+  }, []);
+
   const uploadPrescriptionScan = async () => {
     if (!scanFile) return;
     if (!form.patient_id) { setNotice({ type: "warning", message: "Select a patient first." }); return; }
@@ -768,7 +781,16 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
         ag = `${patient.age || ""} / ${patient.gender || ""}`.trim();
         if (ag === "/") ag = "";
       }
-      setForm((prev) => ({ ...prev, patient_id: patient.patient_id, patient_name: fullPatientName(patient) || patient.patient_id, age_gender: ag, doctor_name: patient.last_doctor || "", department: patient.last_department || "" }));
+      const qMatch = queue.find(q => q.patient_id === patient.patient_id);
+      setForm((prev) => ({
+        ...prev,
+        patient_id: patient.patient_id,
+        patient_name: fullPatientName(patient) || patient.patient_id,
+        age_gender: ag,
+        appointment_id: qMatch ? String(qMatch.id) : prev.appointment_id,
+        doctor_name: qMatch?.doctor_name || patient.last_doctor || "",
+        department: qMatch?.department || patient.last_department || "",
+      }));
       void fetchPrescriptionHistory(patient.patient_id);
       setNotice({ type: "success", message: `Patient auto-filled: ${fullPatientName(patient) || patient.patient_id}.` });
       setBannerPatient(patient);
@@ -838,9 +860,12 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
 
   const savePrescription = async (complete_consultation = false) => {
     if (!form.patient_id) { setNotice({ type: "warning", message: "Patient is required." }); return; }
-    if (complete_consultation && !form.appointment_id) {
-      setNotice({ type: "warning", message: "Select a patient from the OP Queue before completing consultation." });
-      return;
+    let apptId = form.appointment_id;
+    if (!apptId && form.patient_id) {
+      const matched = queue.find(q => q.patient_id === form.patient_id);
+      if (matched) {
+        apptId = String(matched.id);
+      }
     }
     if (saving) return;
     setSaving(true);
@@ -851,6 +876,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
         headers: { "Content-Type": "application/json", "X-Hospital-Code": getHospitalCode() },
         body: JSON.stringify({
           ...form,
+          appointment_id: apptId || undefined,
           medicines: medicines.map(m => ({ ...m, is_custom: m.is_custom ? true : false, freq_custom: m.freq_custom || "" })),
           complete_consultation,
           save_token: saveToken,
@@ -861,37 +887,62 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
         const payload = await res.json().catch(() => ({}));
         throw new Error(payload.detail || payload.error || "Failed to save prescription");
       }
-      setNotice({ type: "success", message: complete_consultation ? "Prescription saved and patient marked Completed in OP Queue." : "Prescription saved." });
+      setNotice({ type: "success", message: complete_consultation ? "Prescription saved and patient consultation marked Completed in OP Queue." : "Prescription saved." });
       // Refresh prescription history after saving
       if (form.patient_id) void fetchPrescriptionHistory(form.patient_id);
       // Only rotate save_token when completing the consultation (a new visit).
       // Plain "Save" keeps the SAME token so re-saving updates in place.
       if (complete_consultation) {
         setSaveToken(generateToken());
-        setQueue(queue.filter(q => String(q.id) !== form.appointment_id));
+        const targetApptId = apptId || form.appointment_id;
+        const targetPatientId = form.patient_id;
+
+        // Remove from local queue state
+        setQueue(prev => prev.filter(q => String(q.id) !== targetApptId && q.patient_id !== targetPatientId));
         
-        const localQueueStr = localStorage.getItem("hospai_op_queue");
-        if (localQueueStr) {
-          const readmitQueue = JSON.parse(localQueueStr);
-          let updated = false;
-          const nextReadmitQueue = (Array.isArray(readmitQueue) ? readmitQueue : []).map((item: any) => {
-            if (String(item.token) === form.appointment_id) {
-              updated = true;
-              return { ...item, status: "Completed" };
+        // Sync hospai_op_queue in localStorage
+        try {
+          const localQueueStr = localStorage.getItem("hospai_op_queue");
+          if (localQueueStr) {
+            const readmitQueue = JSON.parse(localQueueStr);
+            if (Array.isArray(readmitQueue)) {
+              const nextReadmitQueue = readmitQueue.map((item: any) => {
+                const match =
+                  (targetApptId && (String(item.token) === targetApptId || String(item.appointmentId) === targetApptId)) ||
+                  (targetPatientId && String(item.uhid || "").toLowerCase() === targetPatientId.toLowerCase());
+                return match ? { ...item, status: "Completed" } : item;
+              });
+              localStorage.setItem("hospai_op_queue", JSON.stringify(nextReadmitQueue));
             }
-            return item;
-          });
-          if (updated) {
-            localStorage.setItem("hospai_op_queue", JSON.stringify(nextReadmitQueue));
           }
-        }
+        } catch {}
+
+        // Sync hospai_op_queue_v2 in localStorage
+        try {
+          const queueV2Str = localStorage.getItem("hospai_op_queue_v2");
+          if (queueV2Str) {
+            const v2Queue = JSON.parse(queueV2Str);
+            if (Array.isArray(v2Queue)) {
+              const nextV2 = v2Queue.map((item: any) => {
+                const match =
+                  (targetApptId && (String(item.id) === targetApptId || String(item.token) === targetApptId || String(item.appointmentId) === targetApptId)) ||
+                  (targetPatientId && String(item.uhid || "").toLowerCase() === targetPatientId.toLowerCase());
+                return match ? { ...item, status: "Completed" } : item;
+              });
+              localStorage.setItem("hospai_op_queue_v2", JSON.stringify(nextV2));
+            }
+          }
+        } catch {}
+
+        // Dispatch storage event so Queue Management (OpQueuePage) and Follow-up / Re-visit update immediately
+        window.dispatchEvent(new Event("storage"));
 
         setForm({ ...DEFAULTS.prescription });
         setMedicines([]);
         setSendToPharmacy(false);
       }
-    } catch (err) {
-      setNotice({ type: "error", message: "Failed to save prescription." });
+    } catch (err: any) {
+      setNotice({ type: "error", message: err?.message || "Failed to save prescription." });
     } finally {
       setSaving(false);
     }
@@ -1067,10 +1118,11 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
       ageGender: form.age_gender || "",
       diagnosis: form.diagnosis || "",
       printDate,
-      doctorName: form.doctor_name || "Dr. Sushanth. B",
+      doctorName: "Dr. Sushanth. B",
       medicines: medicines.filter(m => m.medicine_name.trim()),
       advice: form.advice || "",
-      followUpDate: form.follow_up_date || ""
+      followUpDate: form.follow_up_date || "",
+      labTests: form.lab_tests || "",
     });
   };
 
@@ -1091,10 +1143,11 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
       ageGender: rx.age_gender || form.age_gender || "",
       diagnosis: rx.diagnosis || "",
       printDate,
-      doctorName: rx.doctor_name || form.doctor_name || "Dr. Sushanth. B",
+      doctorName: "Dr. Sushanth. B",
       medicines: rxMeds,
       advice: rx.advice || "",
-      followUpDate: rx.follow_up_date || ""
+      followUpDate: rx.follow_up_date || "",
+      labTests: rx.lab_tests || form.lab_tests || "",
     });
   };
 
@@ -1184,7 +1237,16 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
                   ag = `${patient.age || ""} / ${patient.gender || ""}`.trim();
                   if (ag === "/") ag = "";
                 }
-                setForm((prev) => ({ ...prev, patient_id: patient.patient_id, patient_name: fullPatientName(patient) || patient.patient_id, age_gender: ag }));
+                const qMatch = queue.find(q => q.patient_id === patient.patient_id);
+                setForm((prev) => ({
+                  ...prev,
+                  patient_id: patient.patient_id,
+                  patient_name: fullPatientName(patient) || patient.patient_id,
+                  age_gender: ag,
+                  appointment_id: qMatch ? String(qMatch.id) : prev.appointment_id,
+                  doctor_name: qMatch?.doctor_name || prev.doctor_name,
+                  department: qMatch?.department || prev.department,
+                }));
                 setBannerPatient(patient);
                 void fetchPrescriptionHistory(patient.patient_id);
               }}
@@ -1333,7 +1395,23 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
           {/* Row: Next Review Date + Tests to be taken */}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "1rem", alignItems: "end", marginBottom: "1rem" }}>
             <Label style={{ margin: 0 }}>Next Review Date
-              <Input style={{ width: "100%" }} type="date" value={form.follow_up_date || ""} onChange={(e) => update("follow_up_date", e.target.value)} />
+              <Input
+                style={{ width: "100%" }}
+                type="date"
+                min={minFollowUpDate}
+                value={form.follow_up_date || ""}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  if (val && val < minFollowUpDate) {
+                    setNotice({
+                      type: "warning",
+                      message: "Next review date must be a future date (cannot be a past or completed date).",
+                    });
+                    return;
+                  }
+                  update("follow_up_date", val);
+                }}
+              />
             </Label>
             <Label style={{ margin: 0 }}>Tests to be taken for next visit
               <Input style={{ width: "100%" }} value={form.lab_tests || ""} onChange={(e) => update("lab_tests", e.target.value)} placeholder="e.g., GLUCOMETER READINGS" />

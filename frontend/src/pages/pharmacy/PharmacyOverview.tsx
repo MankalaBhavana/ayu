@@ -6,6 +6,17 @@ import type { Notice, Patient } from "../../types";
 import DateCalendarPicker, { toIsoDate, parseIsoDate } from "../../components/DateCalendarPicker";
 import { DonutChart } from "../../components/charts";
 import { formatDateTimeIST } from "../../lib/format";
+import { downloadPDF, printPDF, generatePDFBlob } from "../../lib/exportService";
+import type { StandardPdfPayload } from "../../lib/exportService";
+import PdfExportDropdown from "../../components/PdfExportDropdown";
+
+function formatCurrency(amount?: number) {
+  return new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", maximumFractionDigits: 2 }).format(amount || 0);
+}
+
+function formatNumber(amount?: number) {
+  return new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 }).format(amount || 0);
+}
 
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
@@ -120,6 +131,120 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
   const [summary, setSummary] = useState<PharmacySummary | null>(null);
   const [globalSearch, setGlobalSearch] = useState("");
   const [dateRange, setDateRange] = useState(() => toIsoDate(new Date()));
+  const [exportStatus, setExportStatus] = useState<string>("");
+
+  const currentDateLabel = useMemo(() => {
+    try {
+      return new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(parseIsoDate(dateRange));
+    } catch {
+      return dateRange;
+    }
+  }, [dateRange]);
+
+  const handleGeneratePharmacyOverviewPdf = async () => {
+    const s = summary || ({} as Partial<PharmacySummary>);
+    const salesToday = s.sales_today || 0;
+    const salesYesterday = s.sales_yesterday || 0;
+    const salesTrend = salesYesterday > 0
+      ? `${Math.round(((salesToday - salesYesterday) / salesYesterday) * 100)}% vs yesterday`
+      : "No yesterday sales";
+
+    const opSales = s.opd_sales_today || salesToday;
+    const billsCount = s.opd_prescriptions_count || 0;
+    const totalStockValue = s.total_stock_value || 0;
+    const totalStockUnits = s.total_stock_items || 0;
+    const lowStock = s.low_stock_count || 0;
+    const outOfStock = s.out_of_stock_count || 0;
+    const nearExpiry = s.expiring_1m || 0;
+    const expiredCount = s.expired_count || 0;
+
+    const todayActivity = s.today_activity || {
+      op_dispensations: billsCount,
+      returns: 0,
+      grns_received: 0,
+      stock_adjustments: 0,
+    };
+
+    const payload: StandardPdfPayload = {
+      title: "Pharmacy Overview Report",
+      subtitle: `Pharmacy Performance & Operations Summary for ${currentDateLabel}`,
+      filename: `Pharmacy_Overview_${dateRange}`,
+      brand_logo: "ayu",
+      include_signature: false,
+      include_doctor_details: false,
+      operator_name: "Ayu Polyclinic & Emergency Clinic Pharmacy",
+      sections: [
+        {
+          title: "Pharmacy Key Performance Indicators (KPIs)",
+          headers: ["Metric", "Value", "Remarks / Details"],
+          rows: [
+            ["Today's Sales", formatCurrency(salesToday), salesTrend],
+            ["OP Outpatient Sales", formatCurrency(opSales), `${billsCount} counter bill(s) processed`],
+            ["Total Stock Value", formatCurrency(totalStockValue), `${formatNumber(totalStockUnits)} units in inventory`],
+            ["Low Stock Medicines", formatNumber(lowStock), `${outOfStock} completely out of stock`],
+            ["Near Expiry Medicines", formatNumber(nearExpiry), `${expiredCount} expired stock items`],
+          ],
+        },
+        {
+          title: dateRange === toIsoDate(new Date()) ? "Today's Pharmacy Operations Ledger" : `Pharmacy Operations for ${currentDateLabel}`,
+          headers: ["Activity / Event", "Count", "Status"],
+          rows: [
+            ["OP Dispensations", String(todayActivity.op_dispensations), "Completed"],
+            ["Returns Processed", String(todayActivity.returns), todayActivity.returns > 0 ? "Processed" : "None recorded"],
+            ["GRNs Received", String(todayActivity.grns_received), todayActivity.grns_received > 0 ? "Received" : "None recorded"],
+            ["Stock Adjustments", String(todayActivity.stock_adjustments), todayActivity.stock_adjustments > 0 ? "Logged" : "None recorded"],
+          ],
+        },
+        {
+          title: "Stock Health & Inventory Valuation Breakdown",
+          headers: ["Category", "Stock Count", "Total Valuation"],
+          rows: [
+            ["Cash Counter Stock", `${formatNumber(s.cash_stock_items || 0)} units`, formatCurrency(s.cash_stock_value || 0)],
+            ["Insurance Counter Stock", `${formatNumber(s.insurance_stock_items || 0)} units`, formatCurrency(s.insurance_stock_value || 0)],
+            ["Low Stock Items (Action Required)", `${lowStock} items`, "Needs reordering"],
+            ["Out of Stock Items (Critical)", `${outOfStock} items`, "Stock depleted"],
+            ["Expired Stock", `${expiredCount} items`, "Quarantine / Write-off"],
+            ["Total Inventory Valuation", `${formatNumber(totalStockUnits)} units`, formatCurrency(totalStockValue)],
+          ],
+        },
+        {
+          title: "Medicine Expiry Risk Breakdown",
+          headers: ["Expiry Risk Bucket", "Batch Count", "Action Required"],
+          rows: [
+            ["Already Expired", `${s.expired_count || 0} batches`, "Remove from active dispensing immediately"],
+            ["Expiring within 1 Month", `${s.expiring_1m || 0} batches`, "High priority FEFO dispatch"],
+            ["Expiring in 1 to 3 Months", `${s.expiring_1_3m || 0} batches`, "Monitor rotation and reorder timing"],
+            ["Expiring in 3 to 6 Months", `${s.expiring_3_6m || 0} batches`, "Normal shelf life"],
+          ],
+        },
+        ...(s.top_medicines && s.top_medicines.length > 0 ? [{
+          title: "Top Fast-Moving Medicines",
+          headers: ["Medicine Name", "Units Dispensed", "Total Revenue"],
+          rows: s.top_medicines.slice(0, 10).map((m) => [m.medicine_name, `${m.total_qty} units`, formatCurrency(m.total_amount)]),
+        }] : []),
+      ],
+      totals: {
+        grand_total: formatCurrency(totalStockValue),
+        amount_received: formatCurrency(salesToday),
+      },
+    };
+
+    return await generatePDFBlob(payload);
+  };
+
+  const handlePrintPharmacyOverviewPdf = async () => {
+    if (exportStatus) return;
+    setExportStatus("print");
+    try {
+      const { blob } = await handleGeneratePharmacyOverviewPdf();
+      printPDF(blob);
+    } catch (error) {
+      console.error("Print pharmacy overview failed:", error);
+      window.alert(error instanceof Error ? error.message : "Unable to print the pharmacy overview PDF.");
+    } finally {
+      setExportStatus("");
+    }
+  };
 
   // Analytics filter controls
   const [chartPeriod, setChartPeriod] = useState<"today" | "7d" | "30d" | "medicine">("7d");
@@ -160,23 +285,74 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
       }
 
       if (stockRes.status === "fulfilled" && Array.isArray(stockRes.value?.batches)) {
-        const medMap = new Map<string, { total_qty: number; reorder_level: number }>();
+        const medMap = new Map<string, {
+          medicine_name: string;
+          generic_name: string;
+          total_qty: number;
+          available_qty: number;
+          reorder_level: number;
+        }>();
+        const todayStr = new Date().toISOString().slice(0, 10);
+        let expiredBatches = 0;
+        let nearExpiryBatches = 0;
+
         for (const item of stockRes.value.batches) {
-          const key = (item.medicine_name || "").trim().toLowerCase();
+          const rawName = item.medicine_name || "";
+          const key = rawName.trim().toLowerCase();
           if (!key) continue;
           const existing = medMap.get(key) || {
+            medicine_name: rawName,
+            generic_name: (item as any).generic_name || (item as any).item_category || "Formulary Medicine",
             total_qty: 0,
+            available_qty: 0,
             reorder_level: (item as any).master_reorder_level ?? 10,
           };
+          const isExpired = !!item.expiry_date && item.expiry_date.slice(0, 10) < todayStr;
+          const isNearExp = !isExpired && !!item.expiry_date && (new Date(item.expiry_date).getTime() - new Date().getTime()) < (90 * 24 * 60 * 60 * 1000);
+
+          if (isExpired) expiredBatches += 1;
+          if (isNearExp) nearExpiryBatches += 1;
+
           existing.total_qty += Number(item.qty_available || 0);
+          if (!isExpired) {
+            existing.available_qty += Number(item.qty_available || 0);
+          }
           if ((item as any).master_reorder_level != null) existing.reorder_level = (item as any).master_reorder_level;
+          if ((item as any).generic_name) existing.generic_name = (item as any).generic_name;
           medMap.set(key, existing);
         }
-        const calculatedLowStock = Array.from(medMap.values()).filter((m) => m.total_qty <= m.reorder_level).length;
+
+        const calculatedLowStockItems = Array.from(medMap.values())
+          .filter((m) => m.available_qty <= m.reorder_level)
+          .map((m) => {
+            const isExpiredOnly = m.available_qty === 0 && m.total_qty > 0;
+            const isZero = m.total_qty === 0;
+            return {
+              medicine_name: m.medicine_name,
+              generic_name: m.generic_name,
+              current_stock: m.available_qty,
+              total_physical_stock: m.total_qty,
+              reorder_level: m.reorder_level,
+              suggested_reorder: Math.max(m.reorder_level * 2 - m.available_qty, 10),
+              status: isExpiredOnly ? "Out of Stock (Expired)" : (isZero ? "Out of Stock" : "Low Stock"),
+            };
+          });
+
+        const calculatedLowStock = calculatedLowStockItems.length;
+        const calculatedOutOfStock = calculatedLowStockItems.filter((m) => m.current_stock === 0).length;
+
         if (finalSummary) {
           finalSummary.low_stock_count = calculatedLowStock;
+          finalSummary.out_of_stock_count = calculatedOutOfStock;
+          if (!finalSummary.low_stock_items || finalSummary.low_stock_items.length === 0) {
+            finalSummary.low_stock_items = calculatedLowStockItems;
+          }
+          if (expiredBatches > 0) {
+            finalSummary.expired_count = expiredBatches;
+          }
           if (finalSummary.needs_attention) {
             finalSummary.needs_attention.low_stock = calculatedLowStock;
+            finalSummary.needs_attention.near_expiry = (finalSummary.expired_count || expiredBatches) + (finalSummary.expiring_1m || 0) + (finalSummary.expiring_1_3m || nearExpiryBatches);
           }
         }
       }
@@ -319,11 +495,14 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
     title: string;
     subtitle: string;
     total: number;
+    totalLabel?: string;
+    isCurrency?: boolean;
     secondaryLabel: string;
     secondaryValue: string | number;
     countLabel: string;
     countValue: number;
-    rows: { channel: string; details: string; amount: number }[];
+    amountHeader?: string;
+    rows: { channel: string; details: string; amount: number | string }[];
   } | null>(null);
 
   const openSalesDrilldown = () => {
@@ -374,6 +553,60 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
         { channel: "Hospital Cash Inventory", details: `${s?.cash_stock_items || 0} active medicine batches`, amount: s?.cash_stock_value || 0 },
         { channel: "Insurance / TPA Dedicated Stock", details: `${s?.insurance_stock_items || 0} cashless medicine batches`, amount: s?.insurance_stock_value || 0 },
         { channel: "Pending Supplier Payables", details: "Outstanding vendor GRN balances", amount: s?.supplier_outstanding || 0 },
+      ],
+    });
+  };
+
+  const openLowStockDrilldown = () => {
+    const s = summary;
+    const items = s?.low_stock_items || [];
+    setPharmacyPopup({
+      title: "Low Stock & Out of Stock Alerts",
+      subtitle: "Medicines at or below their configured reorder thresholds requiring replenishment",
+      total: (s?.low_stock_count || 0),
+      totalLabel: "LOW STOCK MEDICINES",
+      isCurrency: false,
+      amountHeader: "Suggested Reorder",
+      secondaryLabel: "OUT OF STOCK",
+      secondaryValue: `${s?.out_of_stock_count || 0} Medicines`,
+      countLabel: "REORDER REQUIRED",
+      countValue: s?.low_stock_count || 0,
+      rows: items.length > 0
+        ? items.map((it: any) => ({
+            channel: it.medicine_name,
+            details: `Available: ${it.current_stock} units · Reorder Level: ${it.reorder_level} · Status: ${it.status}`,
+            amount: `${it.suggested_reorder || 10} units`,
+          }))
+        : [
+            { channel: "Stock Status", details: "All items within normal inventory stock limits", amount: "0 units" }
+          ],
+    });
+  };
+
+  const openExpiryDrilldown = () => {
+    const s = summary;
+    const expCount = s?.expired_count || 0;
+    const exp1m = s?.expiring_1m || 0;
+    const exp13m = s?.expiring_1_3m || 0;
+    const exp36m = s?.expiring_3_6m || 0;
+    const totalExpRisk = expCount + exp1m + exp13m;
+
+    setPharmacyPopup({
+      title: "Near Expiry & Expired Inventory Risk",
+      subtitle: "Batches expired (blocked) or expiring within 90 days requiring immediate rotation/return",
+      total: totalExpRisk,
+      totalLabel: "TOTAL AT-RISK BATCHES",
+      isCurrency: false,
+      amountHeader: "Batch Count",
+      secondaryLabel: "ALREADY EXPIRED",
+      secondaryValue: `${expCount} Batches`,
+      countLabel: "EXPIRING < 90D",
+      countValue: exp1m + exp13m,
+      rows: [
+        { channel: "Already Expired (Blocked)", details: `${expCount} batches expired and unavailable for dispensing`, amount: `${expCount} batches` },
+        { channel: "Expiring within 30 Days (< 1 Month)", details: `${exp1m} batches requiring high-priority FEFO dispensing`, amount: `${exp1m} batches` },
+        { channel: "Expiring in 1 to 3 Months", details: `${exp13m} batches requiring sales rotation / return to supplier`, amount: `${exp13m} batches` },
+        { channel: "Expiring in 3 to 6 Months", details: `${exp36m} batches in standard shelf monitoring`, amount: `${exp36m} batches` },
       ],
     });
   };
@@ -701,6 +934,72 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
             <span>{refreshing ? "Refreshing..." : "Live"}</span>
           </button>
 
+          {/* Print Button -- Identical format & styling to Main Dashboard */}
+          <button
+            type="button"
+            className="hosp-dashboard-icon-btn"
+            onClick={() => void handlePrintPharmacyOverviewPdf()}
+            disabled={exportStatus !== ""}
+            title="Print Pharmacy Overview Report"
+            style={{
+              padding: "7px 12px",
+              borderRadius: "8px",
+              border: "1px solid #cbd5e1",
+              background: "#ffffff",
+              display: "flex",
+              alignItems: "center",
+              gap: "6px",
+              fontSize: "12px",
+              fontWeight: 600,
+              color: "#334155",
+              cursor: exportStatus !== "" ? "not-allowed" : "pointer",
+              boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+            }}
+          >
+            <span style={{ fontSize: "13px" }}>🖨️</span>
+            <span>{exportStatus === "print" ? "Preparing..." : "Print"}</span>
+          </button>
+
+          {/* Download PDF Dropdown -- Matches Main Dashboard */}
+          <PdfExportDropdown
+            setNotice={setNotice}
+            onGenerate={async () => {
+              const { blob, filename } = await handleGeneratePharmacyOverviewPdf();
+              return {
+                blob,
+                filename,
+                title: "Ayu Polyclinic & Emergency Clinic Pharmacy Overview",
+                text: "Ayu Polyclinic & Emergency Clinic pharmacy overview export",
+              };
+            }}
+            renderTrigger={(onClick, loading) => (
+              <button
+                type="button"
+                className="hosp-dashboard-icon-btn"
+                onClick={onClick}
+                disabled={loading || exportStatus !== ""}
+                title="Download Pharmacy Overview PDF"
+                style={{
+                  padding: "7px 12px",
+                  borderRadius: "8px",
+                  border: "1px solid #cbd5e1",
+                  background: "#ffffff",
+                  display: "flex",
+                  alignItems: "center",
+                  gap: "6px",
+                  fontSize: "12px",
+                  fontWeight: 600,
+                  color: "#334155",
+                  cursor: (loading || exportStatus !== "") ? "not-allowed" : "pointer",
+                  boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+                }}
+              >
+                <span style={{ fontSize: "13px" }}>📥</span>
+                <span>{loading ? "Preparing..." : "Download PDF ▼"}</span>
+              </button>
+            )}
+          />
+
           {/* Notification Bell */}
           <button
             type="button"
@@ -775,7 +1074,11 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
 
         <button
           type="button"
-          onClick={() => onNavigate("pharmacy-purchases-grn")}
+          onClick={() => {
+            sessionStorage.setItem("pharmacy_purchases_tab", "pr");
+            sessionStorage.setItem("pharmacy_purchases_open_new_pr", "true");
+            onNavigate("pharmacy-purchases-grn");
+          }}
           style={{
             background: "#ffffff",
             color: "#334155",
@@ -824,6 +1127,36 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
             <line x1="10" y1="12" x2="14" y2="12" />
           </svg>
           <span>Receive GRN</span>
+        </button>
+
+        {/* Print Overview Action Button */}
+        <button
+          type="button"
+          onClick={() => void handlePrintPharmacyOverviewPdf()}
+          disabled={exportStatus !== ""}
+          style={{
+            background: "#ffffff",
+            color: "#334155",
+            border: "1px solid #cbd5e1",
+            borderRadius: "8px",
+            padding: "9px 15px",
+            fontSize: "13px",
+            fontWeight: 600,
+            display: "inline-flex",
+            alignItems: "center",
+            gap: "7px",
+            cursor: exportStatus !== "" ? "not-allowed" : "pointer",
+            boxShadow: "0 1px 2px rgba(0,0,0,0.03)",
+            whiteSpace: "nowrap",
+          }}
+          title="Print Overview in Dashboard Format"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+            <polyline points="6 9 6 2 18 2 18 9" />
+            <path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" />
+            <rect x="6" y="14" width="12" height="8" />
+          </svg>
+          <span>Print Overview</span>
         </button>
       </div>
 
@@ -900,7 +1233,8 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           type="button"
           className="hosp-kpi-card hosp-clickable-card"
           style={{ "--kpi-accent": "linear-gradient(135deg,#fb923c,#ea580c)" } as React.CSSProperties}
-          onClick={() => onNavigate("pharmacy-inventory-stock")}
+          onClick={openLowStockDrilldown}
+          title="Click to view low stock and reorder details"
         >
           <div className="hosp-kpi-icon" style={{ background: "linear-gradient(135deg,#fb923c,#ea580c)" }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -911,8 +1245,14 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           </div>
           <div className="hosp-kpi-body">
             <p className="hosp-kpi-label">Low Stock</p>
-            <h3 className="hosp-kpi-value" style={{ color: (summary?.low_stock_count || 0) > 0 ? "#ea580c" : undefined }}>{summary?.low_stock_count ?? 0}</h3>
-            <span className="hosp-kpi-sub">{summary?.out_of_stock_count ?? 0} completely out</span>
+            <h3 className="hosp-kpi-value" style={{ color: (summary?.low_stock_count || 0) > 0 ? "#ea580c" : undefined }}>
+              {summary?.low_stock_count ?? 0}
+            </h3>
+            <span className="hosp-kpi-sub">
+              {(summary?.out_of_stock_count || 0) > 0
+                ? `${summary?.out_of_stock_count} completely out`
+                : `${summary?.low_stock_count ?? 0} need reorder`}
+            </span>
           </div>
         </button>
 
@@ -920,7 +1260,8 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           type="button"
           className="hosp-kpi-card hosp-clickable-card"
           style={{ "--kpi-accent": "linear-gradient(135deg,#ef4444,#b91c1c)" } as React.CSSProperties}
-          onClick={() => onNavigate("pharmacy-inventory-stock")}
+          onClick={openExpiryDrilldown}
+          title="Click to view near expiry and expired batch risk"
         >
           <div className="hosp-kpi-icon" style={{ background: "linear-gradient(135deg,#ef4444,#b91c1c)" }}>
             <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
@@ -931,10 +1272,14 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           </div>
           <div className="hosp-kpi-body">
             <p className="hosp-kpi-label">Near Expiry</p>
-            <h3 className="hosp-kpi-value" style={{ color: (summary?.expiring_1m || 0) > 0 ? "#dc2626" : undefined }}>
-              {(summary?.expiring_1m || 0) + (summary?.expiring_1_3m || 0)}
+            <h3 className="hosp-kpi-value" style={{ color: ((summary?.expired_count || 0) + (summary?.expiring_1m || 0) + (summary?.expiring_1_3m || 0)) > 0 ? "#dc2626" : undefined }}>
+              {(summary?.expired_count || 0) + (summary?.expiring_1m || 0) + (summary?.expiring_1_3m || 0)}
             </h3>
-            <span className="hosp-kpi-sub">{summary?.expired_count ?? 0} expired stock items</span>
+            <span className="hosp-kpi-sub">
+              {(summary?.expired_count || 0) > 0
+                ? `${summary?.expired_count} expired · ${(summary?.expiring_1m || 0) + (summary?.expiring_1_3m || 0)} near (< 90d)`
+                : `${(summary?.expiring_1m || 0) + (summary?.expiring_1_3m || 0)} expiring within 90 days`}
+            </span>
           </div>
         </button>
       </div>
@@ -1172,7 +1517,10 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
               <span style={{ fontSize: "13px", fontWeight: 700, color: "#16a34a" }}>{totalUnits.toLocaleString("en-IN")} units</span>
             </div>
             <div
-              onClick={() => onNavigate("pharmacy-inventory-stock")}
+              onClick={() => {
+                sessionStorage.setItem("pharmacy_stock_tab", "low_stock");
+                onNavigate("pharmacy-inventory-stock");
+              }}
               style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
             >
               <span style={{ fontSize: "12.5px", color: "#475569", display: "flex", alignItems: "center", gap: "6px" }}>
@@ -1184,7 +1532,11 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
               </span>
             </div>
             <div
-              onClick={() => onNavigate("pharmacy-inventory-stock")}
+              onClick={() => {
+                sessionStorage.setItem("pharmacy_stock_tab", "batches");
+                sessionStorage.setItem("pharmacy_batch_filter", "near_expiry");
+                onNavigate("pharmacy-inventory-stock");
+              }}
               style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
             >
               <span style={{ fontSize: "12.5px", color: "#475569", display: "flex", alignItems: "center", gap: "6px" }}>
@@ -1196,7 +1548,11 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
               </span>
             </div>
             <div
-              onClick={() => onNavigate("pharmacy-inventory-stock")}
+              onClick={() => {
+                sessionStorage.setItem("pharmacy_stock_tab", "batches");
+                sessionStorage.setItem("pharmacy_batch_filter", "expired");
+                onNavigate("pharmacy-inventory-stock");
+              }}
               style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
             >
               <span style={{ fontSize: "12.5px", color: "#475569", display: "flex", alignItems: "center", gap: "6px" }}>
@@ -1207,9 +1563,15 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
                 {summary?.expired_count ?? 0} batches
               </span>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div
+              onClick={() => {
+                sessionStorage.setItem("pharmacy_stock_tab", "low_stock");
+                onNavigate("pharmacy-inventory-stock");
+              }}
+              style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer" }}
+            >
               <span style={{ fontSize: "12.5px", color: "#475569" }}>Completely Out of Stock</span>
-              <span style={{ fontSize: "12.5px", fontWeight: 700, color: "#64748b" }}>
+              <span style={{ fontSize: "12.5px", fontWeight: 700, color: (summary?.out_of_stock_count || 0) > 0 ? "#dc2626" : "#64748b" }}>
                 {summary?.out_of_stock_count ?? 0} items
               </span>
             </div>
@@ -1319,7 +1681,11 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
             </div>
             <button
               type="button"
-              onClick={() => onNavigate("pharmacy-purchases-grn")}
+              onClick={() => {
+                sessionStorage.setItem("pharmacy_purchases_tab", "pr");
+                sessionStorage.setItem("pharmacy_purchases_open_new_pr", "true");
+                onNavigate("pharmacy-purchases-grn");
+              }}
               style={{ fontSize: "11.5px", color: "#00828a", fontWeight: 700, background: "none", border: "none", cursor: "pointer" }}
             >
               New PR →
@@ -1365,7 +1731,12 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
                     <td style={{ padding: "7px 8px", textAlign: "right" }}>
                       <button
                         type="button"
-                        onClick={() => onNavigate("pharmacy-purchases-grn")}
+                        onClick={() => {
+                          sessionStorage.setItem("pharmacy_purchases_tab", "pr");
+                          sessionStorage.setItem("pharmacy_purchases_open_new_pr", "true");
+                          sessionStorage.setItem("pharmacy_purchases_prefill_med", it.medicine_name);
+                          onNavigate("pharmacy-purchases-grn");
+                        }}
                         style={{
                           background: "#f0fdf4",
                           border: "1px solid #bbf7d0",
@@ -1694,7 +2065,10 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))", gap: "10px" }}>
             {(summary?.needs_attention?.low_stock || 0) > 0 && (
               <div
-                onClick={() => onNavigate("pharmacy-inventory-stock")}
+                onClick={() => {
+                  sessionStorage.setItem("pharmacy_stock_tab", "low_stock");
+                  onNavigate("pharmacy-inventory-stock");
+                }}
                 style={{ padding: "10px 14px", borderRadius: "8px", background: "#fff7ed", border: "1px solid #fed7aa", cursor: "pointer" }}
               >
                 <div style={{ fontSize: "12px", fontWeight: 700, color: "#c2410c" }}>Low Stock Alert</div>
@@ -1705,12 +2079,18 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
             )}
             {(summary?.needs_attention?.near_expiry || 0) > 0 && (
               <div
-                onClick={() => onNavigate("pharmacy-inventory-stock")}
+                onClick={() => {
+                  sessionStorage.setItem("pharmacy_stock_tab", "batches");
+                  sessionStorage.setItem("pharmacy_batch_filter", (summary?.expired_count || 0) > 0 ? "expired" : "near_expiry");
+                  onNavigate("pharmacy-inventory-stock");
+                }}
                 style={{ padding: "10px 14px", borderRadius: "8px", background: "#fef2f2", border: "1px solid #fecaca", cursor: "pointer" }}
               >
-                <div style={{ fontSize: "12px", fontWeight: 700, color: "#b91c1c" }}>Near Expiry Alert</div>
+                <div style={{ fontSize: "12px", fontWeight: 700, color: "#b91c1c" }}>Expiry Alert</div>
                 <div style={{ fontSize: "11.5px", color: "#dc2626", marginTop: "2px" }}>
-                  {summary?.needs_attention?.near_expiry} batches expiring soon
+                  {(summary?.expired_count || 0) > 0
+                    ? `${summary?.expired_count} expired batch${summary?.expired_count === 1 ? "" : "es"} (blocked)`
+                    : `${summary?.needs_attention?.near_expiry} batches expiring soon`}
                 </div>
               </div>
             )}
@@ -1718,7 +2098,10 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
             
             {(summary?.needs_attention?.pending_purchase_requests || 0) > 0 && (
               <div
-                onClick={() => onNavigate("pharmacy-purchases-grn")}
+                onClick={() => {
+                  sessionStorage.setItem("pharmacy_purchases_tab", "pr");
+                  onNavigate("pharmacy-purchases-grn");
+                }}
                 style={{ padding: "10px 14px", borderRadius: "8px", background: "#faf5ff", border: "1px solid #e9d5ff", cursor: "pointer" }}
               >
                 <div style={{ fontSize: "12px", fontWeight: 700, color: "#7e22ce" }}>Purchase Approvals</div>
@@ -1729,7 +2112,10 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
             )}
             {(summary?.needs_attention?.unverified_grns || 0) > 0 && (
               <div
-                onClick={() => onNavigate("pharmacy-purchases-grn")}
+                onClick={() => {
+                  sessionStorage.setItem("pharmacy_purchases_tab", "grn_history");
+                  onNavigate("pharmacy-purchases-grn");
+                }}
                 style={{ padding: "10px 14px", borderRadius: "8px", background: "#f8fafc", border: "1px solid #cbd5e1", cursor: "pointer" }}
               >
                 <div style={{ fontSize: "12px", fontWeight: 700, color: "#334155" }}>Unverified GRNs</div>
@@ -1756,10 +2142,43 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "10px" }}>
           {[
             { label: "OP Dispense", page: "pharmacy-op-dispense", color: "#00828a", icon: "💊" },
-            { label: "View Stock", page: "pharmacy-inventory-stock", color: "#f59e0b", icon: "📦" },
-            { label: "Stock Adjustment", page: "pharmacy-inventory-stock", color: "#7c3aed", icon: "⚖️" },
-            { label: "New PR", page: "pharmacy-purchases-grn", color: "#059669", icon: "📝" },
-            { label: "Receive GRN", page: "pharmacy-purchases-grn", color: "#0d9488", icon: "📥" },
+            {
+              label: "View Stock",
+              action: () => {
+                sessionStorage.setItem("pharmacy_stock_tab", "batches");
+                onNavigate("pharmacy-inventory-stock");
+              },
+              color: "#f59e0b",
+              icon: "📦",
+            },
+            {
+              label: "Stock Adjustment",
+              action: () => {
+                sessionStorage.setItem("pharmacy_stock_tab", "adjustments");
+                onNavigate("pharmacy-inventory-stock");
+              },
+              color: "#7c3aed",
+              icon: "⚖️",
+            },
+            {
+              label: "New PR",
+              action: () => {
+                sessionStorage.setItem("pharmacy_purchases_tab", "pr");
+                sessionStorage.setItem("pharmacy_purchases_open_new_pr", "true");
+                onNavigate("pharmacy-purchases-grn");
+              },
+              color: "#059669",
+              icon: "📝",
+            },
+            {
+              label: "Receive GRN",
+              action: () => {
+                sessionStorage.setItem("pharmacy_purchases_tab", "grn");
+                onNavigate("pharmacy-purchases-grn");
+              },
+              color: "#0d9488",
+              icon: "📥",
+            },
             { label: "Suppliers", page: "pharmacy-suppliers", color: "#64748b", icon: "🤝" },
             { label: "Reports", page: "pharmacy-reports", color: "#475569", icon: "📊" },
           ].map((act, idx) => (
@@ -1767,7 +2186,8 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
               key={idx}
               type="button"
               onClick={() => {
-                if (act.page) onNavigate(act.page);
+                if (act.action) act.action();
+                else if (act.page) onNavigate(act.page);
               }}
               style={{
                 background: "#ffffff",
@@ -1804,14 +2224,14 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
         >
           <div className="hosp-revenue-pop-summary">
             <div>
-              <span>TOTAL VALUE</span>
-              <strong>₹{pharmacyPopup.total.toLocaleString("en-IN")}</strong>
+              <span>{pharmacyPopup.totalLabel || "TOTAL VALUE"}</span>
+              <strong>{pharmacyPopup.isCurrency === false ? pharmacyPopup.total.toLocaleString("en-IN") : `₹${pharmacyPopup.total.toLocaleString("en-IN")}`}</strong>
             </div>
             <div>
               <span>{pharmacyPopup.secondaryLabel}</span>
               <strong>
                 {typeof pharmacyPopup.secondaryValue === "number"
-                  ? `₹${pharmacyPopup.secondaryValue.toLocaleString("en-IN")}`
+                  ? (pharmacyPopup.isCurrency === false ? pharmacyPopup.secondaryValue.toLocaleString("en-IN") : `₹${pharmacyPopup.secondaryValue.toLocaleString("en-IN")}`)
                   : pharmacyPopup.secondaryValue}
               </strong>
             </div>
@@ -1824,7 +2244,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           <div className="hosp-revenue-pop-table">
             <div className="hosp-revenue-pop-head">
               <span>Channel / Category</span>
-              <span>Amount</span>
+              <span>{pharmacyPopup.amountHeader || "Amount"}</span>
             </div>
             {pharmacyPopup.rows.map((row, idx) => (
               <div key={idx} className="hosp-revenue-pop-row">
@@ -1832,7 +2252,9 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
                   <strong>{row.channel}</strong>
                   <p style={{ margin: "2px 0 0 0", fontSize: "11.5px", color: "#64748b" }}>{row.details}</p>
                 </div>
-                <strong style={{ color: "#0f172a" }}>₹{row.amount.toLocaleString("en-IN")}</strong>
+                <strong style={{ color: "#0f172a" }}>
+                  {typeof row.amount === "number" ? `₹${row.amount.toLocaleString("en-IN")}` : row.amount}
+                </strong>
               </div>
             ))}
           </div>
