@@ -58,6 +58,9 @@ type RecentTransaction = {
   user: string;
   date_time: string;
   status: string;
+  is_external?: boolean;
+  customer_name?: string;
+  customer_mobile?: string;
 };
 
 type PharmacySummary = {
@@ -66,6 +69,8 @@ type PharmacySummary = {
   sales_total: number;
   opd_sales_today: number;
   opd_prescriptions_count: number;
+  external_sales_today?: number;
+  external_sales_count?: number;
   ipd_consumption_today?: number;
   ipd_indents_count?: number;
   emergency_sales_today?: number;
@@ -95,9 +100,10 @@ type PharmacySummary = {
   low_stock_items?: LowStockItem[];
   top_medicines?: TopMedicine[];
   recent_transactions?: RecentTransaction[];
-  sales_trend?: { date: string; op_amount: number; ip_amount: number; er_amount: number }[];
+  sales_trend?: { date: string; op_amount: number; ext_amount?: number; ip_amount: number; er_amount: number }[];
   today_activity?: {
     op_dispensations: number;
+    external_sales?: number;
     ipd_issues?: number;
     emergency_issues?: number;
     returns: number;
@@ -149,8 +155,10 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
       ? `${Math.round(((salesToday - salesYesterday) / salesYesterday) * 100)}% vs yesterday`
       : "No yesterday sales";
 
-    const opSales = s.opd_sales_today || salesToday;
+    const opSales = s.opd_sales_today || 0;
     const billsCount = s.opd_prescriptions_count || 0;
+    const extSales = s.external_sales_today || 0;
+    const extBillsCount = s.external_sales_count || 0;
     const totalStockValue = s.total_stock_value || 0;
     const totalStockUnits = s.total_stock_items || 0;
     const lowStock = s.low_stock_count || 0;
@@ -160,6 +168,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
 
     const todayActivity = s.today_activity || {
       op_dispensations: billsCount,
+      external_sales: extBillsCount,
       returns: 0,
       grns_received: 0,
       stock_adjustments: 0,
@@ -180,6 +189,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           rows: [
             ["Today's Sales", formatCurrency(salesToday), salesTrend],
             ["OP Outpatient Sales", formatCurrency(opSales), `${billsCount} counter bill(s) processed`],
+            ["External Walk-in Sales", formatCurrency(extSales), `${extBillsCount} external bill(s) processed`],
             ["Total Stock Value", formatCurrency(totalStockValue), `${formatNumber(totalStockUnits)} units in inventory`],
             ["Low Stock Medicines", formatNumber(lowStock), `${outOfStock} completely out of stock`],
             ["Near Expiry Medicines", formatNumber(nearExpiry), `${expiredCount} expired stock items`],
@@ -190,6 +200,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           headers: ["Activity / Event", "Count", "Status"],
           rows: [
             ["OP Dispensations", String(todayActivity.op_dispensations), "Completed"],
+            ["External Sales", String(todayActivity.external_sales || 0), (todayActivity.external_sales || 0) > 0 ? "Completed" : "None recorded"],
             ["Returns Processed", String(todayActivity.returns), todayActivity.returns > 0 ? "Processed" : "None recorded"],
             ["GRNs Received", String(todayActivity.grns_received), todayActivity.grns_received > 0 ? "Received" : "None recorded"],
             ["Stock Adjustments", String(todayActivity.stock_adjustments), todayActivity.stock_adjustments > 0 ? "Logged" : "None recorded"],
@@ -507,6 +518,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
 
   const openSalesDrilldown = () => {
     const s = summary;
+    const totalBills = (s?.opd_prescriptions_count || 0) + (s?.external_sales_count || 0);
     setPharmacyPopup({
       title: "Today's Pharmacy Revenue Breakdown",
       subtitle: `Consolidated pharmacy sales and counter billing for ${dateRange}`,
@@ -514,9 +526,10 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
       secondaryLabel: "YESTERDAY SALES",
       secondaryValue: s?.sales_yesterday || 0,
       countLabel: "TOTAL BILLS",
-      countValue: s?.opd_prescriptions_count || 0,
+      countValue: totalBills,
       rows: [
         { channel: "OPD Counter Retail Sales", details: `${s?.opd_prescriptions_count || 0} counter bills issued`, amount: s?.opd_sales_today || 0 },
+        { channel: "External Counter Sales", details: `${s?.external_sales_count || 0} external bills issued`, amount: s?.external_sales_today || 0 },
         { channel: "All-Time Cumulative Sales", details: "Historical cumulative pharmacy collections", amount: s?.sales_total || 0 },
       ],
     });
@@ -526,7 +539,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
     const s = summary;
     setPharmacyPopup({
       title: "Outpatient (OPD) Pharmacy Dispensing",
-      subtitle: "Prescriptions dispensed to outpatient clinic and walk-in patients",
+      subtitle: "Prescriptions dispensed to registered outpatient clinic patients",
       total: s?.opd_sales_today || 0,
       secondaryLabel: "COUNTER BILLS",
       secondaryValue: `${s?.opd_prescriptions_count || 0} Bills`,
@@ -535,6 +548,23 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
       rows: [
         { channel: "Prescription Counter Dispense", details: "Direct outpatient retail billings", amount: s?.opd_sales_today || 0 },
         { channel: "Returns & Credit Adjustments", details: `${s?.today_activity?.returns || 0} returned medicine credits`, amount: 0 },
+      ],
+    });
+  };
+
+  const openExternalSalesDrilldown = () => {
+    const s = summary;
+    setPharmacyPopup({
+      title: "External (Walk-in) Pharmacy Dispensing",
+      subtitle: "Direct over-the-counter medicine sales to external walk-in customers",
+      total: s?.external_sales_today || 0,
+      secondaryLabel: "EXTERNAL BILLS",
+      secondaryValue: `${s?.external_sales_count || 0} Bills`,
+      countLabel: "AVG BILL VALUE",
+      countValue: s?.external_sales_count ? Math.round((s.external_sales_today || 0) / s.external_sales_count) : 0,
+      rows: [
+        { channel: "External Counter Dispense", details: `${s?.external_sales_count || 0} external walk-in sales issued`, amount: s?.external_sales_today || 0 },
+        { channel: "Returns & Adjustments", details: "0 returned medicine credits", amount: 0 },
       ],
     });
   };
@@ -636,19 +666,22 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
     const trend = summary?.sales_trend || [];
     if (chartPeriod === "today") {
       const todayRow = trend[trend.length - 1];
-      const val = Number(todayRow?.op_amount ?? summary?.opd_sales_today ?? 0);
+      const opVal = Number(todayRow?.op_amount ?? summary?.opd_sales_today ?? 0);
+      const extVal = Number(todayRow?.ext_amount ?? summary?.external_sales_today ?? 0);
+      const totalDispensed = Math.round((opVal + extVal) * 100) / 100;
+      const totalBills = (summary?.opd_prescriptions_count ?? 0) + (summary?.external_sales_count ?? 0);
       return [{
         label: "Today",
-        fullLabel: "Today's OP Dispense",
-        op: Math.round(val * 100) / 100,
-        subtext: `${summary?.opd_prescriptions_count ?? 0} bills`,
+        fullLabel: "Today's Dispensing (OP + External)",
+        op: totalDispensed,
+        subtext: `${totalBills} total bills`,
       }];
     }
     if (chartPeriod === "7d") {
       return trend.slice(-7).map((row) => ({
         label: dayLabel(row.date),
         fullLabel: `${dateLabel(row.date)} (${dayLabel(row.date)})`,
-        op: Math.round(Number(row.op_amount || 0) * 100) / 100,
+        op: Math.round((Number(row.op_amount || 0) + Number(row.ext_amount || 0)) * 100) / 100,
         subtext: undefined,
       }));
     }
@@ -658,7 +691,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
     for (let i = 0; i < last30.length; i += 7) {
       const chunk = last30.slice(i, i + 7);
       if (!chunk.length) continue;
-      const sum = chunk.reduce((s, r) => s + Number(r.op_amount || 0), 0);
+      const sum = chunk.reduce((s, r) => s + Number(r.op_amount || 0) + Number(r.ext_amount || 0), 0);
       const lbl = `${dateLabel(chunk[0].date)}–${dateLabel(chunk[chunk.length - 1].date)}`;
       weeks.push({
         label: lbl,
@@ -1209,6 +1242,28 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           </div>
         </button>
 
+        <button
+          type="button"
+          className="hosp-kpi-card hosp-clickable-card"
+          style={{ "--kpi-accent": "linear-gradient(135deg,#8b5cf6,#6d28d9)" } as React.CSSProperties}
+          onClick={openExternalSalesDrilldown}
+          title="Click to view external sales breakdown"
+        >
+          <div className="hosp-kpi-icon" style={{ background: "linear-gradient(135deg,#8b5cf6,#6d28d9)" }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M22 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+          </div>
+          <div className="hosp-kpi-body">
+            <p className="hosp-kpi-label">External Sales</p>
+            <h3 className="hosp-kpi-value">₹{(summary?.external_sales_today ?? 0).toLocaleString("en-IN")}</h3>
+            <span className="hosp-kpi-sub">{summary?.external_sales_count ?? 0} counter bills</span>
+          </div>
+        </button>
+
 
         <button
           type="button"
@@ -1304,11 +1359,18 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           <span style={{ fontSize: "12px", color: "#64748b", fontWeight: 500 }}>Live Operations Ledger</span>
         </div>
 
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: "10px" }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "10px" }}>
           <div style={{ padding: "10px 14px", borderRadius: "8px", background: "#f8fafc", border: "1px solid #f1f5f9" }}>
             <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>OP Dispensations</div>
             <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "#00828a", marginTop: "2px" }}>
               {summary?.today_activity?.op_dispensations ?? summary?.opd_prescriptions_count ?? 0}
+            </div>
+          </div>
+
+          <div style={{ padding: "10px 14px", borderRadius: "8px", background: "#f8fafc", border: "1px solid #f1f5f9" }}>
+            <div style={{ fontSize: "11px", color: "#64748b", fontWeight: 600 }}>External Sales</div>
+            <div style={{ fontSize: "1.25rem", fontWeight: 800, color: "#7c3aed", marginTop: "2px" }}>
+              {summary?.today_activity?.external_sales ?? summary?.external_sales_count ?? 0}
             </div>
           </div>
 
@@ -1994,6 +2056,9 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
                 if (t.type === "Return") {
                   badgeBg = "#fffbeb";
                   badgeColor = "#d97706";
+                } else if (t.type === "External" || t.is_external) {
+                  badgeBg = "#fef3c7";
+                  badgeColor = "#92400e";
                 }
 
                 return (
@@ -2003,8 +2068,13 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
                     </td>
                     <td style={{ padding: "8px 10px", fontWeight: 600, color: "#0f172a" }}>
                       {t.patient_name}
+                      {(t.type === "External" || t.is_external) && (
+                        <span style={{ marginLeft: "6px", fontSize: "10px", background: "#fef3c7", color: "#92400e", padding: "1px 6px", borderRadius: "4px", fontWeight: 700 }}>
+                          External
+                        </span>
+                      )}
                     </td>
-                    <td style={{ padding: "8px 10px", color: "#64748b", fontFamily: "monospace" }}>
+                    <td style={{ padding: "8px 10px", color: (t.type === "External" || t.is_external) ? "#92400e" : "#64748b", fontFamily: "monospace" }}>
                       {t.uhid}
                     </td>
                     <td style={{ padding: "8px 10px" }}>

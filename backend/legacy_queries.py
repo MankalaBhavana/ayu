@@ -4503,7 +4503,7 @@ def record_invoice_payment(db, invoice_id, data):
                 invoice_id,
                 amount,
                 data["payment_mode"],
-                data.get("gateway_ref"),
+                data.get("gateway_ref") or data.get("reference"),
                 data.get("converted_from_mode"),
                 data.get("converted_to_mode"),
             ),
@@ -6160,6 +6160,17 @@ def create_pharmacy_dispense(db, data, username):
     idempotency_key = data.get("idempotency_key")
     payload_hash = _payload_hash(data)
 
+    # External (walk-in) sale fields -- no patient_id required
+    sale_type = data.get("sale_type", "internal")
+    customer_name = (data.get("customer_name") or "").strip() or None
+    customer_age = data.get("customer_age")
+    customer_dob = (data.get("customer_dob") or "").strip() or None
+    customer_mobile = (data.get("customer_mobile") or "").strip() or None
+    if sale_type == "external" and not customer_name:
+        raise ValueError("Customer name is required for external sales.")
+    if sale_type == "external" and not customer_mobile:
+        raise ValueError("Customer mobile number is required for external sales.")
+
     with get_connection(db) as conn:
         cursor = conn.cursor()
 
@@ -6321,10 +6332,10 @@ def create_pharmacy_dispense(db, data, username):
             item_stock_source = stock_source
             cursor.execute(
                 """
-                INSERT INTO pharmacy_sales (patient_id, prescription_ref, medicine_name, quantity, unit_price, amount, payment_mode, stock_source, admission_id, indent_id, billing_type)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO pharmacy_sales (patient_id, prescription_ref, medicine_name, quantity, unit_price, amount, payment_mode, stock_source, admission_id, indent_id, billing_type, sale_type, customer_name, customer_age, customer_dob, customer_mobile)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (patient_id, str(prescription_id) if prescription_id else None, medicine_name, dispensed_qty, unit_price, net_line_amount, payment_mode, item_stock_source, admission_id, indent_id, billing_type),
+                (patient_id, str(prescription_id) if prescription_id else None, medicine_name, dispensed_qty, unit_price, net_line_amount, payment_mode, item_stock_source, admission_id, indent_id, billing_type, sale_type, customer_name, customer_age, customer_dob, customer_mobile),
             )
             sale_id = cursor.lastrowid
             sale_ids.append(sale_id)
@@ -6375,8 +6386,8 @@ def create_pharmacy_dispense(db, data, username):
 
         claim_id = None
         is_insurance = False
-        # Only generate an immediate invoice for OPD; IPD and Emergency Account run on patient account settled at discharge / encounter close
-        if total_amount > 0 and patient_id and billing_type not in ("IPD_RUNNING", "EMERGENCY_ACCOUNT"):
+        # Only generate an immediate invoice for OPD / external; IPD and Emergency Account run on patient account settled at discharge / encounter close
+        if total_amount > 0 and (patient_id or sale_type == "external") and billing_type not in ("IPD_RUNNING", "EMERGENCY_ACCOUNT"):
             invoice_no = f"INV-PHM-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
             is_insurance = (
                 payment_mode.lower() == "insurance"
@@ -6418,21 +6429,44 @@ def create_pharmacy_dispense(db, data, username):
                 claim_id = cursor.lastrowid
             else:
                 ref_src = "Emergency" if "EMERGENCY" in billing_type.upper() else None
+                paid_input = data.get("paid_amount")
+                if paid_input is not None:
+                    try:
+                        paid_amt = max(0.0, min(float(paid_input), total_amount))
+                    except (ValueError, TypeError):
+                        paid_amt = total_amount
+                else:
+                    paid_amt = total_amount
+
+                due_amt = max(0.0, round(total_amount - paid_amt, 2))
+                if due_amt == 0:
+                    pay_status = "paid"
+                elif paid_amt > 0:
+                    pay_status = "partial"
+                else:
+                    pay_status = "due"
+
+                inv_patient_name = customer_name if sale_type == "external" else None
+                inv_type = "EXTERNAL" if sale_type == "external" else "OP"
+                inv_ref_src = f"External ({customer_mobile})" if (sale_type == "external" and customer_mobile) else ref_src
+
                 cursor.execute(
                     """
                     INSERT INTO invoices (
                         invoice_no, patient_id, module, doctor_name, clinic_name, referral_source,
                         subtotal, tax, discount, total_amount, paid_amount, due_amount, payment_status, created_by,
-                        advance_amount, refunded_amount
-                    ) VALUES (?, ?, 'PHARMACY', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        advance_amount, refunded_amount, patient_name, invoice_type
+                    ) VALUES (?, ?, 'PHARMACY', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
-                    (invoice_no, patient_id, None, "Sri Raksha Hospital", ref_src, total_subtotal, total_tax, total_discount, total_amount, total_amount, 0, "paid", username, 0, 0),
+                    (invoice_no, patient_id, None, "Sri Raksha Hospital", inv_ref_src, total_subtotal, total_tax, total_discount, total_amount, paid_amt, due_amt, pay_status, username, 0, 0, inv_patient_name, inv_type),
                 )
                 invoice_id = cursor.lastrowid
-                cursor.execute(
-                    "INSERT INTO invoice_payments (invoice_id, amount, payment_mode) VALUES (?, ?, ?)",
-                    (invoice_id, total_amount, payment_mode),
-                )
+                if paid_amt > 0:
+                    rec_mode = "cash" if str(payment_mode).lower() in ("due", "pending", "none", "") else payment_mode
+                    cursor.execute(
+                        "INSERT INTO invoice_payments (invoice_id, amount, payment_mode) VALUES (?, ?, ?)",
+                        (invoice_id, paid_amt, rec_mode),
+                    )
                 for sale_id in sale_ids:
                     cursor.execute("UPDATE pharmacy_sales SET invoice_id = ? WHERE id = ?", (invoice_id, sale_id))
 
@@ -6504,6 +6538,8 @@ def create_pharmacy_dispense(db, data, username):
             p_row = cursor.fetchone()
             if p_row:
                 patient_name = f"{p_row['name']} {p_row['last_name'] or ''}".strip()
+        elif sale_type == "external" and customer_name:
+            patient_name = customer_name
 
         ward_info = None
         bed_info = None
@@ -6522,6 +6558,9 @@ def create_pharmacy_dispense(db, data, username):
             "invoice_id": invoice_id,
             "invoice_no": invoice_no if invoice_id else None,
             "total_amount": total_amount,
+            "paid_amount": paid_amt if 'paid_amt' in locals() else total_amount,
+            "due_amount": due_amt if 'due_amt' in locals() else 0.0,
+            "payment_status": pay_status if 'pay_status' in locals() else ("due" if is_insurance else "paid"),
             "stock_source": stock_source,
             "claim_id": claim_id,
             "is_insurance": is_insurance,
@@ -6539,6 +6578,11 @@ def create_pharmacy_dispense(db, data, username):
             "ward": ward_info,
             "bed_no": bed_info,
             "dispensed_at": current_ist_datetime().strftime("%d-%b-%Y %I:%M %p"),
+            "sale_type": sale_type,
+            "customer_name": customer_name,
+            "customer_age": customer_age,
+            "customer_dob": customer_dob,
+            "customer_mobile": customer_mobile,
         }
 
         if idempotency_key:
@@ -6838,65 +6882,227 @@ def create_pharmacy_sale(db, data):
 
 
 def list_pharmacy_sales(db, medicine_name=None, invoice_id=None, patient_id=None, admission_id=None, billing_type=None,
-                         from_date=None, to_date=None, q=None):
+                         sale_type=None, due_only=False, from_date=None, to_date=None, q=None):
     with get_connection(db) as conn:
         cursor = conn.cursor()
         clauses = []
         params = []
         if medicine_name:
-            clauses.append("medicine_name = ?")
+            clauses.append("ps.medicine_name = ?")
             params.append(medicine_name)
         if invoice_id:
             raw = str(invoice_id).strip()
             resolved_ids = []
-            cursor.execute("SELECT id FROM invoices WHERE invoice_no = ? OR invoice_no ILIKE ?", (raw, f"%{raw}%"))
-            for inv_row in cursor.fetchall():
-                resolved_ids.append(inv_row["id"])
             if raw.isdigit() and len(raw) < 10:
                 resolved_ids.append(int(raw))
+            else:
+                cursor.execute("SELECT id FROM invoices WHERE invoice_no = ?", (raw,))
+                for inv_row in cursor.fetchall():
+                    resolved_ids.append(inv_row["id"])
+                if not resolved_ids:
+                    cursor.execute("SELECT id FROM invoices WHERE invoice_no ILIKE ?", (f"%{raw}%",))
+                    for inv_row in cursor.fetchall():
+                        resolved_ids.append(inv_row["id"])
             if not resolved_ids:
                 resolved_ids = [-1]
             placeholders = ", ".join("?" for _ in resolved_ids)
-            clauses.append(f"invoice_id IN ({placeholders})")
+            clauses.append(f"ps.invoice_id IN ({placeholders})")
             params.extend(resolved_ids)
         if patient_id:
-            # Staff often key in just the trailing digits printed on a
-            # receipt/wristband rather than the full "PAT-YYYYMMDD-NNNN"
-            # UHID, so match on the full id or as a suffix.
             lookup = str(patient_id).strip()
-            clauses.append("(patient_id = ? OR patient_id LIKE ?)")
+            clauses.append("(ps.patient_id = ? OR ps.patient_id LIKE ?)")
             params.extend([lookup, f"%{lookup}"])
         if admission_id:
-            # Scoped to one admission so a readmitted patient's earlier stay
-            # never shows up mixed into the current one's issued list.
-            clauses.append("admission_id = ?")
+            clauses.append("ps.admission_id = ?")
             params.append(admission_id)
         if billing_type:
-            clauses.append("billing_type = ?")
+            clauses.append("ps.billing_type = ?")
             params.append(billing_type)
+        if sale_type:
+            clauses.append("ps.sale_type = ?")
+            params.append(sale_type)
+        if due_only:
+            clauses.append("COALESCE(inv.due_amount, 0) > 0")
         if from_date:
-            clauses.append("sold_at >= DATE(?)")
+            clauses.append("ps.sold_at >= DATE(?)")
             params.append(from_date)
         if to_date:
-            clauses.append("sold_at < DATE(?) + INTERVAL '1 day'")
+            clauses.append("ps.sold_at < DATE(?) + INTERVAL '1 day'")
             params.append(to_date)
         if q:
-            clauses.append("(patient_id ILIKE ? OR medicine_name ILIKE ?)")
+            clauses.append("(ps.patient_id ILIKE ? OR ps.medicine_name ILIKE ? OR ps.customer_name ILIKE ? OR ps.customer_mobile ILIKE ? OR inv.invoice_no ILIKE ?)")
             like = f"%{str(q).strip()}%"
-            params.extend([like, like])
+            params.extend([like, like, like, like, like])
         where_clause = f" WHERE {' AND '.join(clauses)}" if clauses else ""
         cursor.execute(
             f"""
             SELECT ps.*,
+                   inv.invoice_no,
+                   inv.paid_amount AS invoice_paid_amount,
+                   inv.due_amount AS invoice_due_amount,
+                   inv.payment_status AS invoice_payment_status,
+                   inv.total_amount AS invoice_total_amount,
                    COALESCE((
                        SELECT SUM(pr.quantity) FROM pharmacy_returns pr
                        WHERE pr.original_sale_id = ps.id AND pr.status != 'rejected'
                    ), 0) AS returned_qty
-            FROM pharmacy_sales ps{where_clause} ORDER BY sold_at DESC
+            FROM pharmacy_sales ps
+            LEFT JOIN invoices inv ON inv.id = ps.invoice_id
+            {where_clause} ORDER BY ps.sold_at DESC
             """,
             tuple(params),
         )
         return cursor.fetchall()
+
+
+
+def list_external_customers(db, q=None):
+    with get_connection(db) as conn:
+        cursor = conn.cursor()
+        if q:
+            like = f"%{str(q).strip()}%"
+            cursor.execute("""
+                SELECT ps.customer_mobile, ps.customer_name, MAX(ps.customer_age) AS customer_age,
+                       MAX(ps.customer_dob) AS customer_dob, MAX(ps.sold_at) AS last_visit,
+                       COUNT(DISTINCT ps.invoice_id) AS total_orders,
+                       COALESCE(SUM(ps.amount), 0) AS total_spent,
+                       COALESCE(MAX(inv.due_amount), 0) AS last_due
+                FROM pharmacy_sales ps
+                LEFT JOIN invoices inv ON inv.id = ps.invoice_id
+                WHERE ps.sale_type = 'external' AND ps.customer_name IS NOT NULL
+                  AND (ps.customer_name ILIKE ? OR ps.customer_mobile ILIKE ?)
+                GROUP BY ps.customer_mobile, ps.customer_name
+                ORDER BY last_visit DESC
+                LIMIT 10
+            """, (like, like))
+        else:
+            cursor.execute("""
+                SELECT ps.customer_mobile, ps.customer_name, MAX(ps.customer_age) AS customer_age,
+                       MAX(ps.customer_dob) AS customer_dob, MAX(ps.sold_at) AS last_visit,
+                       COUNT(DISTINCT ps.invoice_id) AS total_orders,
+                       COALESCE(SUM(ps.amount), 0) AS total_spent,
+                       COALESCE(MAX(inv.due_amount), 0) AS last_due
+                FROM pharmacy_sales ps
+                LEFT JOIN invoices inv ON inv.id = ps.invoice_id
+                WHERE ps.sale_type = 'external' AND ps.customer_name IS NOT NULL
+                GROUP BY ps.customer_mobile, ps.customer_name
+                ORDER BY last_visit DESC
+                LIMIT 20
+            """)
+        return cursor.fetchall()
+
+
+
+def get_pharmacy_dues_by_identifier(db, identifier):
+    """Fetch all pharmacy-related unpaid/partially-paid invoices matching a Patient ID / UHID,
+    Invoice No / ID, or Customer Mobile / Name.
+    """
+    if not identifier:
+        return {"total_due": 0.0, "count": 0, "identifier": "", "invoices": []}
+    raw = str(identifier).strip()
+    with get_connection(db) as conn:
+        cursor = conn.cursor()
+        clauses = []
+        params = []
+
+        # 1. By patient_id
+        clauses.append("(inv.patient_id = ? OR inv.patient_id ILIKE ?)")
+        params.extend([raw, f"%{raw}"])
+
+        # 2. By invoice_no
+        clauses.append("(inv.invoice_no = ? OR inv.invoice_no ILIKE ?)")
+        params.extend([raw, f"%{raw}%"])
+
+        # 3. By integer invoice id (direct or stripped of non-digits)
+        digits_only = "".join(ch for ch in raw if ch.isdigit())
+        if digits_only and len(digits_only) <= 9:
+            clauses.append("inv.id = ?")
+            params.append(int(digits_only))
+
+        # 4. By patient_name / customer_name / referral_source
+        clauses.append("(inv.patient_name ILIKE ? OR inv.referral_source ILIKE ?)")
+        params.extend([f"%{raw}%", f"%{raw}%"])
+
+        # 5. By pharmacy_sales customer_mobile or customer_name
+        clauses.append("""
+            inv.id IN (
+                SELECT ps.invoice_id FROM pharmacy_sales ps
+                WHERE (ps.customer_mobile ILIKE ? OR ps.customer_name ILIKE ? OR ps.patient_id ILIKE ?)
+            )
+        """)
+        params.extend([f"%{raw}%", f"%{raw}%", f"%{raw}%"])
+
+        query_where = f"WHERE ({' OR '.join(clauses)}) AND COALESCE(inv.due_amount, 0) > 0 AND LOWER(COALESCE(inv.payment_status, 'due')) != 'paid'"
+
+        cursor.execute(f"""
+            SELECT inv.id AS invoice_id,
+                   inv.invoice_no,
+                   inv.created_at,
+                   inv.patient_id,
+                   inv.patient_name,
+                   inv.invoice_type,
+                   inv.total_amount,
+                   inv.paid_amount,
+                   inv.due_amount,
+                   inv.payment_status,
+                   inv.referral_source,
+                   p.name AS patient_first_name,
+                   p.last_name AS patient_last_name,
+                   p.phone AS patient_phone
+            FROM invoices inv
+            LEFT JOIN patients p ON p.patient_id = inv.patient_id
+            {query_where}
+            ORDER BY inv.created_at DESC
+        """, tuple(params))
+
+        invoice_rows = cursor.fetchall()
+        invoices = []
+        total_due = 0.0
+
+        for r in invoice_rows:
+            inv_id = r["invoice_id"]
+            cursor.execute("""
+                SELECT ps.medicine_name, ps.quantity, ps.unit_price, ps.amount,
+                       ps.sale_type, ps.customer_name, ps.customer_mobile
+                FROM pharmacy_sales ps
+                WHERE ps.invoice_id = ?
+            """, (inv_id,))
+            sales_rows = cursor.fetchall()
+
+            med_names = [f"{s['medicine_name']} (x{s['quantity']})" for s in sales_rows]
+            summary_meds = ", ".join(med_names) if med_names else "Pharmacy Medicines"
+
+            sale_type = sales_rows[0]["sale_type"] if sales_rows and sales_rows[0].get("sale_type") else (r["invoice_type"] or "internal").lower()
+            cust_name = sales_rows[0]["customer_name"] if sales_rows and sales_rows[0].get("customer_name") else (r["patient_name"] or "")
+            cust_mobile = sales_rows[0]["customer_mobile"] if sales_rows and sales_rows[0].get("customer_mobile") else (r["patient_phone"] or "")
+
+            due_amt = float(r["due_amount"] or 0)
+            total_due += due_amt
+
+            invoices.append({
+                "invoice_id": inv_id,
+                "invoice_no": r["invoice_no"],
+                "created_at": str(r["created_at"]) if r["created_at"] else "",
+                "patient_id": r["patient_id"],
+                "patient_name": f"{r['patient_first_name'] or ''} {r['patient_last_name'] or ''}".strip() or cust_name or r["patient_id"] or "Customer",
+                "customer_name": cust_name,
+                "customer_mobile": cust_mobile,
+                "sale_type": sale_type,
+                "invoice_type": r["invoice_type"],
+                "total_amount": float(r["total_amount"] or 0),
+                "paid_amount": float(r["paid_amount"] or 0),
+                "due_amount": due_amt,
+                "payment_status": r["payment_status"],
+                "medicines_summary": summary_meds,
+                "items": [dict(s) for s in sales_rows],
+            })
+
+        return {
+            "total_due": round(total_due, 2),
+            "count": len(invoices),
+            "identifier": raw,
+            "invoices": invoices,
+        }
 
 
 
@@ -6985,8 +7191,14 @@ def get_pharmacy_summary(db):
         cursor.execute("SELECT COALESCE(SUM(amount), 0) AS value FROM pharmacy_sales")
         sales_total = float(cursor.fetchone()["value"] or 0)
 
-        # OPD Sales today & count
-        cursor.execute("SELECT COALESCE(SUM(amount), 0) AS val, COUNT(*) AS cnt FROM pharmacy_sales WHERE DATE(sold_at) = CURRENT_DATE AND (billing_type IN ('OPD_IMMEDIATE', 'CASH_OPD') OR billing_type IS NULL)")
+        # External Sales today & count (Distinct walk-in OTC direct sales)
+        cursor.execute("SELECT COALESCE(SUM(amount), 0) AS val, COUNT(*) AS cnt FROM pharmacy_sales WHERE DATE(sold_at) = CURRENT_DATE AND sale_type = 'external'")
+        ext_row = cursor.fetchone()
+        external_sales_today = float(ext_row["val"] or 0)
+        external_sales_count = int(ext_row["cnt"] or 0)
+
+        # OPD Sales today & count (Internal outpatient prescription dispensing ONLY -- excluding external sales to prevent duplication)
+        cursor.execute("SELECT COALESCE(SUM(amount), 0) AS val, COUNT(*) AS cnt FROM pharmacy_sales WHERE DATE(sold_at) = CURRENT_DATE AND (billing_type IN ('OPD_IMMEDIATE', 'CASH_OPD') OR billing_type IS NULL) AND (sale_type != 'external' OR sale_type IS NULL)")
         opd_row = cursor.fetchone()
         opd_sales_today = float(opd_row["val"] or 0)
         opd_prescriptions_count = int(opd_row["cnt"] or 0)
@@ -7021,8 +7233,10 @@ def get_pharmacy_summary(db):
         sales_today = max(0.0, sales_today - _returns_refunded("AND DATE(pr.created_at) = CURRENT_DATE"))
         sales_yesterday = max(0.0, sales_yesterday - _returns_refunded("AND DATE(pr.created_at) = CURRENT_DATE - INTERVAL '1 day'"))
         sales_total = max(0.0, sales_total - _returns_refunded())
+        external_sales_today = max(0.0, external_sales_today - _returns_refunded(
+            "AND DATE(pr.created_at) = CURRENT_DATE AND ps.sale_type = 'external'"))
         opd_sales_today = max(0.0, opd_sales_today - _returns_refunded(
-            "AND DATE(pr.created_at) = CURRENT_DATE AND (ps.billing_type IN ('OPD_IMMEDIATE', 'CASH_OPD') OR ps.billing_type IS NULL)"))
+            "AND DATE(pr.created_at) = CURRENT_DATE AND (ps.billing_type IN ('OPD_IMMEDIATE', 'CASH_OPD') OR ps.billing_type IS NULL) AND (ps.sale_type != 'external' OR ps.sale_type IS NULL)"))
         ipd_consumption_today = max(0.0, ipd_consumption_today - _returns_refunded(
             "AND DATE(pr.created_at) = CURRENT_DATE AND ps.billing_type = 'IPD_RUNNING'"))
         emergency_sales_today = max(0.0, emergency_sales_today - _returns_refunded(
@@ -7159,14 +7373,15 @@ def get_pharmacy_summary(db):
                 "status": "Out of Stock (Expired)" if (q_avail == 0 and q_phys > 0) else ("Out of Stock" if q_phys == 0 else "Low Stock"),
             })
 
-        # Top 10 Medicines This Month with OP/IP/Emergency split
+        # Top 10 Medicines This Month with OP/IP/Emergency/External split
         cursor.execute("""
             SELECT medicine_name,
                    COALESCE(SUM(quantity), 0) AS total_qty,
                    COALESCE(SUM(amount), 0) AS total_amount,
                    COALESCE(SUM(CASE WHEN billing_type = 'IPD_RUNNING' THEN quantity ELSE 0 END), 0) AS ip_qty,
                    COALESCE(SUM(CASE WHEN billing_type IN ('EMERGENCY', 'EMERGENCY_ACCOUNT', 'EMERGENCY_IMMEDIATE') THEN quantity ELSE 0 END), 0) AS emergency_qty,
-                   COALESCE(SUM(CASE WHEN billing_type NOT IN ('IPD_RUNNING', 'EMERGENCY', 'EMERGENCY_ACCOUNT', 'EMERGENCY_IMMEDIATE') OR billing_type IS NULL THEN quantity ELSE 0 END), 0) AS op_qty
+                   COALESCE(SUM(CASE WHEN sale_type = 'external' THEN quantity ELSE 0 END), 0) AS external_qty,
+                   COALESCE(SUM(CASE WHEN (billing_type NOT IN ('IPD_RUNNING', 'EMERGENCY', 'EMERGENCY_ACCOUNT', 'EMERGENCY_IMMEDIATE') OR billing_type IS NULL) AND (sale_type != 'external' OR sale_type IS NULL) THEN quantity ELSE 0 END), 0) AS op_qty
             FROM pharmacy_sales
             WHERE sold_at >= DATE_TRUNC('month', CURRENT_DATE)
             GROUP BY medicine_name
@@ -7180,7 +7395,8 @@ def get_pharmacy_summary(db):
         # Pharmacy Overview trend chart. Real per-day aggregates, never fabricated.
         cursor.execute("""
             SELECT DATE(sold_at) AS day,
-                   COALESCE(SUM(CASE WHEN billing_type NOT IN ('IPD_RUNNING', 'EMERGENCY', 'EMERGENCY_ACCOUNT', 'EMERGENCY_IMMEDIATE') OR billing_type IS NULL THEN amount ELSE 0 END), 0) AS op_amount,
+                   COALESCE(SUM(CASE WHEN (billing_type NOT IN ('IPD_RUNNING', 'EMERGENCY', 'EMERGENCY_ACCOUNT', 'EMERGENCY_IMMEDIATE') OR billing_type IS NULL) AND (sale_type != 'external' OR sale_type IS NULL) THEN amount ELSE 0 END), 0) AS op_amount,
+                   COALESCE(SUM(CASE WHEN sale_type = 'external' THEN amount ELSE 0 END), 0) AS ext_amount,
                    COALESCE(SUM(CASE WHEN billing_type = 'IPD_RUNNING' THEN amount ELSE 0 END), 0) AS ip_amount,
                    COALESCE(SUM(CASE WHEN billing_type IN ('EMERGENCY', 'EMERGENCY_ACCOUNT', 'EMERGENCY_IMMEDIATE') THEN amount ELSE 0 END), 0) AS er_amount
             FROM pharmacy_sales
@@ -7192,6 +7408,7 @@ def get_pharmacy_summary(db):
             {
                 "date": str(r["day"]),
                 "op_amount": float(r["op_amount"] or 0),
+                "ext_amount": float(r["ext_amount"] or 0),
                 "ip_amount": float(r["ip_amount"] or 0),
                 "er_amount": float(r["er_amount"] or 0),
             }
@@ -7199,10 +7416,15 @@ def get_pharmacy_summary(db):
         ]
 
         cursor.execute("""
-            SELECT ps.id, ps.patient_id, TRIM(p.name || ' ' || COALESCE(p.last_name, '')) AS patient_name, ps.medicine_name, ps.quantity,
-                   ps.unit_price, ps.amount, ps.billing_type, ps.payment_mode, ps.sold_at,
+            SELECT ps.id, ps.patient_id, TRIM(p.name || ' ' || COALESCE(p.last_name, '')) AS patient_name,
+                   ps.customer_name, ps.customer_mobile, ps.customer_age, ps.customer_dob, ps.sale_type,
+                   ps.medicine_name, ps.quantity, ps.unit_price, ps.amount, ps.billing_type, ps.payment_mode, ps.sold_at,
                    ps.invoice_id, ps.admission_id,
-                   COALESCE(inv.total_amount, ps.amount) AS invoice_total
+                   COALESCE(inv.total_amount, ps.amount) AS invoice_total,
+                   inv.invoice_no,
+                   inv.paid_amount AS invoice_paid_amount,
+                   inv.due_amount AS invoice_due_amount,
+                   inv.payment_status AS invoice_payment_status
             FROM pharmacy_sales ps
             LEFT JOIN patients p ON p.patient_id = ps.patient_id
             LEFT JOIN invoices inv ON inv.id = ps.invoice_id
@@ -7212,32 +7434,55 @@ def get_pharmacy_summary(db):
         recent_sales_rows = cursor.fetchall()
         recent_transactions = []
         for r in recent_sales_rows:
+            is_external = (r.get("sale_type") == "external") or (not r["patient_id"] and bool(r.get("customer_name")))
             b_type = r["billing_type"] or "OPD_IMMEDIATE"
-            if b_type == "IPD_RUNNING":
+            if is_external:
+                tx_type = "External"
+            elif b_type == "IPD_RUNNING":
                 tx_type = "IPD Issue"
-                pay_status = "Posted to Admission"
             elif b_type in ("EMERGENCY", "EMERGENCY_ACCOUNT", "EMERGENCY_IMMEDIATE"):
                 tx_type = "Emergency Dispense"
-                pay_status = "Emergency Account" if not r["invoice_id"] else "Paid"
             else:
                 tx_type = "OP Dispense"
+
+            inv_status = (r.get("invoice_payment_status") or "").strip().lower()
+            if inv_status == "paid":
+                pay_status = "Paid"
+            elif inv_status == "partial":
+                pay_status = "Partial Due"
+            elif inv_status == "due":
+                pay_status = "Pending Due"
+            elif b_type == "IPD_RUNNING":
+                pay_status = "Posted to Admission"
+            elif b_type in ("EMERGENCY", "EMERGENCY_ACCOUNT", "EMERGENCY_IMMEDIATE"):
+                pay_status = "Emergency Account" if not r["invoice_id"] else "Paid"
+            else:
                 pay_status = "Paid"
 
-            ref = f"SALE-{r['id']}" if not r["invoice_id"] else f"INV-{r['invoice_id']}"
+            ref = r.get("invoice_no") or (f"INV-{r['invoice_id']}" if r["invoice_id"] else f"SALE-{r['id']}")
             sold_time_str = str(r["sold_at"])[:16] if r["sold_at"] else ""
             
             amount_val = float(r["amount"] or 0)
             if amount_val == 0 and r["invoice_id"] and r.get("invoice_total") is not None:
                 amount_val = float(r["invoice_total"] or 0)
 
+            pat_name = r["customer_name"] if is_external else (r["patient_name"] or r["patient_id"] or "Walk-in")
+            uhid_val = "External" if is_external else (r["patient_id"] or (f"IP-{r['admission_id']}" if r["admission_id"] else "-"))
+
             recent_transactions.append({
                 "reference": ref,
-                "patient_name": r["patient_name"] or (r["patient_id"] or "Walk-in"),
-                "uhid": r["patient_id"] or (f"IP-{r['admission_id']}" if r["admission_id"] else "-"),
+                "invoice_id": r["invoice_id"],
+                "patient_name": pat_name,
+                "uhid": uhid_val,
                 "type": tx_type,
+                "is_external": is_external,
+                "customer_name": r.get("customer_name"),
+                "customer_mobile": r.get("customer_mobile"),
                 "medicine_name": r["medicine_name"],
                 "medicine_count": 1,
                 "amount": amount_val,
+                "paid_amount": float(r.get("invoice_paid_amount") or 0),
+                "due_amount": float(r.get("invoice_due_amount") or 0),
                 "payment_status": pay_status,
                 "user": "Pharmacist",
                 "date_time": sold_time_str,
@@ -7253,6 +7498,8 @@ def get_pharmacy_summary(db):
         "sales_total": sales_total,
         "opd_sales_today": opd_sales_today,
         "opd_prescriptions_count": opd_prescriptions_count,
+        "external_sales_today": external_sales_today,
+        "external_sales_count": external_sales_count,
         "ipd_consumption_today": ipd_consumption_today,
         "ipd_indents_count": ipd_indents_count,
         "emergency_sales_today": emergency_sales_today,
@@ -7277,6 +7524,7 @@ def get_pharmacy_summary(db):
         "sales_trend": sales_trend,
         "today_activity": {
             "op_dispensations": opd_prescriptions_count,
+            "external_sales": external_sales_count,
             "ipd_issues": ipd_indents_count,
             "emergency_issues": emergency_count,
             "returns": returns_today,

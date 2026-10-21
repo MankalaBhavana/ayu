@@ -1,9 +1,9 @@
-from fastapi import APIRouter, Body, Depends, HTTPException, Request
+from fastapi import APIRouter, Body, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 import re
 
 from database import get_db
-from deps import require_permissions
+from deps import require_permissions, require_any_permission
 from common import rows_to_dicts, validate_required_fields, log_audit_event, client_ip
 import legacy_queries as lq
 
@@ -301,15 +301,54 @@ def pharmacy_insurance_case_update(claim_id: int, request: Request, payload: dic
     return {"status": "ok"}
 
 
+@router.get("/invoices/{invoice_id}")
+def pharmacy_invoice_get(invoice_id: int, db: Session = Depends(get_db),
+                         user: dict = Depends(require_any_permission("pharmacy.read", "pharmacy.dispense", "pharmacy.write", "billing.read"))):
+    inv = lq.get_invoice_by_id(db, invoice_id)
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+    sales = lq.list_pharmacy_sales(db, invoice_id=invoice_id)
+    inv_dict = dict(inv)
+    if inv.get("name"):
+        inv_dict["patient_name"] = f"{inv['name']} {inv.get('last_name') or ''}".strip()
+    elif sales and sales[0].get("customer_name"):
+        inv_dict["patient_name"] = sales[0].get("customer_name")
+    return {"invoice": inv_dict, "sales": [dict(s) for s in sales]}
+
+
 @router.post("/invoices/{invoice_id}/payment")
 def pharmacy_invoice_payment(invoice_id: int, request: Request, payload: dict = Body(...), db: Session = Depends(get_db),
-                              user: dict = Depends(require_permissions("pharmacy.collect"))):
+                              user: dict = Depends(require_any_permission("pharmacy.collect", "pharmacy.dispense", "pharmacy.write", "billing.write"))):
     validate_required_fields(payload, ["amount", "payment_mode"])
-    payment_id = lq.record_invoice_payment(db, invoice_id, payload)
+    try:
+        payment_id = lq.record_invoice_payment(db, invoice_id, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
     if payment_id is None:
         raise HTTPException(status_code=404, detail="Invoice not found")
     log_audit_event(db, user, client_ip(request), "create", "invoice_payments", str(payment_id), {"invoice_id": invoice_id, "amount": payload.get("amount")})
-    return {"payment_id": payment_id}
+    inv = lq.get_invoice_by_id(db, invoice_id)
+    sales = lq.list_pharmacy_sales(db, invoice_id=invoice_id)
+    patient_name = None
+    if inv:
+        if inv.get("name"):
+            patient_name = f"{inv['name']} {inv.get('last_name') or ''}".strip()
+        elif sales and sales[0].get("customer_name"):
+            patient_name = sales[0].get("customer_name")
+        elif inv.get("patient_name"):
+            patient_name = inv.get("patient_name")
+    return {
+        "payment_id": payment_id,
+        "invoice_id": invoice_id,
+        "invoice_no": inv.get("invoice_no") if inv else None,
+        "paid_amount": float(inv["paid_amount"]) if inv and inv.get("paid_amount") is not None else None,
+        "due_amount": float(inv["due_amount"]) if inv and inv.get("due_amount") is not None else None,
+        "total_amount": float(inv["total_amount"]) if inv and inv.get("total_amount") is not None else None,
+        "payment_status": inv.get("payment_status") if inv else None,
+        "patient_id": inv.get("patient_id") if inv else None,
+        "patient_name": patient_name,
+        "sales": [dict(s) for s in sales],
+    }
 
 
 @router.post("/insurance-cases/{claim_id}/settle")
@@ -339,12 +378,28 @@ def pharmacy_insurance_case_settle(claim_id: int, request: Request, payload: dic
 @router.get("/sales")
 def pharmacy_sales_list(medicine_name: str | None = None, patient_id: str | None = None, invoice_id: str | None = None,
                          admission_id: int | None = None, billing_type: str | None = None,
+                         sale_type: str | None = None, due_only: bool = False,
                          from_date: str | None = None, to_date: str | None = None, q: str | None = None,
                          db: Session = Depends(get_db),
                          user: dict = Depends(require_permissions("pharmacy.read"))):
     return {"sales": rows_to_dicts(lq.list_pharmacy_sales(db, medicine_name=medicine_name, patient_id=patient_id,
                                                            invoice_id=invoice_id, admission_id=admission_id, billing_type=billing_type,
+                                                           sale_type=sale_type, due_only=due_only,
                                                            from_date=from_date, to_date=to_date, q=q))}
+
+
+@router.get("/external-customers")
+def pharmacy_external_customers(q: str | None = None, db: Session = Depends(get_db),
+                                user: dict = Depends(require_permissions("pharmacy.read"))):
+    return {"customers": rows_to_dicts(lq.list_external_customers(db, q=q))}
+
+
+@router.get("/dues")
+def pharmacy_get_dues(id: str = Query(..., description="Patient UHID, Invoice Number, or Customer Mobile/Name"),
+                      db: Session = Depends(get_db),
+                      user: dict = Depends(require_any_permission("pharmacy.read", "pharmacy.dispense", "pharmacy.write", "billing.read"))):
+    return lq.get_pharmacy_dues_by_identifier(db, id)
+
 
 
 @router.get("/summary")

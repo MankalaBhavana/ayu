@@ -322,9 +322,9 @@ def record_multi_bill_payment(db: Session, payload: dict, user: dict, idempotenc
     clean_payments = []
     has_cash = False
     cash_amount = D_ZERO
-    valid_modes = {"cash", "card", "upi", "bank_transfer", "net_banking", "cheque", "advance_allocation"}
+    valid_modes = {"cash", "card", "upi", "bank_transfer", "bank", "net_banking", "cheque", "advance_allocation"}
     for p in payments:
-        mode = str(p.get("payment_mode") or "cash").strip().lower()
+        mode = str(p.get("payment_mode") or "cash").strip().lower().replace(" ", "_")
         if mode not in valid_modes:
             mode = "cash"
         amt = to_decimal(p.get("amount"))
@@ -2159,7 +2159,8 @@ def get_billing_worklist(db: Session, tab: str = "pending_payments", department:
         # 1. Pending Payments Worklist
         pending_query = """
             SELECT i.id, i.invoice_no, i.patient_id, i.module, i.total_amount, i.paid_amount, i.due_amount,
-                   i.payment_status, i.created_at, TRIM(p.name || ' ' || COALESCE(p.last_name, '')) as patient_name
+                   i.payment_status, i.created_at, TRIM(p.name || ' ' || COALESCE(p.last_name, '')) as patient_name,
+                   p.phone
             FROM invoices i
             LEFT JOIN patients p ON p.patient_id = i.patient_id
             WHERE i.due_amount > 0
@@ -2169,24 +2170,31 @@ def get_billing_worklist(db: Session, tab: str = "pending_payments", department:
             pending_query += " AND LOWER(i.module) = LOWER(?)"
             params.append(department)
         if q:
-            pending_query += " AND (LOWER(p.name) LIKE ? OR LOWER(i.patient_id) LIKE ? OR LOWER(i.invoice_no) LIKE ?)"
+            pending_query += " AND (LOWER(p.name) LIKE ? OR LOWER(i.patient_id) LIKE ? OR LOWER(i.invoice_no) LIKE ? OR p.phone LIKE ?)"
             term = f"%{q.lower()}%"
-            params.extend([term, term, term])
+            params.extend([term, term, term, term])
 
-        pending_query += " ORDER BY i.created_at DESC LIMIT 50"
+        pending_query += " ORDER BY i.created_at DESC LIMIT 100"
         cursor.execute(pending_query, tuple(params))
         pending_rows = cursor.fetchall()
 
         pending_payments = [{
             "id": r["id"],
+            "invoice_id": r["id"],
             "invoice_no": r["invoice_no"],
             "patient_id": r["patient_id"],
             "patient_name": r["patient_name"] or r["patient_id"],
+            "phone": r["phone"] if "phone" in r.keys() else "",
             "module": r["module"] or "OP",
             "service_desc": f"{r['module']} · Bill {r['invoice_no']}",
             "net_bill": float(to_decimal(r["total_amount"])),
+            "total_amount": float(to_decimal(r["total_amount"])),
             "applied": float(to_decimal(r["paid_amount"])),
+            "paid_amount": float(to_decimal(r["paid_amount"])),
             "balance": float(to_decimal(r["due_amount"])),
+            "due_amount": float(to_decimal(r["due_amount"])),
+            "status": "due",
+            "payment_status": "due",
             "date": str(r["created_at"])[:16],
         } for r in pending_rows]
 

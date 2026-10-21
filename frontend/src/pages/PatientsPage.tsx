@@ -854,8 +854,8 @@ function PatientDetail({
     if (!patient || !editForm) return;
     const name = editForm.name.trim();
     const lastName = editForm.last_name.trim();
-    if (!name || !lastName) {
-      setNotice({ type: "warning", message: "First name and last name are required." });
+    if (!name) {
+      setNotice({ type: "warning", message: "First name is required." });
       return;
     }
 

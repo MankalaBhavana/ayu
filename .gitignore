@@ -30,3 +30,4 @@ frontend_code/public.zip
 # Runtime logs from local uvicorn/cloudflared launches
 *.log
 cloudflared.exe
+scratch/

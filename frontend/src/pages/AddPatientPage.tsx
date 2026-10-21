@@ -423,24 +423,14 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
       setNotice({ type: "warning", message: "First name is required." });
       return null;
     }
-    if (!lastName.trim()) {
-      setNotice({ type: "warning", message: "Last name is required." });
-      return null;
-    }
-    if (!dob.trim()) {
-      setNotice({ type: "warning", message: "Date of Birth is required." });
-      return null;
-    }
-    const dobParts = dob.trim().split("-");
-    const birthYear = parseInt(dobParts[0], 10);
-    const currentYear = new Date().getFullYear();
-    if (!birthYear || dobParts[0].length !== 4 || birthYear < 1900 || birthYear > currentYear) {
-      setNotice({ type: "warning", message: "Please enter a valid 4-digit birth year between 1900 and present." });
-      return null;
-    }
-    if (!gender.trim()) {
-      setNotice({ type: "warning", message: "Gender is required." });
-      return null;
+    if (dob.trim()) {
+      const dobParts = dob.trim().split("-");
+      const birthYear = parseInt(dobParts[0], 10);
+      const currentYear = new Date().getFullYear();
+      if (!birthYear || dobParts[0].length !== 4 || birthYear < 1900 || birthYear > currentYear) {
+        setNotice({ type: "warning", message: "Please enter a valid 4-digit birth year between 1900 and present." });
+        return null;
+      }
     }
     const cleanPrimaryPhone = primaryPhone.replace(/\D/g, "");
     const primaryCodeMatch = primaryCountryCode.match(/\+\d+/)?.[0] || "+91";
@@ -468,11 +458,6 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
         setNotice({ type: "warning", message: "India (+91) alternate mobile number must start with 6, 7, 8, or 9 (or leave it blank)." });
         return null;
       }
-    }
-
-    if (!address.trim()) {
-      setNotice({ type: "warning", message: "Address / Area is required." });
-      return null;
     }
 
     const fullName = `${firstName.trim()} ${lastName.trim()}`.trim();
@@ -1425,7 +1410,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
           </div>
         )}
 
-        {/* Row 1: First Name *, Last Name *, Date of Birth * */}
+        {/* Row 1: First Name *, Last Name, Date of Birth */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: "18px", marginBottom: "18px" }}>
           <div>
             <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#334155", display: "block", marginBottom: "6px" }}>
@@ -1443,7 +1428,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
 
           <div>
             <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#334155", display: "block", marginBottom: "6px" }}>
-              Last Name <span style={{ color: "#ef4444" }}>*</span>
+              Last Name
             </label>
             <input
               type="text"
@@ -1457,7 +1442,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
 
           <div>
             <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#334155", display: "block", marginBottom: "6px" }}>
-              Date of Birth <span style={{ color: "#ef4444" }}>*</span>
+              Date of Birth
             </label>
             <input
               type="date"
@@ -1472,7 +1457,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
           </div>
         </div>
 
-        {/* Row 2: Age, Gender * */}
+        {/* Row 2: Age, Gender */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px", marginBottom: "18px" }}>
           <div>
             <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#334155", display: "block", marginBottom: "6px" }}>
@@ -1502,7 +1487,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
 
           <div>
             <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#334155", display: "block", marginBottom: "6px" }}>
-              Gender <span style={{ color: "#ef4444" }}>*</span>
+              Gender
             </label>
             <select
               value={gender}
@@ -1579,7 +1564,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
           </div>
         </div>
 
-        {/* Row 4: Email (optional), Address / Area * */}
+        {/* Row 4: Email (optional), Address / Area */}
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "18px", marginBottom: "18px" }}>
           <div>
             <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#334155", display: "block", marginBottom: "6px" }}>
@@ -1597,7 +1582,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
 
           <div>
             <label style={{ fontSize: "12.5px", fontWeight: 600, color: "#334155", display: "block", marginBottom: "6px" }}>
-              Address / Area <span style={{ color: "#ef4444" }}>*</span>
+              Address / Area
             </label>
             <input
               type="text"

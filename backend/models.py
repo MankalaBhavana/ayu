@@ -1622,7 +1622,7 @@ class Patients(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     patient_id: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
-    last_name: Mapped[str] = mapped_column(Text, nullable=False)
+    last_name: Mapped[Optional[str]] = mapped_column(Text)
     middle_name: Mapped[Optional[str]] = mapped_column(Text)
     dob: Mapped[Optional[datetime.date]] = mapped_column(Date)
     age: Mapped[Optional[int]] = mapped_column(Integer)
