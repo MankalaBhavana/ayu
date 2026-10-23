@@ -6,28 +6,46 @@
 # Python
 __pycache__/
 *.pyc
+*.pyo
 .venv/
 venv/
+.pytest_cache/
+htmlcov/
+.coverage
+*.egg-info/
 
 # Node
 node_modules/
+.vite/
 
 # frontend/dist/ is intentionally committed: backend/main.py serves it
 # directly, so the repo runs out of the box with just the backend started.
-# frontend_code/dist/ is the build workspace's copy of the same output
-# before it gets synced to frontend/dist/ — redundant, so kept out of git.
-frontend_code/dist/
 
 # Local database dumps and rebuild backups — contain real data, never commit
 backups/
 
+# Database files
+*.db
+
 # OS/editor cruft
 .DS_Store
 Thumbs.db
-frontend_code/public.zip
-*.db
+*.swp
+*.swo
+*~
 
-# Runtime logs from local uvicorn/cloudflared launches
+# IDE / tooling configs (not needed in production)
+pyrefly.toml
+.idea/
+.vscode/
+
+# Runtime logs and local tunnel binary
 *.log
 cloudflared.exe
+
+# Scratch / temporary scripts
 scratch/
+
+# User uploads (runtime data, not source)
+backend/uploads/*
+!backend/uploads/.gitkeep

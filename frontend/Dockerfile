@@ -4,11 +4,9 @@ WORKDIR /app
 
 ARG VITE_API_BASE
 ARG VITE_API_URL
-ARG VITE_SYMPTOM_API_BASE
 
 ENV VITE_API_BASE=${VITE_API_BASE}
 ENV VITE_API_URL=${VITE_API_URL}
-ENV VITE_SYMPTOM_API_BASE=${VITE_SYMPTOM_API_BASE}
 
 COPY frontend/package.json frontend/package-lock.json* ./
 RUN npm ci --no-audit --no-fund
