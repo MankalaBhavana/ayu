@@ -891,6 +891,14 @@ class GoodsReceiptItems(Base):
     gst_rate: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
     unit_type: Mapped[Optional[str]] = mapped_column(Text)
     mfg_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
+    storage_location: Mapped[Optional[str]] = mapped_column(Text)
+    manufacturer: Mapped[Optional[str]] = mapped_column(Text)
+    pack: Mapped[Optional[str]] = mapped_column(Text)
+    hsn_code: Mapped[Optional[str]] = mapped_column(Text)
+    free_qty: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('0'))
+    discount_pct: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
+    selling_price: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
+    line_amount: Mapped[Optional[float]] = mapped_column(REAL)
 
 
 class GoodsReceipts(Base):
@@ -914,6 +922,16 @@ class GoodsReceipts(Base):
     supplier_id: Mapped[Optional[int]] = mapped_column(Integer)
     idempotency_key: Mapped[Optional[str]] = mapped_column(Text)
     idempotency_payload_hash: Mapped[Optional[str]] = mapped_column(Text)
+    due_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
+    payment_type: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'CREDIT'::text"))
+    taxable_amount: Mapped[Optional[float]] = mapped_column(REAL)
+    gst_amount: Mapped[Optional[float]] = mapped_column(REAL)
+    bill_discount: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
+    adjustment: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
+    round_off: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
+    net_amount: Mapped[Optional[float]] = mapped_column(REAL)
+    invoice_amount: Mapped[Optional[float]] = mapped_column(REAL)
+    notes: Mapped[Optional[str]] = mapped_column(Text)
 
 
 class SupplierPayments(Base):

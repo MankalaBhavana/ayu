@@ -403,8 +403,9 @@ def pharmacy_get_dues(id: str = Query(..., description="Patient UHID, Invoice Nu
 
 
 @router.get("/summary")
-def pharmacy_summary(db: Session = Depends(get_db), user: dict = Depends(require_permissions("pharmacy.read"))):
-    return lq.get_pharmacy_summary(db)
+def pharmacy_summary(date: str | None = None, target_date: str | None = None,
+                     db: Session = Depends(get_db), user: dict = Depends(require_permissions("pharmacy.read"))):
+    return lq.get_pharmacy_summary(db, target_date=(date or target_date))
 
 
 @router.get("/purchase-requests")

@@ -280,13 +280,15 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
   const searchContainerRef = useRef<HTMLDivElement | null>(null);
 
 
-  const loadData = async (isManualRefresh = false) => {
+  const loadData = async (isManualRefresh = false, targetDate?: string) => {
     if (isManualRefresh) setRefreshing(true);
     else setLoading(true);
 
     try {
+      const activeDate = targetDate || dateRange;
+      const sumUrl = activeDate ? `/api/pharmacy/summary?date=${encodeURIComponent(activeDate)}` : "/api/pharmacy/summary";
       const [sumRes, stockRes] = await Promise.allSettled([
-        apiFetch<PharmacySummary>("/api/pharmacy/summary"),
+        apiFetch<PharmacySummary>(sumUrl),
         apiFetch<{ batches: StockBatch[] }>("/api/pharmacy/stock"),
       ]);
 
@@ -383,8 +385,8 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
   };
 
   useEffect(() => {
-    void loadData();
-  }, []);
+    void loadData(false, dateRange);
+  }, [dateRange]);
 
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
@@ -520,8 +522,8 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
     const s = summary;
     const totalBills = (s?.opd_prescriptions_count || 0) + (s?.external_sales_count || 0);
     setPharmacyPopup({
-      title: "Today's Pharmacy Revenue Breakdown",
-      subtitle: `Consolidated pharmacy sales and counter billing for ${dateRange}`,
+      title: dateRange === toIsoDate(new Date()) ? "Today's Pharmacy Revenue Breakdown" : `Pharmacy Revenue Breakdown (${currentDateLabel})`,
+      subtitle: `Consolidated pharmacy sales and counter billing for ${currentDateLabel}`,
       total: s?.sales_today || 0,
       secondaryLabel: "YESTERDAY SALES",
       secondaryValue: s?.sales_yesterday || 0,
@@ -931,7 +933,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           {/* Live Data Refresh Button */}
           <button
             type="button"
-            onClick={() => void loadData(true)}
+            onClick={() => void loadData(true, dateRange)}
             disabled={refreshing}
             title="Refresh Live Data"
             style={{
@@ -1212,7 +1214,9 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
             </svg>
           </div>
           <div className="hosp-kpi-body">
-            <p className="hosp-kpi-label">Today's Sales</p>
+            <p className="hosp-kpi-label">
+              {dateRange === toIsoDate(new Date()) ? "Today's Sales" : `Sales (${currentDateLabel})`}
+            </p>
             <h3 className="hosp-kpi-value">₹{(summary?.sales_today ?? 0).toLocaleString("en-IN")}</h3>
             <span className="hosp-kpi-sub">
               {salesTrendPercent !== null
@@ -1354,9 +1358,11 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
           <h2 style={{ fontSize: "13.5px", fontWeight: 700, margin: 0, color: "#1e293b", textTransform: "uppercase", letterSpacing: "0.03em" }}>
-            Today's Pharmacy Activity
+            {dateRange === toIsoDate(new Date()) ? "Today's Pharmacy Activity" : `Pharmacy Activity (${currentDateLabel})`}
           </h2>
-          <span style={{ fontSize: "12px", color: "#64748b", fontWeight: 500 }}>Live Operations Ledger</span>
+          <span style={{ fontSize: "12px", color: "#64748b", fontWeight: 500 }}>
+            {dateRange === toIsoDate(new Date()) ? "Live Operations Ledger" : `Operations Ledger for ${currentDateLabel}`}
+          </span>
         </div>
 
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(140px, 1fr))", gap: "10px" }}>
@@ -2020,10 +2026,12 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
           <div>
             <h2 style={{ fontSize: "14px", fontWeight: 700, margin: 0, color: "#0f172a" }}>
-              Recent Pharmacy Operations
+              {dateRange === toIsoDate(new Date()) ? "Recent Pharmacy Operations" : `Pharmacy Operations (${currentDateLabel})`}
             </h2>
             <p style={{ margin: "2px 0 0 0", fontSize: "11.5px", color: "#64748b" }}>
-              Audit log across OP Dispensations, returns, and inventory adjustments
+              {dateRange === toIsoDate(new Date())
+                ? "Audit log across OP Dispensations, returns, and inventory adjustments"
+                : `Transactions and operations recorded for ${currentDateLabel}`}
             </p>
           </div>
           <button

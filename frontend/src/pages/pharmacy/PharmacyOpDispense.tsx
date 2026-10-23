@@ -480,14 +480,13 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
         setNotice({ type: "warning", message: "Customer name is required for external sales." });
         return;
       }
-      if (!extCustomerMobile.trim()) {
-        setNotice({ type: "warning", message: "Primary mobile number is required for external sales." });
-        return;
-      }
-      const digits = extCustomerMobile.replace(/\D/g, "");
-      if (digits.length !== selectedCountry.digits) {
-        setNotice({ type: "warning", message: `Mobile number must be exactly ${selectedCountry.digits} digits for ${selectedCountry.dial}.` });
-        return;
+      const trimmedMobile = extCustomerMobile.trim();
+      if (trimmedMobile) {
+        const digits = trimmedMobile.replace(/\D/g, "");
+        if (digits.length !== selectedCountry.digits) {
+          setNotice({ type: "warning", message: `Mobile number must be exactly ${selectedCountry.digits} digits for ${selectedCountry.dial} (or leave it blank).` });
+          return;
+        }
       }
     }
     if (cart.length === 0) {
@@ -549,7 +548,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
         payload.customer_name = extCustomerName.trim();
         payload.customer_age = extCustomerAge ? parseInt(extCustomerAge, 10) || null : null;
         payload.customer_dob = extCustomerDob || null;
-        payload.customer_mobile = extCustomerMobile.replace(/\D/g, "");
+        payload.customer_mobile = extCustomerMobile.trim() ? extCustomerMobile.replace(/\D/g, "") : null;
       }
 
       if (remarks.trim()) payload.notes = remarks.trim();
@@ -1132,11 +1131,11 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
   };
 
   useEffect(() => {
-    if (activeTab === "history" && !historyLoaded) {
+    if (activeTab === "history") {
       void loadDispenseHistory();
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [activeTab]);
+  }, [activeTab, historyDate]);
 
   return (
     <div className="pharmacy-theme-page" style={{ padding: "1.5rem", maxWidth: "1400px", margin: "0 auto" }}>
@@ -1480,7 +1479,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
                 </div>
                 <div>
                   <label style={{ display: "block", fontSize: "0.8rem", fontWeight: 700, color: "#334155", marginBottom: "4px" }}>
-                    Primary Mobile Number <span style={{ color: "#e11d48" }}>*</span>
+                    Primary Mobile Number
                   </label>
                   <div style={{ display: "flex", gap: "0" }}>
                     <select
@@ -1526,13 +1525,13 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
                       onFocus={() => {
                         if (extCustomerMobile.length >= 3) void searchExternalCustomers(extCustomerMobile);
                       }}
-                      placeholder={`${selectedCountry.digits} digits`}
+                      placeholder={`${selectedCountry.digits} digits (optional)`}
                       maxLength={selectedCountry.digits}
                       style={{ width: "100%", borderRadius: "0 6px 6px 0" }}
                     />
                   </div>
                   <span style={{ fontSize: "0.7rem", color: "#94a3b8", marginTop: "2px", display: "block" }}>
-                    {selectedCountry.dial} · {selectedCountry.digits} digits required
+                    {selectedCountry.dial} · Optional ({selectedCountry.digits} digits)
                   </span>
                 </div>
               </div>
@@ -2268,7 +2267,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
                   justifyContent: "center",
                   gap: "0.5rem",
                 }}
-                disabled={submitting || cart.length === 0 || (saleMode === "internal" ? !selectedPatient : (!extCustomerName.trim() || !extCustomerMobile.trim()))}
+                disabled={submitting || cart.length === 0 || (saleMode === "internal" ? !selectedPatient : !extCustomerName.trim())}
                 onClick={handleExecuteDispense}
               >
                 {submitting

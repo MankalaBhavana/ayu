@@ -48,20 +48,24 @@ def stats(date: str | None = None, db: Session = Depends(get_db), user: dict = D
 
 
 @router.get("/dashboard/analytics")
-def dashboard_analytics(request: Request, days: int = 14, db: Session = Depends(get_db),
+def dashboard_analytics(request: Request, days: int = 14, date: str | None = None,
+                         target_date: str | None = None, db: Session = Depends(get_db),
                          user: dict = Depends(require_permissions("patients.read")),
                          hospital_id: int = Depends(current_hospital_id)):
     permissions = security.resolve_user_permissions(user)
     include_employee = "admin.use" in permissions
-    return lq.get_dashboard_analytics(db, days=days, include_employee=include_employee, hospital_id=hospital_id)
+    selected_date = date or target_date
+    return lq.get_dashboard_analytics(db, days=days, include_employee=include_employee,
+                                       hospital_id=hospital_id, target_date=selected_date)
 
 
 @router.get("/dashboard/hospital-summary")
 @router.get("/dashboard/summary")
 @router.get("/hospital/summary")
-def dashboard_hospital_summary(date: str | None = None, db: Session = Depends(get_db),
+def dashboard_hospital_summary(date: str | None = None, target_date: str | None = None,
+                                db: Session = Depends(get_db),
                                 user: dict = Depends(require_permissions("patients.read"))):
-    return lq.get_hospital_dashboard_summary(db, selected_date=date)
+    return lq.get_hospital_dashboard_summary(db, selected_date=(date or target_date))
 
 
 # ------------------------------------------------------------ appointments --

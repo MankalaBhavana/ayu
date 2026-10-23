@@ -152,6 +152,17 @@ vi.mock("../../lib/api", () => ({
             supplier_name: "ABC Pharma Distributors",
             created_at: "2026-10-16",
           },
+          {
+            id: 5,
+            medicine_name: "Paracetamol",
+            quantity: 50,
+            unit_cost: 5.0,
+            total_cost: 250,
+            status: "ordered",
+            supplier_id: 2,
+            supplier_name: "Apollo Pharmacy Supplier",
+            created_at: "2026-10-17",
+          },
         ],
       });
     }
@@ -195,6 +206,9 @@ vi.mock("../../lib/api", () => ({
           },
         ],
       });
+    }
+    if (url.includes("/dispense")) {
+      return Promise.resolve({ invoice_id: 99, invoice_no: "INV-EXT-001", sale_ids: [1], total_amount: 25 });
     }
     return Promise.resolve({});
   }),
@@ -240,7 +254,7 @@ describe("Pharmacy Module Architecture", () => {
     render(<PharmacyOpDispense setNotice={setNotice} onNavigate={onNavigate} />);
 
     expect(screen.getAllByText("OP Dispense").length).toBeGreaterThan(0);
-    expect(screen.getByText("1. Patient Verification")).toBeDefined();
+    expect(screen.getByText(/1\. Patient Verification/i)).toBeDefined();
     expect(screen.getByText(/2. Select Medicines/i)).toBeDefined();
     expect(screen.getByText(/3. Prescription Cart/i)).toBeDefined();
     expect(screen.getByText(/4. Billing & Dispense Confirmation/i)).toBeDefined();
@@ -498,6 +512,37 @@ describe("Pharmacy Module Architecture", () => {
     );
   });
 
+  it("filters purchase orders in Link to Purchase Order to only those belonging to the selected supplier", async () => {
+    const setNotice = vi.fn();
+    const onNavigate = vi.fn();
+
+    render(<PharmacyPurchasesGrn setNotice={setNotice} onNavigate={onNavigate} />);
+
+    // Initially when no supplier is selected, both PO-4 and PO-5 are present
+    const poSelect = await screen.findByLabelText(/Link to Purchase Order \(optional\):/i);
+    expect(screen.getByText(/PO-4 -- Amoxicillin/i)).toBeDefined();
+    expect(screen.getByText(/PO-5 -- Paracetamol/i)).toBeDefined();
+
+    // Select Supplier 1 (ABC Pharma Distributors)
+    const supplierSelect = screen.getByDisplayValue(/Choose supplier.../i);
+    fireEvent.change(supplierSelect, { target: { value: "1" } });
+
+    // Now ONLY PO-4 (belonging to ABC Pharma Distributors) should be visible; PO-5 must NOT be in the document
+    await waitFor(() => {
+      expect(screen.queryByText(/PO-4 -- Amoxicillin/i)).not.toBeNull();
+      expect(screen.queryByText(/PO-5 -- Paracetamol/i)).toBeNull();
+    });
+
+    // Switch to Supplier 2 (Apollo Pharmacy Supplier)
+    fireEvent.change(supplierSelect, { target: { value: "2" } });
+
+    // Now ONLY PO-5 (belonging to Apollo Pharmacy Supplier) should be visible; PO-4 must NOT be in the document
+    await waitFor(() => {
+      expect(screen.queryByText(/PO-5 -- Paracetamol/i)).not.toBeNull();
+      expect(screen.queryByText(/PO-4 -- Amoxicillin/i)).toBeNull();
+    });
+  });
+
   it("redirects and opens New Purchase Request modal when clicking New PR", async () => {
     const setNotice = vi.fn();
     const onNavigate = vi.fn();
@@ -523,6 +568,140 @@ describe("Pharmacy Module Architecture", () => {
     expect(await screen.findByText("New Purchase Request")).toBeDefined();
     expect(screen.getByText("Add one medicine or build a bulk order for your supplier.")).toBeDefined();
     expect(screen.getByText("Medicine Items")).toBeDefined();
+  });
+
+  it("displays Supplier & Contact in Low Stock table and creates Purchase Request and WhatsApp link on Order Now", async () => {
+    const setNotice = vi.fn();
+    const onNavigate = vi.fn();
+
+    const openMock = vi.fn().mockReturnValue({
+      document: { write: vi.fn() },
+      location: { href: "" },
+    });
+    vi.stubGlobal("open", openMock);
+
+    render(<PharmacyInventoryStock setNotice={setNotice} onNavigate={onNavigate} />);
+
+    // Switch to Low Stock tab
+    const lowStockTab = await screen.findByRole("button", { name: /Low Stock/i });
+    fireEvent.click(lowStockTab);
+
+    // Verify Supplier & Contact header exists
+    expect(await screen.findByText("Supplier & Contact")).toBeDefined();
+
+    // Verify supplier dropdown exists and supplier contact phone is visible
+    expect(screen.getAllByText(/9876543210/i).length).toBeGreaterThan(0);
+
+    // Click Order Now
+    const orderNowBtns = screen.getAllByRole("button", { name: "Order Now" });
+    expect(orderNowBtns.length).toBeGreaterThan(0);
+    fireEvent.click(orderNowBtns[0]);
+
+    // Verify PR was created and confirmation notice triggered
+    await waitFor(() => {
+      expect(setNotice).toHaveBeenCalledWith(
+        expect.objectContaining({
+          type: "success",
+          message: expect.stringContaining("Created Purchase Request"),
+        })
+      );
+    });
+
+    // Verify WhatsApp was launched with the supplier's number and requisition message
+    expect(openMock).toHaveBeenCalled();
+  });
+
+  it("fetches dated summary and updates UI when calendar date is selected in PharmacyOverview", async () => {
+    const { apiFetch } = await import("../../lib/api");
+    const setNotice = vi.fn();
+    const onNavigate = vi.fn();
+
+    const { container } = render(<PharmacyOverview setNotice={setNotice} onNavigate={onNavigate} />);
+
+    // Initially loads summary with today's date
+    await waitFor(() => {
+      expect(apiFetch).toHaveBeenCalledWith(expect.stringContaining("/api/pharmacy/summary"));
+    });
+
+    // Open calendar popover
+    const calendarBtn = container.querySelector(".hosp-dashboard-date-pill") as HTMLButtonElement;
+    expect(calendarBtn).toBeDefined();
+    fireEvent.click(calendarBtn);
+
+    // Find calendar dialog and confirm button
+    const calendarDialog = await screen.findByRole("dialog", { name: "Calendar" });
+    expect(calendarDialog).toBeDefined();
+
+    // Select a day button in the calendar grid
+    const dayButtons = calendarDialog.querySelectorAll(".hosp-dashboard-calendar-grid button");
+    expect(dayButtons.length).toBeGreaterThan(0);
+    fireEvent.click(dayButtons[15]);
+
+    // Click confirm
+    const confirmBtn = screen.getByRole("button", { name: "Confirm" });
+    fireEvent.click(confirmBtn);
+
+    // Verify apiFetch was re-called with date query parameter
+    await waitFor(() => {
+      const summaryCalls = vi.mocked(apiFetch).mock.calls.filter((call) =>
+        typeof call[0] === "string" && call[0].includes("/api/pharmacy/summary?date=")
+      );
+      expect(summaryCalls.length).toBeGreaterThan(0);
+    });
+  });
+
+  it("renders External Sale with non-mandatory Primary Mobile Number and allows dispensing without mobile", async () => {
+    const { apiFetch } = await import("../../lib/api");
+    const setNotice = vi.fn();
+    const onNavigate = vi.fn();
+
+    render(<PharmacyOpDispense setNotice={setNotice} onNavigate={onNavigate} />);
+
+    // Switch to External Sale mode
+    const extSaleBtn = await screen.findByRole("button", { name: /External Sale/i });
+    fireEvent.click(extSaleBtn);
+
+    // Verify Primary Mobile Number does not have mandatory asterisk
+    const mobileLabel = screen.getByText("Primary Mobile Number");
+    expect(mobileLabel.innerHTML).not.toContain("*");
+    expect(screen.getByText(/\+91 · Optional/i)).toBeDefined();
+
+    // Fill customer name
+    const nameInput = screen.getByPlaceholderText("Enter customer name");
+    fireEvent.change(nameInput, { target: { value: "Aarav Sharma" } });
+
+    // Primary mobile input is left completely blank
+    const mobileInput = screen.getByPlaceholderText(/10 digits \(optional\)/i);
+    expect(mobileInput).toBeDefined();
+    expect((mobileInput as HTMLInputElement).value).toBe("");
+
+    // Add Paracetamol medicine to cart
+    fireEvent.change(screen.getByPlaceholderText("Search by Brand Name, Generic Name, Code, or scan Barcode..."), {
+      target: { value: "Paracetamol" },
+    });
+    const batchOption = await screen.findByText(/Paracetamol 500mg Tab/i);
+    fireEvent.click(batchOption);
+    const qtyInput = screen.getByPlaceholderText("Enter qty");
+    fireEvent.change(qtyInput, { target: { value: "2" } });
+    const addBtn = screen.getByRole("button", { name: "Add" });
+    fireEvent.click(addBtn);
+
+    // Confirm button should be enabled even without mobile number
+    const confirmBtn = await screen.findByRole("button", { name: /Confirm & Dispense/i });
+    expect(confirmBtn.hasAttribute("disabled")).toBe(false);
+
+    // Execute dispense
+    fireEvent.click(confirmBtn);
+
+    await waitFor(() => {
+      const dispenseCalls = vi.mocked(apiFetch).mock.calls.filter((call) =>
+        typeof call[0] === "string" && call[0].includes("/api/pharmacy/dispense")
+      );
+      expect(dispenseCalls.length).toBeGreaterThan(0);
+      const payload = JSON.parse(dispenseCalls[0][1]?.body as string);
+      expect(payload.customer_name).toBe("Aarav Sharma");
+      expect(payload.customer_mobile).toBeNull();
+    });
   });
 });
 

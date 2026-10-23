@@ -1805,7 +1805,7 @@ def get_patient_stats(db, hospital_id=None, target_date=None):
 
 
 
-def get_dashboard_analytics(db, days=14, include_employee=False, hospital_id=None):
+def get_dashboard_analytics(db, days=14, include_employee=False, hospital_id=None, target_date=None):
     scoped_hospital_id = hospital_id or resolve_hospital_id(db)
     try:
         requested_days = int(days)
@@ -1814,21 +1814,30 @@ def get_dashboard_analytics(db, days=14, include_employee=False, hospital_id=Non
 
     # Keep the window bounded so the dashboard stays fast and readable.
     window_days = max(7, min(requested_days, 60))
-    start_date = current_ist_datetime().date() - timedelta(days=window_days - 1)
+    if target_date:
+        try:
+            clean_date = str(target_date).strip().split('T')[0].split(' ')[0]
+            end_date = datetime.strptime(clean_date, "%Y-%m-%d").date()
+        except Exception:
+            end_date = current_ist_datetime().date()
+    else:
+        end_date = current_ist_datetime().date()
+
+    start_date = end_date - timedelta(days=window_days - 1)
     day_range = [(start_date + timedelta(days=index)).isoformat() for index in range(window_days)]
 
     with get_connection(db) as conn:
         cursor = conn.cursor()
 
         cursor.execute(
-            f"""
+            """
             SELECT DATE(created_at) AS day, COUNT(*) AS count
             FROM patients
-            WHERE hospital_id = ? AND DATE(created_at) >= CURRENT_DATE - INTERVAL '{window_days - 1} days'
+            WHERE hospital_id = ? AND DATE(created_at) >= DATE(?) AND DATE(created_at) <= DATE(?)
             GROUP BY DATE(created_at)
             ORDER BY day ASC
             """,
-            (scoped_hospital_id,),
+            (scoped_hospital_id, start_date.isoformat(), end_date.isoformat()),
         )
         # row["day"] comes back as a datetime.date object from the DATE()
         # cast, but day_range (below) is built from .isoformat() strings --
@@ -1837,14 +1846,14 @@ def get_dashboard_analytics(db, days=14, include_employee=False, hospital_id=Non
         patient_trend_map = {row["day"].isoformat(): row["count"] for row in cursor.fetchall()}
 
         cursor.execute(
-            f"""
+            """
             SELECT DATE(created_at) AS day, COUNT(*) AS count
             FROM documents
-            WHERE hospital_id = ? AND DATE(created_at) >= CURRENT_DATE - INTERVAL '{window_days - 1} days'
+            WHERE hospital_id = ? AND DATE(created_at) >= DATE(?) AND DATE(created_at) <= DATE(?)
             GROUP BY DATE(created_at)
             ORDER BY day ASC
             """,
-            (scoped_hospital_id,),
+            (scoped_hospital_id, start_date.isoformat(), end_date.isoformat()),
         )
         document_trend_map = {row["day"].isoformat(): row["count"] for row in cursor.fetchall()}
 
@@ -5499,6 +5508,35 @@ def ensure_pharmacy_master_schema(conn):
     grn_item_columns = {row[0] for row in cursor.fetchall()}
     if "storage_location" not in grn_item_columns:
         cursor.execute("ALTER TABLE goods_receipt_items ADD COLUMN storage_location TEXT")
+    # Columns printed on supplier tax invoices (Mfr, Pack, HSN, Free, Disc%).
+    for column, ddl in (
+        ("manufacturer", "TEXT"),
+        ("pack", "TEXT"),
+        ("hsn_code", "TEXT"),
+        ("free_qty", "INTEGER DEFAULT 0"),
+        ("discount_pct", "REAL DEFAULT 0"),
+        ("selling_price", "REAL DEFAULT 0"),
+        ("line_amount", "REAL"),
+    ):
+        if column not in grn_item_columns:
+            cursor.execute(f"ALTER TABLE goods_receipt_items ADD COLUMN {column} {ddl}")
+    cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'goods_receipts'")
+    grn_columns = {row[0] for row in cursor.fetchall()}
+    # Invoice header / footer: due date, credit vs cash, and the bill totals.
+    for column, ddl in (
+        ("due_date", "DATE"),
+        ("payment_type", "TEXT DEFAULT 'CREDIT'"),
+        ("taxable_amount", "REAL"),
+        ("gst_amount", "REAL"),
+        ("bill_discount", "REAL DEFAULT 0"),
+        ("adjustment", "REAL DEFAULT 0"),
+        ("round_off", "REAL DEFAULT 0"),
+        ("net_amount", "REAL"),
+        ("invoice_amount", "REAL"),
+        ("notes", "TEXT"),
+    ):
+        if column not in grn_columns:
+            cursor.execute(f"ALTER TABLE goods_receipts ADD COLUMN {column} {ddl}")
     cursor.execute(
         """
         CREATE TABLE IF NOT EXISTS pharmacy_settings (
@@ -5669,11 +5707,15 @@ def list_inventory_items(db, stock_source=None):
     with get_connection(db) as conn:
         cursor = conn.cursor()
         base = """
-            SELECT pi.*, COALESCE(m.reorder_level, pi.reorder_level, 10) AS master_reorder_level,
+            SELECT pi.*,
+                   COALESCE(pi.supplier_id, (SELECT pp.supplier_id FROM pharmacy_purchases pp WHERE LOWER(pp.medicine_name) = LOWER(pi.medicine_name) AND pp.supplier_id IS NOT NULL ORDER BY pp.id DESC LIMIT 1)) AS effective_supplier_id,
+                   s.supplier_name, s.phone AS supplier_phone, s.contact_person AS supplier_contact,
+                   COALESCE(m.reorder_level, pi.reorder_level, 10) AS master_reorder_level,
                    COALESCE(m.gst_rate, pi.gst_rate) AS effective_gst_rate,
                    m.generic_name AS master_generic_name, m.active AS master_active
             FROM pharmacy_inventory pi
             LEFT JOIN medicines m ON m.id = pi.medicine_id
+            LEFT JOIN pharmacy_suppliers s ON s.id = COALESCE(pi.supplier_id, (SELECT pp.supplier_id FROM pharmacy_purchases pp WHERE LOWER(pp.medicine_name) = LOWER(pi.medicine_name) AND pp.supplier_id IS NOT NULL ORDER BY pp.id DESC LIMIT 1))
         """
         if stock_source and stock_source != "ALL":
             cursor.execute(base + " WHERE pi.stock_source = ? ORDER BY pi.medicine_name ASC, pi.expiry_date ASC NULLS LAST", (stock_source,))
@@ -5920,33 +5962,58 @@ def create_goods_receipt(db, data):
             if po_row and po_row.get("supplier_id"):
                 supplier_id = po_row["supplier_id"]
 
+        payment_type = str(data.get("payment_type") or "CREDIT").upper()
+        if payment_type not in ("CREDIT", "CASH"):
+            raise ValueError("payment_type must be CREDIT or CASH.")
+
         grn_no = f"GRN-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
         cursor.execute(
             """
-            INSERT INTO goods_receipts (grn_no, purchase_order_id, received_date, supplier_invoice_no, status, stock_source, idempotency_key, idempotency_payload_hash, supplier_id)
-            VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?)
+            INSERT INTO goods_receipts (grn_no, purchase_order_id, received_date, supplier_invoice_no, status, stock_source, idempotency_key, idempotency_payload_hash, supplier_id,
+                                        due_date, payment_type, notes)
+            VALUES (?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?)
             """,
-            (grn_no, po_id, data.get("received_date"), data.get("supplier_invoice_no"), stock_source, idempotency_key, payload_hash, supplier_id),
+            (grn_no, po_id, data.get("received_date"), data.get("supplier_invoice_no"), stock_source, idempotency_key, payload_hash, supplier_id,
+             data.get("due_date") or None, payment_type, (str(data.get("notes") or "").strip() or None)),
         )
         grn_id = cursor.lastrowid
+        taxable_total = 0.0
+        gst_total = 0.0
         for item in data.get("items", []):
             item_source = item.get("stock_source") or stock_source
             if item_source not in ("CASH", "INSURANCE"):
                 raise ValueError("Each goods-receipt line must have a stock_source of CASH or INSURANCE.")
             qty_received = int(item.get("qty_received", item.get("received_qty", 0)) or 0)
             qty_accepted = int(item.get("qty_accepted", qty_received) or 0)
+            free_qty = int(item.get("free_qty", 0) or 0)
+            if qty_received < 0 or free_qty < 0:
+                raise ValueError(f"Quantities cannot be negative ({item.get('medicine_name')}).")
             purchase_price = float(item.get("purchase_price", item.get("unit_cost", 0)) or 0)
+            mrp = float(item.get("mrp", 0) or 0)
+            selling_price = float(item.get("selling_price", 0) or 0)
+            if mrp > 0 and selling_price > mrp:
+                raise ValueError(f"Sale rate cannot exceed MRP ({item.get('medicine_name')}).")
+            discount_pct = float(item.get("discount_pct", 0) or 0)
+            if not 0 <= discount_pct <= 100:
+                raise ValueError(f"Discount % must be between 0 and 100 ({item.get('medicine_name')}).")
             master = resolve_master_medicine(cursor, item.get("medicine_id"), item.get("medicine_name"))
             line_gst = item.get("gst_rate")
             if line_gst in (None, ""):
                 # Blank on the GRN line: use the medicine master's configured GST.
                 line_gst = master["gst_rate"] if master and master["gst_rate"] is not None else 0
+            line_gst = float(line_gst or 0)
+            # Free goods are not billed: the supplier charges only the billed qty.
+            line_taxable = round(qty_accepted * purchase_price * (1 - discount_pct / 100.0), 2)
+            line_tax = round(line_taxable * line_gst / 100.0, 2)
+            taxable_total += line_taxable
+            gst_total += line_tax
             cursor.execute(
                 """
                 INSERT INTO goods_receipt_items (
                     grn_id, medicine_id, medicine_name, batch_no, mfg_date, expiry_date, qty_received, qty_accepted, qty_damaged, stock_source,
-                    purchase_price, mrp, gst_rate, unit_type, storage_location
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    purchase_price, mrp, gst_rate, unit_type, storage_location,
+                    manufacturer, pack, hsn_code, free_qty, discount_pct, selling_price, line_amount
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     grn_id,
@@ -5960,12 +6027,38 @@ def create_goods_receipt(db, data):
                     int(item.get("qty_damaged", 0) or 0),
                     item_source,
                     purchase_price,
-                    float(item.get("mrp", 0) or 0),
-                    float(line_gst or 0),
+                    mrp,
+                    line_gst,
                     item.get("unit_type"),
                     (str(item.get("storage_location") or "").strip() or None),
+                    (str(item.get("manufacturer") or "").strip() or None),
+                    (str(item.get("pack") or "").strip() or None),
+                    (str(item.get("hsn_code") or "").strip() or None),
+                    free_qty,
+                    discount_pct,
+                    selling_price,
+                    round(line_taxable + line_tax, 2),
                 ),
             )
+        # Bill footer, computed server-side the same way supplier invoices
+        # print it: taxable + GST - bill discount +/- adjustment, rounded to
+        # the rupee.
+        bill_discount = float(data.get("bill_discount", 0) or 0)
+        adjustment = float(data.get("adjustment", 0) or 0)
+        if bill_discount < 0:
+            raise ValueError("Bill discount cannot be negative.")
+        gross_total = round(taxable_total + gst_total - bill_discount + adjustment, 2)
+        net_amount = float(math.floor(gross_total + 0.5))
+        invoice_amount = data.get("invoice_amount")
+        cursor.execute(
+            """
+            UPDATE goods_receipts
+            SET taxable_amount = ?, gst_amount = ?, bill_discount = ?, adjustment = ?, round_off = ?, net_amount = ?, invoice_amount = ?
+            WHERE id = ?
+            """,
+            (round(taxable_total, 2), round(gst_total, 2), bill_discount, adjustment, round(net_amount - gross_total, 2), net_amount,
+             float(invoice_amount) if invoice_amount not in (None, "") else None, grn_id),
+        )
         conn.commit()
         return grn_id, grn_no
 
@@ -5974,7 +6067,14 @@ def create_goods_receipt(db, data):
 def list_goods_receipts(db):
     with get_connection(db) as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT * FROM goods_receipts ORDER BY created_at DESC")
+        cursor.execute(
+            """
+            SELECT gr.*, s.supplier_name
+            FROM goods_receipts gr
+            LEFT JOIN pharmacy_suppliers s ON s.id = gr.supplier_id
+            ORDER BY gr.created_at DESC
+            """
+        )
         receipts = cursor.fetchall()
         result = []
         for grn in receipts:
@@ -6002,8 +6102,8 @@ def verify_goods_receipt(db, grn_id, actor=None):
         if grn["status"] == "verified":
             raise ValueError("This GRN has already been verified.")
 
-        supplier_id = None
-        if grn["purchase_order_id"]:
+        supplier_id = grn["supplier_id"]
+        if not supplier_id and grn["purchase_order_id"]:
             cursor.execute("SELECT supplier_id FROM pharmacy_purchases WHERE id = ?", (grn["purchase_order_id"],))
             po_row = cursor.fetchone()
             if po_row:
@@ -6012,12 +6112,15 @@ def verify_goods_receipt(db, grn_id, actor=None):
         cursor.execute("SELECT * FROM goods_receipt_items WHERE grn_id = ?", (grn_id,))
         items = cursor.fetchall()
         for item in items:
-            accepted = int(item["qty_accepted"] or 0)
+            # Free goods are physical stock even though they are not billed.
+            accepted = int(item["qty_accepted"] or 0) + int(item["free_qty"] or 0)
             damaged = int(item["qty_damaged"] or 0)
             item_source = item["stock_source"] or grn["stock_source"]
             purchase_price = float(item["purchase_price"] or 0)
             mrp = float(item["mrp"] or 0)
-            unit_price = mrp if mrp > 0 else purchase_price
+            selling_price = float(item["selling_price"] or 0)
+            # Dispense price: the sale rate entered on the GRN, else MRP, else cost.
+            unit_price = selling_price if selling_price > 0 else (mrp if mrp > 0 else purchase_price)
 
             if item_source not in ("CASH", "INSURANCE"):
                 raise ValueError(f"Goods-receipt line for {item['medicine_name']} has no valid stock_source.")
@@ -6025,6 +6128,16 @@ def verify_goods_receipt(db, grn_id, actor=None):
             item_mfg_date = item["mfg_date"]
             master = resolve_master_medicine(cursor, item["medicine_id"], item["medicine_name"])
             master_id = master["id"] if master else item["medicine_id"]
+            if master and (item["hsn_code"] or item["manufacturer"]):
+                # Fill gaps in the medicine master from the supplier invoice; never overwrite.
+                cursor.execute(
+                    """
+                    UPDATE medicines
+                    SET hsn_code = COALESCE(NULLIF(hsn_code, ''), ?), manufacturer = COALESCE(NULLIF(manufacturer, ''), ?)
+                    WHERE id = ?
+                    """,
+                    (item["hsn_code"], item["manufacturer"], master["id"]),
+                )
             item_gst = item["gst_rate"]
             item_location = item["storage_location"] if "storage_location" in item.keys() else None
             cursor.execute(
@@ -6168,8 +6281,6 @@ def create_pharmacy_dispense(db, data, username):
     customer_mobile = (data.get("customer_mobile") or "").strip() or None
     if sale_type == "external" and not customer_name:
         raise ValueError("Customer name is required for external sales.")
-    if sale_type == "external" and not customer_mobile:
-        raise ValueError("Customer mobile number is required for external sales.")
 
     with get_connection(db) as conn:
         cursor = conn.cursor()
@@ -6448,7 +6559,7 @@ def create_pharmacy_dispense(db, data, username):
 
                 inv_patient_name = customer_name if sale_type == "external" else None
                 inv_type = "EXTERNAL" if sale_type == "external" else "OP"
-                inv_ref_src = f"External ({customer_mobile})" if (sale_type == "external" and customer_mobile) else ref_src
+                inv_ref_src = f"External ({customer_mobile})" if (sale_type == "external" and customer_mobile) else (f"External ({customer_name})" if sale_type == "external" else ref_src)
 
                 cursor.execute(
                     """
@@ -7155,7 +7266,20 @@ def list_pharmacy_incoming_prescriptions(db, status=None):
 
 
 
-def get_pharmacy_summary(db):
+def get_pharmacy_summary(db, target_date=None):
+    if target_date:
+        try:
+            clean_date = str(target_date).strip().split('T')[0].split(' ')[0]
+            parsed_dt = datetime.strptime(clean_date, "%Y-%m-%d").date()
+        except Exception:
+            parsed_dt = current_ist_datetime().date()
+    else:
+        parsed_dt = current_ist_datetime().date()
+
+    date_str = parsed_dt.isoformat()
+    yesterday_str = (parsed_dt - timedelta(days=1)).isoformat()
+    is_today = (parsed_dt == current_ist_datetime().date())
+
     with get_connection(db) as conn:
         cursor = conn.cursor()
         # Low/out-of-stock are medicine-level facts based on unexpired usable stock
@@ -7184,33 +7308,33 @@ def get_pharmacy_summary(db):
         out_of_stock = cursor.fetchone()["value"]
         cursor.execute("SELECT COUNT(*) AS value FROM pharmacy_inventory WHERE qty_damaged > 0")
         damaged = cursor.fetchone()["value"]
-        cursor.execute("SELECT COALESCE(SUM(amount), 0) AS value FROM pharmacy_sales WHERE DATE(sold_at) = CURRENT_DATE")
+        cursor.execute("SELECT COALESCE(SUM(amount), 0) AS value FROM pharmacy_sales WHERE DATE(sold_at) = DATE(?)", (date_str,))
         sales_today = float(cursor.fetchone()["value"] or 0)
-        cursor.execute("SELECT COALESCE(SUM(amount), 0) AS value FROM pharmacy_sales WHERE DATE(sold_at) = CURRENT_DATE - INTERVAL '1 day'")
+        cursor.execute("SELECT COALESCE(SUM(amount), 0) AS value FROM pharmacy_sales WHERE DATE(sold_at) = DATE(?)", (yesterday_str,))
         sales_yesterday = float(cursor.fetchone()["value"] or 0)
         cursor.execute("SELECT COALESCE(SUM(amount), 0) AS value FROM pharmacy_sales")
         sales_total = float(cursor.fetchone()["value"] or 0)
 
         # External Sales today & count (Distinct walk-in OTC direct sales)
-        cursor.execute("SELECT COALESCE(SUM(amount), 0) AS val, COUNT(*) AS cnt FROM pharmacy_sales WHERE DATE(sold_at) = CURRENT_DATE AND sale_type = 'external'")
+        cursor.execute("SELECT COALESCE(SUM(amount), 0) AS val, COUNT(*) AS cnt FROM pharmacy_sales WHERE DATE(sold_at) = DATE(?) AND sale_type = 'external'", (date_str,))
         ext_row = cursor.fetchone()
         external_sales_today = float(ext_row["val"] or 0)
         external_sales_count = int(ext_row["cnt"] or 0)
 
         # OPD Sales today & count (Internal outpatient prescription dispensing ONLY -- excluding external sales to prevent duplication)
-        cursor.execute("SELECT COALESCE(SUM(amount), 0) AS val, COUNT(*) AS cnt FROM pharmacy_sales WHERE DATE(sold_at) = CURRENT_DATE AND (billing_type IN ('OPD_IMMEDIATE', 'CASH_OPD') OR billing_type IS NULL) AND (sale_type != 'external' OR sale_type IS NULL)")
+        cursor.execute("SELECT COALESCE(SUM(amount), 0) AS val, COUNT(*) AS cnt FROM pharmacy_sales WHERE DATE(sold_at) = DATE(?) AND (billing_type IN ('OPD_IMMEDIATE', 'CASH_OPD') OR billing_type IS NULL) AND (sale_type != 'external' OR sale_type IS NULL)", (date_str,))
         opd_row = cursor.fetchone()
         opd_sales_today = float(opd_row["val"] or 0)
         opd_prescriptions_count = int(opd_row["cnt"] or 0)
 
         # IPD Consumption today & count
-        cursor.execute("SELECT COALESCE(SUM(amount), 0) AS val, COUNT(*) AS cnt FROM pharmacy_sales WHERE DATE(sold_at) = CURRENT_DATE AND billing_type = 'IPD_RUNNING'")
+        cursor.execute("SELECT COALESCE(SUM(amount), 0) AS val, COUNT(*) AS cnt FROM pharmacy_sales WHERE DATE(sold_at) = DATE(?) AND billing_type = 'IPD_RUNNING'", (date_str,))
         ipd_row = cursor.fetchone()
         ipd_consumption_today = float(ipd_row["val"] or 0)
         ipd_indents_count = int(ipd_row["cnt"] or 0)
 
         # Emergency Sales today & count
-        cursor.execute("SELECT COALESCE(SUM(amount), 0) AS val, COUNT(*) AS cnt FROM pharmacy_sales WHERE DATE(sold_at) = CURRENT_DATE AND (billing_type IN ('EMERGENCY', 'EMERGENCY_IMMEDIATE', 'EMERGENCY_ACCOUNT') OR UPPER(COALESCE(payment_mode, '')) = 'EMERGENCY')")
+        cursor.execute("SELECT COALESCE(SUM(amount), 0) AS val, COUNT(*) AS cnt FROM pharmacy_sales WHERE DATE(sold_at) = DATE(?) AND (billing_type IN ('EMERGENCY', 'EMERGENCY_IMMEDIATE', 'EMERGENCY_ACCOUNT') OR UPPER(COALESCE(payment_mode, '')) = 'EMERGENCY')", (date_str,))
         em_row = cursor.fetchone()
         emergency_sales_today = float(em_row["val"] or 0)
         emergency_count = int(em_row["cnt"] or 0)
@@ -7222,25 +7346,25 @@ def get_pharmacy_summary(db):
         # discharge-billing net calc. Scoped by the RETURN's own date (cash
         # basis), not the original sale's date, and split into the same
         # buckets the gross figures above use.
-        def _returns_refunded(extra_where=""):
+        def _returns_refunded(extra_where="", params=()):
             cursor.execute(f"""
                 SELECT COALESCE(SUM(pr.quantity * ps.unit_price), 0) AS val
                 FROM pharmacy_returns pr JOIN pharmacy_sales ps ON ps.id = pr.original_sale_id
                 WHERE 1=1 {extra_where}
-            """)
+            """, params)
             return float(cursor.fetchone()["val"] or 0)
 
-        sales_today = max(0.0, sales_today - _returns_refunded("AND DATE(pr.created_at) = CURRENT_DATE"))
-        sales_yesterday = max(0.0, sales_yesterday - _returns_refunded("AND DATE(pr.created_at) = CURRENT_DATE - INTERVAL '1 day'"))
+        sales_today = max(0.0, sales_today - _returns_refunded("AND DATE(pr.created_at) = DATE(?)", (date_str,)))
+        sales_yesterday = max(0.0, sales_yesterday - _returns_refunded("AND DATE(pr.created_at) = DATE(?)", (yesterday_str,)))
         sales_total = max(0.0, sales_total - _returns_refunded())
         external_sales_today = max(0.0, external_sales_today - _returns_refunded(
-            "AND DATE(pr.created_at) = CURRENT_DATE AND ps.sale_type = 'external'"))
+            "AND DATE(pr.created_at) = DATE(?) AND ps.sale_type = 'external'", (date_str,)))
         opd_sales_today = max(0.0, opd_sales_today - _returns_refunded(
-            "AND DATE(pr.created_at) = CURRENT_DATE AND (ps.billing_type IN ('OPD_IMMEDIATE', 'CASH_OPD') OR ps.billing_type IS NULL) AND (ps.sale_type != 'external' OR ps.sale_type IS NULL)"))
+            "AND DATE(pr.created_at) = DATE(?) AND (ps.billing_type IN ('OPD_IMMEDIATE', 'CASH_OPD') OR ps.billing_type IS NULL) AND (ps.sale_type != 'external' OR ps.sale_type IS NULL)", (date_str,)))
         ipd_consumption_today = max(0.0, ipd_consumption_today - _returns_refunded(
-            "AND DATE(pr.created_at) = CURRENT_DATE AND ps.billing_type = 'IPD_RUNNING'"))
+            "AND DATE(pr.created_at) = DATE(?) AND ps.billing_type = 'IPD_RUNNING'", (date_str,)))
         emergency_sales_today = max(0.0, emergency_sales_today - _returns_refunded(
-            "AND DATE(pr.created_at) = CURRENT_DATE AND (ps.billing_type IN ('EMERGENCY', 'EMERGENCY_IMMEDIATE', 'EMERGENCY_ACCOUNT') OR UPPER(COALESCE(ps.payment_mode, '')) = 'EMERGENCY')"))
+            "AND DATE(pr.created_at) = DATE(?) AND (ps.billing_type IN ('EMERGENCY', 'EMERGENCY_IMMEDIATE', 'EMERGENCY_ACCOUNT') OR UPPER(COALESCE(ps.payment_mode, '')) = 'EMERGENCY')", (date_str,)))
 
         # Cash Stock Value & item count
         cursor.execute("SELECT COALESCE(SUM(qty_available * unit_price), 0) AS val, COALESCE(SUM(qty_available), 0) AS items FROM pharmacy_inventory WHERE stock_source = 'CASH'")
@@ -7275,15 +7399,15 @@ def get_pharmacy_summary(db):
         supplier_outstanding = total_purchased
 
         # Returns today
-        cursor.execute("SELECT COUNT(*) AS val FROM pharmacy_returns WHERE DATE(created_at) = CURRENT_DATE")
+        cursor.execute("SELECT COUNT(*) AS val FROM pharmacy_returns WHERE DATE(created_at) = DATE(?)", (date_str,))
         returns_today = int(cursor.fetchone()["val"] or 0)
 
         # GRNs today
-        cursor.execute("SELECT COUNT(*) AS val FROM goods_receipts WHERE received_date = CURRENT_DATE OR DATE(created_at) = CURRENT_DATE")
+        cursor.execute("SELECT COUNT(*) AS val FROM goods_receipts WHERE DATE(received_date) = DATE(?) OR DATE(created_at) = DATE(?)", (date_str, date_str))
         grns_today = int(cursor.fetchone()["val"] or 0)
 
         # Adjustments today
-        cursor.execute("SELECT COUNT(*) AS val FROM stock_adjustments WHERE DATE(created_at) = CURRENT_DATE")
+        cursor.execute("SELECT COUNT(*) AS val FROM stock_adjustments WHERE DATE(created_at) = DATE(?)", (date_str,))
         adjustments_today = int(cursor.fetchone()["val"] or 0)
 
         # Pending purchase requests
@@ -7373,7 +7497,7 @@ def get_pharmacy_summary(db):
                 "status": "Out of Stock (Expired)" if (q_avail == 0 and q_phys > 0) else ("Out of Stock" if q_phys == 0 else "Low Stock"),
             })
 
-        # Top 10 Medicines This Month with OP/IP/Emergency/External split
+        # Top 10 Medicines This Month up to selected date with OP/IP/Emergency/External split
         cursor.execute("""
             SELECT medicine_name,
                    COALESCE(SUM(quantity), 0) AS total_qty,
@@ -7383,15 +7507,15 @@ def get_pharmacy_summary(db):
                    COALESCE(SUM(CASE WHEN sale_type = 'external' THEN quantity ELSE 0 END), 0) AS external_qty,
                    COALESCE(SUM(CASE WHEN (billing_type NOT IN ('IPD_RUNNING', 'EMERGENCY', 'EMERGENCY_ACCOUNT', 'EMERGENCY_IMMEDIATE') OR billing_type IS NULL) AND (sale_type != 'external' OR sale_type IS NULL) THEN quantity ELSE 0 END), 0) AS op_qty
             FROM pharmacy_sales
-            WHERE sold_at >= DATE_TRUNC('month', CURRENT_DATE)
+            WHERE DATE(sold_at) >= DATE_TRUNC('month', DATE(?)) AND DATE(sold_at) <= DATE(?)
             GROUP BY medicine_name
             ORDER BY total_qty DESC
             LIMIT 10
-        """)
+        """, (date_str, date_str))
         top_medicines = [dict(row) for row in cursor.fetchall()]
 
         # Recent Pharmacy Transactions (Real operations, NO prescription queue!)
-        # Daily sales trend, last 30 days, split by OP/IPD/Emergency -- feeds the
+        # Daily sales trend, last 30 days up to selected date, split by OP/IPD/Emergency -- feeds the
         # Pharmacy Overview trend chart. Real per-day aggregates, never fabricated.
         cursor.execute("""
             SELECT DATE(sold_at) AS day,
@@ -7400,10 +7524,10 @@ def get_pharmacy_summary(db):
                    COALESCE(SUM(CASE WHEN billing_type = 'IPD_RUNNING' THEN amount ELSE 0 END), 0) AS ip_amount,
                    COALESCE(SUM(CASE WHEN billing_type IN ('EMERGENCY', 'EMERGENCY_ACCOUNT', 'EMERGENCY_IMMEDIATE') THEN amount ELSE 0 END), 0) AS er_amount
             FROM pharmacy_sales
-            WHERE sold_at >= CURRENT_DATE - INTERVAL '29 days'
+            WHERE DATE(sold_at) <= DATE(?) AND DATE(sold_at) >= DATE(?) - INTERVAL '29 days'
             GROUP BY DATE(sold_at)
             ORDER BY day ASC
-        """)
+        """, (date_str, date_str))
         sales_trend = [
             {
                 "date": str(r["day"]),
@@ -7428,10 +7552,30 @@ def get_pharmacy_summary(db):
             FROM pharmacy_sales ps
             LEFT JOIN patients p ON p.patient_id = ps.patient_id
             LEFT JOIN invoices inv ON inv.id = ps.invoice_id
+            WHERE DATE(ps.sold_at) = DATE(?)
             ORDER BY ps.sold_at DESC
             LIMIT 15
-        """)
+        """, (date_str,))
         recent_sales_rows = cursor.fetchall()
+        if not recent_sales_rows:
+            cursor.execute("""
+                SELECT ps.id, ps.patient_id, TRIM(p.name || ' ' || COALESCE(p.last_name, '')) AS patient_name,
+                       ps.customer_name, ps.customer_mobile, ps.customer_age, ps.customer_dob, ps.sale_type,
+                       ps.medicine_name, ps.quantity, ps.unit_price, ps.amount, ps.billing_type, ps.payment_mode, ps.sold_at,
+                       ps.invoice_id, ps.admission_id,
+                       COALESCE(inv.total_amount, ps.amount) AS invoice_total,
+                       inv.invoice_no,
+                       inv.paid_amount AS invoice_paid_amount,
+                       inv.due_amount AS invoice_due_amount,
+                       inv.payment_status AS invoice_payment_status
+                FROM pharmacy_sales ps
+                LEFT JOIN patients p ON p.patient_id = ps.patient_id
+                LEFT JOIN invoices inv ON inv.id = ps.invoice_id
+                WHERE DATE(ps.sold_at) <= DATE(?)
+                ORDER BY ps.sold_at DESC
+                LIMIT 15
+            """, (date_str,))
+            recent_sales_rows = cursor.fetchall()
         recent_transactions = []
         for r in recent_sales_rows:
             is_external = (r.get("sale_type") == "external") or (not r["patient_id"] and bool(r.get("customer_name")))
@@ -7697,6 +7841,15 @@ def update_purchase_request_status(db, pr_id, status, username=None, reason=None
 
 
 
+def _grn_line_cost(row):
+    """Billed value of one GRN line incl. GST, net of line discount."""
+    if row.get("line_amount") is not None:
+        return float(row["line_amount"])
+    qty = row["qty_accepted"] if row.get("qty_accepted") is not None else (row.get("qty_received") or 0)
+    taxable = qty * float(row.get("purchase_price") or 0.0) * (1.0 - float(row.get("discount_pct") or 0.0) / 100.0)
+    return round(taxable * (1.0 + float(row.get("gst_rate") or 0.0) / 100.0), 2)
+
+
 def get_supplier_ledger(db, supplier_id):
     with get_connection(db) as conn:
         cursor = conn.cursor()
@@ -7738,7 +7891,8 @@ def get_supplier_ledger(db, supplier_id):
         cursor.execute(
             """
             SELECT gr.id as grn_id, gr.grn_no, gr.supplier_invoice_no, gr.received_date, gr.created_at, gr.status as grn_status,
-                   gri.id as item_id, gri.medicine_name, gri.qty_accepted, gri.qty_received, gri.purchase_price, gri.gst_rate
+                   gri.id as item_id, gri.medicine_name, gri.qty_accepted, gri.qty_received, gri.purchase_price, gri.gst_rate,
+                   gri.discount_pct, gri.line_amount, gr.net_amount as grn_net_amount
             FROM goods_receipts gr
             JOIN goods_receipt_items gri ON gr.id = gri.grn_id
             WHERE gr.supplier_id = ?
@@ -7810,8 +7964,7 @@ def get_supplier_ledger(db, supplier_id):
         for gr in grn_rows:
             qty = gr["qty_accepted"] if gr.get("qty_accepted") is not None else (gr.get("qty_received") or 0)
             price = float(gr.get("purchase_price") or 0.0)
-            gst = float(gr.get("gst_rate") or 0.0)
-            cost = round(qty * price * (1.0 + (gst / 100.0)), 2)
+            cost = _grn_line_cost(gr)
             d_date = gr["received_date"] or gr["created_at"]
             all_entries.append({
                 "id": f"grn-{gr['grn_id']}-{gr['item_id']}",
@@ -7833,16 +7986,17 @@ def get_supplier_ledger(db, supplier_id):
             item.pop("_sort_date", None)
 
         # Financial totals calculation:
-        verified_grn_total = sum(
-            round(
-                (gr["qty_accepted"] if gr.get("qty_accepted") is not None else (gr.get("qty_received") or 0))
-                * float(gr.get("purchase_price") or 0.0)
-                * (1.0 + (float(gr.get("gst_rate") or 0.0) / 100.0)),
-                2,
-            )
-            for gr in grn_rows
-            if str(gr.get("grn_status", "")).lower() == "verified"
-        )
+        # A GRN's invoice net payable (after bill discount, adjustment and
+        # rounding) wins; older GRNs without one fall back to their lines.
+        verified_by_grn = {}
+        for gr in grn_rows:
+            if str(gr.get("grn_status", "")).lower() != "verified":
+                continue
+            if gr.get("grn_net_amount") is not None:
+                verified_by_grn[gr["grn_id"]] = float(gr["grn_net_amount"])
+            else:
+                verified_by_grn[gr["grn_id"]] = verified_by_grn.get(gr["grn_id"], 0.0) + _grn_line_cost(gr)
+        verified_grn_total = round(sum(verified_by_grn.values()), 2)
         po_total = sum(float(po["total_cost"] or 0.0) for po in po_rows if po.get("status") != "cancelled")
 
         total_purchases = round(verified_grn_total + (po_total if verified_grn_total == 0 else 0.0), 2)

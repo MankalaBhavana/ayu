@@ -28,6 +28,19 @@ type StockItem = {
   unit_type?: string;
   master_reorder_level?: number;
   storage_location?: string | null;
+  supplier_id?: number;
+  effective_supplier_id?: number;
+  supplier_name?: string;
+  supplier_phone?: string;
+  supplier_contact?: string;
+};
+
+type Supplier = {
+  id: number;
+  supplier_name: string;
+  phone?: string;
+  contact_person?: string;
+  status?: string;
 };
 
 type StockMovement = {
@@ -81,6 +94,9 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
 
   const [loading, setLoading] = useState(false);
   const [stock, setStock] = useState<StockItem[]>([]);
+  const [suppliers, setSuppliers] = useState<Supplier[]>([]);
+  const [selectedSupplierByMed, setSelectedSupplierByMed] = useState<Record<string, number>>({});
+  const [orderingMed, setOrderingMed] = useState<string | null>(null);
   const [ledgerMovements, setLedgerMovements] = useState<StockMovement[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
   const [ledgerFromDate, setLedgerFromDate] = useState("");
@@ -100,13 +116,19 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
   const [countedQty, setCountedQty] = useState<number>(0);
   const [countReason, setCountReason] = useState<string>("Quarterly stock audit reconciliation");
 
-  // Load stock
+  // Load stock and suppliers
   const loadStock = async () => {
     setLoading(true);
     try {
-      const res = await apiFetch<{ batches: StockItem[] }>("/api/pharmacy/stock");
+      const [res, supRes] = await Promise.all([
+        apiFetch<{ batches: StockItem[] }>("/api/pharmacy/stock"),
+        apiFetch<{ suppliers: Supplier[] }>("/api/pharmacy/suppliers").catch(() => ({ suppliers: [] })),
+      ]);
       if (res?.batches) {
         setStock(res.batches);
+      }
+      if (supRes?.suppliers) {
+        setSuppliers(supRes.suppliers);
       }
     } catch (err) {
       reportError(setNotice, err as any, "Failed to load inventory stock");
@@ -183,6 +205,10 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
       nearest_exp?: string;
       unit_type?: string;
       reorder_level: number;
+      supplier_id?: number;
+      supplier_name?: string;
+      supplier_phone?: string;
+      supplier_contact?: string;
     }>();
 
     for (const item of filteredStock) {
@@ -198,6 +224,10 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
         nearest_exp: item.expiry_date,
         unit_type: item.unit_type,
         reorder_level: item.master_reorder_level ?? 10,
+        supplier_id: item.effective_supplier_id || item.supplier_id,
+        supplier_name: item.supplier_name,
+        supplier_phone: item.supplier_phone,
+        supplier_contact: item.supplier_contact,
       };
 
       existing.total_qty += item.qty_available;
@@ -207,6 +237,12 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
       existing.total_val += (item.qty_available * (item.unit_price || 0));
       if (!existing.unit_type && item.unit_type) existing.unit_type = item.unit_type;
       if (item.master_reorder_level != null) existing.reorder_level = item.master_reorder_level;
+      if (!existing.supplier_id && (item.effective_supplier_id || item.supplier_id)) {
+        existing.supplier_id = item.effective_supplier_id || item.supplier_id;
+        existing.supplier_name = item.supplier_name;
+        existing.supplier_phone = item.supplier_phone;
+        existing.supplier_contact = item.supplier_contact;
+      }
 
       if (item.expiry_date && (!existing.nearest_exp || item.expiry_date < existing.nearest_exp)) {
         existing.nearest_exp = item.expiry_date;
@@ -223,6 +259,132 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
   const lowStockItems = useMemo(() => {
     return medicineAggregates.filter((m) => m.available_qty <= m.reorder_level);
   }, [medicineAggregates]);
+
+  // Handle direct Purchase Request creation + WhatsApp launch for Low Stock item
+  const handleOrderNow = async (item: (typeof lowStockItems)[0]) => {
+    const medName = item.medicine_name;
+    const supId =
+      selectedSupplierByMed[medName] ||
+      item.supplier_id ||
+      (suppliers.length > 0 ? suppliers[0].id : null);
+    const chosenSup = suppliers.find((s) => s.id === supId);
+
+    if (!chosenSup) {
+      setNotice({
+        type: "warning",
+        message: `Please select a supplier for "${medName}" before placing order.`,
+      });
+      return;
+    }
+
+    const reorderQty = Math.max(item.reorder_level * 2 - item.available_qty, 10);
+    const unitVal = item.unit_type || "Tablet";
+    const phoneStr = (chosenSup.phone || "").trim();
+
+    // Pre-open blank tab synchronously in user click gesture to avoid browser popup blockers
+    let waWindow: Window | null = null;
+    try {
+      waWindow = window.open("about:blank", "_blank");
+      if (waWindow) {
+        waWindow.document.write(`
+          <!DOCTYPE html>
+          <html>
+            <head><title>Opening WhatsApp...</title></head>
+            <body style="font-family: system-ui, -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; background: #f0fdf4;">
+              <div style="text-align: center; padding: 2rem; background: white; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); max-width: 380px;">
+                <div style="font-size: 2.5rem; margin-bottom: 0.5rem;">💬</div>
+                <h3 style="color: #166534; margin: 0 0 0.5rem 0;">Opening WhatsApp Chat...</h3>
+                <p style="color: #64748b; font-size: 0.88rem; margin: 0;">Submitting Purchase Request and loading WhatsApp chat for <b>${chosenSup.supplier_name}</b>.</p>
+              </div>
+            </body>
+          </html>
+        `);
+      }
+    } catch (err) {
+      console.warn("Unable to pre-open window for WhatsApp:", err);
+    }
+
+    setOrderingMed(medName);
+    try {
+      const res = await apiFetch<{ pr_id: number; pr_no: string }>("/api/pharmacy/purchase-requests", {
+        method: "POST",
+        body: JSON.stringify({
+          priority: "high",
+          notes: `Low stock automatic reorder for ${medName} (Current Stock: ${item.available_qty}, Reorder Level: ${item.reorder_level})`,
+          preferred_supplier_id: chosenSup.id,
+          supplier_id: chosenSup.id,
+          supplier_phone: phoneStr,
+          items: [
+            {
+              medicine_name: medName,
+              strength_form: unitVal,
+              required_qty: reorderQty,
+              quantity: reorderQty,
+              unit: unitVal,
+              current_stock: item.available_qty,
+              min_level: item.reorder_level,
+              notes: "Low stock automatic reorder",
+            },
+          ],
+        }),
+      });
+
+      const prNo = res?.pr_no || `PR-${Date.now()}`;
+
+      // Standard WhatsApp message format
+      const waMessage = [
+        `*PURCHASE REQUEST: ${prNo}*`,
+        `🏥 *Hospital Pharmacy Requisition*`,
+        `--------------------------------`,
+        `*Supplier:* ${chosenSup.supplier_name}${phoneStr ? ` (📱 ${phoneStr})` : ""}`,
+        `*Urgency:* HIGH`,
+        `--------------------------------`,
+        `*Medicine Items (1 medicines • ${reorderQty} total units):*`,
+        `1. *${medName}* (${unitVal}) - ${reorderQty} ${unitVal} [Low stock reorder]`,
+        `--------------------------------`,
+        `*Clinical Remarks / Reason:* Current Stock: ${item.available_qty} · Reorder Threshold: ${item.reorder_level}`,
+        `--------------------------------`,
+        `Please confirm stock availability and send quotation / dispatch timeline.`,
+        `Thank you!`,
+      ].join("\n");
+
+      // Construct WhatsApp URL
+      let cleanDigits = phoneStr.replace(/[^0-9]/g, "");
+      if (cleanDigits.startsWith("0")) cleanDigits = cleanDigits.replace(/^0+/, "");
+      const finalPhone = cleanDigits.length === 10 ? `91${cleanDigits}` : cleanDigits;
+      const encodedText = encodeURIComponent(waMessage);
+      const waUrl = finalPhone
+        ? `https://api.whatsapp.com/send?phone=${finalPhone}&text=${encodedText}`
+        : `https://api.whatsapp.com/send?text=${encodedText}`;
+
+      // Copy text to clipboard
+      try {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(waMessage);
+        }
+      } catch (e) {
+        console.warn("Clipboard copy failed:", e);
+      }
+
+      if (waWindow) {
+        waWindow.location.href = waUrl;
+      } else {
+        window.open(waUrl, "_blank");
+      }
+
+      setNotice({
+        type: "success",
+        message: `Created Purchase Request ${prNo} for ${medName} (${reorderQty} units). WhatsApp chat launched for ${chosenSup.supplier_name}!`,
+      });
+    } catch (err) {
+      if (waWindow) {
+        try { waWindow.close(); } catch {}
+      }
+      reportError(setNotice, err as any, "Failed to create purchase request");
+    } finally {
+      setOrderingMed(null);
+    }
+  };
 
   // Handle submit adjustment
   const handleExecuteAdjustment = async () => {
@@ -1049,41 +1211,125 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
                   <th style={{ padding: "0.6rem 0.75rem", textAlign: "center" }}>Current Stock</th>
                   <th style={{ padding: "0.6rem 0.75rem", textAlign: "center" }}>Reorder Level</th>
                   <th style={{ padding: "0.6rem 0.75rem", textAlign: "center" }}>Suggested Qty</th>
+                  <th style={{ padding: "0.6rem 0.75rem" }}>Supplier & Contact</th>
                   <th style={{ padding: "0.6rem 0.75rem", textAlign: "right" }}>Action</th>
                 </tr>
               </thead>
               <tbody>
-                {lowStockItems.map((item) => (
-                  <tr key={item.medicine_name} style={{ borderBottom: "1px solid #f1f5f9" }}>
-                    <td style={{ padding: "0.6rem 0.75rem", fontWeight: 700 }}>{item.medicine_name}</td>
-                    <td style={{ padding: "0.6rem 0.75rem", color: "#475569" }}>{item.unit_type || "-"}</td>
-                    <td style={{ padding: "0.6rem 0.75rem", textAlign: "center", color: item.available_qty === 0 ? "#dc2626" : "#ea580c", fontWeight: 800 }}>
-                      {item.available_qty}
-                      {item.available_qty === 0 && item.expired_qty > 0 && (
-                        <div style={{ fontSize: "0.72rem", color: "#dc2626", fontWeight: 600 }}>
-                          (All {item.expired_qty} expired)
+                {lowStockItems.map((item) => {
+                  const currentSupId =
+                    selectedSupplierByMed[item.medicine_name] ||
+                    item.supplier_id ||
+                    (suppliers.length > 0 ? suppliers[0].id : null);
+                  const matchedSup = suppliers.find((s) => s.id === currentSupId);
+
+                  return (
+                    <tr key={item.medicine_name} style={{ borderBottom: "1px solid #f1f5f9" }}>
+                      <td style={{ padding: "0.6rem 0.75rem", fontWeight: 700 }}>{item.medicine_name}</td>
+                      <td style={{ padding: "0.6rem 0.75rem", color: "#475569" }}>{item.unit_type || "-"}</td>
+                      <td style={{ padding: "0.6rem 0.75rem", textAlign: "center", color: item.available_qty === 0 ? "#dc2626" : "#ea580c", fontWeight: 800 }}>
+                        {item.available_qty}
+                        {item.available_qty === 0 && item.expired_qty > 0 && (
+                          <div style={{ fontSize: "0.72rem", color: "#dc2626", fontWeight: 600 }}>
+                            (All {item.expired_qty} expired)
+                          </div>
+                        )}
+                      </td>
+                      <td style={{ padding: "0.6rem 0.75rem", textAlign: "center", color: "#64748b" }}>{item.reorder_level}</td>
+                      <td style={{ padding: "0.6rem 0.75rem", textAlign: "center", fontWeight: 600 }}>{Math.max(item.reorder_level * 2 - item.available_qty, 10)}</td>
+                      <td style={{ padding: "0.6rem 0.75rem", minWidth: "240px" }}>
+                        <div style={{ display: "flex", flexDirection: "column", gap: "3px" }}>
+                          <select
+                            aria-label={`Supplier for ${item.medicine_name}`}
+                            className="ui-input"
+                            style={{
+                              padding: "4px 8px",
+                              fontSize: "0.825rem",
+                              fontWeight: 600,
+                              color: "#0f172a",
+                              borderRadius: "6px",
+                              border: "1px solid #cbd5e1",
+                              background: "#ffffff",
+                              width: "100%",
+                            }}
+                            value={currentSupId || ""}
+                            onChange={(e) => {
+                              const val = Number(e.target.value) || null;
+                              if (val) {
+                                setSelectedSupplierByMed((prev) => ({
+                                  ...prev,
+                                  [item.medicine_name]: val,
+                                }));
+                              }
+                            }}
+                          >
+                            <option value="">Select Supplier...</option>
+                            {suppliers.map((s) => (
+                              <option key={s.id} value={s.id}>
+                                {s.supplier_name} {s.phone ? `(${s.phone})` : ""}
+                              </option>
+                            ))}
+                          </select>
+                          {matchedSup && (
+                            <div
+                              style={{
+                                fontSize: "0.75rem",
+                                color: "#475569",
+                                display: "flex",
+                                alignItems: "center",
+                                gap: "6px",
+                                flexWrap: "wrap",
+                                marginTop: "2px",
+                              }}
+                            >
+                              {matchedSup.phone ? (
+                                <span
+                                  style={{
+                                    color: "#00828a",
+                                    fontWeight: 700,
+                                    display: "inline-flex",
+                                    alignItems: "center",
+                                    gap: "3px",
+                                  }}
+                                >
+                                  <span>📱</span> {matchedSup.phone}
+                                </span>
+                              ) : (
+                                <span style={{ color: "#94a3b8" }}>No phone</span>
+                              )}
+                              {matchedSup.contact_person && (
+                                <span style={{ color: "#64748b" }}>
+                                  • {matchedSup.contact_person}
+                                </span>
+                              )}
+                            </div>
+                          )}
                         </div>
-                      )}
-                    </td>
-                    <td style={{ padding: "0.6rem 0.75rem", textAlign: "center", color: "#64748b" }}>{item.reorder_level}</td>
-                    <td style={{ padding: "0.6rem 0.75rem", textAlign: "center", fontWeight: 600 }}>{Math.max(item.reorder_level * 2 - item.available_qty, 10)}</td>
-                    <td style={{ padding: "0.6rem 0.75rem", textAlign: "right" }}>
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        style={{ padding: "2px 10px", fontSize: "0.8rem" }}
-                        onClick={() => {
-                          sessionStorage.setItem("pharmacy_purchases_tab", "pr");
-                          sessionStorage.setItem("pharmacy_purchases_open_new_pr", "true");
-                          sessionStorage.setItem("pharmacy_purchases_prefill_med", item.medicine_name);
-                          onNavigate("pharmacy-purchases");
-                        }}
-                      >
-                        Order Now
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
+                      </td>
+                      <td style={{ padding: "0.6rem 0.75rem", textAlign: "right" }}>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          disabled={orderingMed === item.medicine_name}
+                          style={{
+                            padding: "4px 12px",
+                            fontSize: "0.8rem",
+                            fontWeight: 700,
+                            background: "#00828a",
+                            color: "#ffffff",
+                            borderColor: "#00828a",
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: "4px",
+                          }}
+                          onClick={() => handleOrderNow(item)}
+                        >
+                          {orderingMed === item.medicine_name ? "Ordering..." : "Order Now"}
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           ) : (

@@ -1378,15 +1378,6 @@ function App() {
             )}
             <button
               type="button"
-              className="sidebar-tab"
-              style={{ color: "#94a3b8", fontWeight: 600, background: "transparent", border: "none", width: "100%", textAlign: "left" }}
-              onClick={() => setNotice({ type: "info", message: "Pharmacy team: Chief Pharmacist John, Lead Tech Sarah, Dispensing Assistant Ravi." })}
-            >
-              <span className="sidebar-tab-icon"><SidebarIcon name="team" /></span>
-              <span>Pharmacy Team</span>
-            </button>
-            <button
-              type="button"
               className="sidebar-tab logout-footer-btn"
               onClick={() => setLogoutConfirmOpen(true)}
               style={{ marginTop: "4px", color: "#94a3b8", fontWeight: 600 }}

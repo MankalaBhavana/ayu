@@ -62,6 +62,8 @@ type Supplier = {
   supplier_name: string;
   phone?: string;
   gst_number?: string;
+  drug_license_no?: string;
+  payment_terms?: string;
 };
 
 type MedicineMaster = {
@@ -71,6 +73,8 @@ type MedicineMaster = {
   dosage_form?: string;
   unit?: string;
   gst_rate?: number | null;
+  hsn_code?: string | null;
+  manufacturer?: string | null;
   active?: number | boolean | null;
 };
 
@@ -107,6 +111,9 @@ type GoodsReceiptItem = {
   /** Medicine master link, set when the typed name matches a master medicine. */
   medicine_id?: number;
   medicine_name: string;
+  manufacturer?: string;
+  pack?: string;
+  hsn_code?: string;
   batch_no: string;
   mfg_date?: string;
   expiry_date: string;
@@ -115,9 +122,11 @@ type GoodsReceiptItem = {
   unit_cost: number | string;
   mrp: number | string;
   selling_price: number | string;
+  discount_pct?: number | string;
   gst_rate: number | string;
   unit_type: string;
   storage_location?: string;
+  line_amount?: number | null;
 };
 
 type GoodsReceipt = {
@@ -129,8 +138,68 @@ type GoodsReceipt = {
   received_date?: string;
   status: "draft" | "verified" | "cancelled";
   stock_source: string;
+  due_date?: string | null;
+  payment_type?: "CREDIT" | "CASH" | null;
+  taxable_amount?: number | null;
+  gst_amount?: number | null;
+  bill_discount?: number | null;
+  adjustment?: number | null;
+  round_off?: number | null;
+  net_amount?: number | null;
+  invoice_amount?: number | null;
+  notes?: string | null;
   items?: GoodsReceiptItem[];
 };
+
+const blankGrnItem = (): GoodsReceiptItem => ({
+  medicine_name: "",
+  manufacturer: "",
+  pack: "",
+  hsn_code: "",
+  batch_no: "",
+  expiry_date: "",
+  received_qty: "",
+  free_qty: "",
+  unit_cost: "",
+  mrp: "",
+  selling_price: "",
+  discount_pct: "",
+  gst_rate: "",
+  unit_type: "Tablet",
+});
+
+const toNum = (v: unknown) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : 0;
+};
+
+const round2 = (n: number) => Math.round(n * 100) / 100;
+
+/** Billed value of a GRN line, the way supplier invoices print it: free qty is not billed. */
+const computeGrnLine = (it: GoodsReceiptItem) => {
+  // Blank qty is submitted as 1 (see handleCreateGrn), so total it the same way.
+  const qty = String(it.received_qty ?? "").trim() === "" ? 1 : toNum(it.received_qty);
+  const gross = round2(qty * toNum(it.unit_cost));
+  const discount = round2((gross * toNum(it.discount_pct)) / 100);
+  const taxable = round2(gross - discount);
+  const gst = round2((taxable * toNum(it.gst_rate)) / 100);
+  return { qty, free: toNum(it.free_qty), gross, discount, taxable, gst, amount: round2(taxable + gst) };
+};
+
+/** "30 days" / "30" / "Net 45" -> 30 / 30 / 45; null when no number is present. */
+const paymentTermDays = (terms?: string) => {
+  const m = String(terms || "").match(/\d+/);
+  return m ? parseInt(m[0], 10) : null;
+};
+
+const addDaysIso = (isoDate: string, days: number) => {
+  const [y, mo, d] = isoDate.split("-").map(Number);
+  if (!y || !mo || !d) return "";
+  return new Date(Date.UTC(y, mo - 1, d + days)).toISOString().slice(0, 10);
+};
+
+const formatInr = (n: number | null | undefined) =>
+  `₹${toNum(n).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
   const [activeTab, setActiveTab] = useState<"grn" | "grn_history" | "pr" | "po" | "returns">(() => {
@@ -202,6 +271,14 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
   const [grnInvoiceDate, setGrnInvoiceDate] = useState(new Date().toISOString().split("T")[0]);
   const [grnPoId, setGrnPoId] = useState<number | null>(null);
   const [grnStockSource, setGrnStockSource] = useState<"CASH" | "INSURANCE">("CASH");
+  const [grnDueDate, setGrnDueDate] = useState("");
+  // Once the user picks a due date by hand, stop deriving it from supplier payment terms.
+  const [grnDueDateTouched, setGrnDueDateTouched] = useState(false);
+  const [grnPaymentType, setGrnPaymentType] = useState<"CREDIT" | "CASH">("CREDIT");
+  const [grnBillDiscount, setGrnBillDiscount] = useState<number | string>("");
+  const [grnAdjustment, setGrnAdjustment] = useState<number | string>("");
+  const [grnInvoiceAmount, setGrnInvoiceAmount] = useState<number | string>("");
+  const [grnNotes, setGrnNotes] = useState("");
   const [medicinesMaster, setMedicinesMaster] = useState<MedicineMaster[]>([]);
   // Dosage forms configured in Pharmacy → Settings, merged with the packaging units GRN lines need.
   const { options: dosageFormOptions } = useDropdownOptions("dosage_forms");
@@ -226,20 +303,85 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
   }, [dosageFormOptions]);
 
   // Items in active GRN draft - starts empty without dummy defaults
-  const [grnItems, setGrnItems] = useState<GoodsReceiptItem[]>([
-    {
-      medicine_name: "",
-      batch_no: "",
-      expiry_date: "",
-      received_qty: "",
-      free_qty: "",
-      unit_cost: "",
-      mrp: "",
-      selling_price: "",
-      gst_rate: "",
-      unit_type: "Tablet",
-    },
-  ]);
+  const [grnItems, setGrnItems] = useState<GoodsReceiptItem[]>([blankGrnItem()]);
+
+  const grnSelectedSupplier = suppliers.find((s) => s.id === grnSupplierId);
+
+  // Filter Purchase Orders for GRN "Link to Purchase Order" dropdown:
+  // When a supplier is selected, only purchase orders for that particular supplier are visible.
+  const grnAvailablePurchaseOrders = useMemo(() => {
+    return purchaseOrders.filter((p) => {
+      // Must be in "ordered" status (or currently linked PO)
+      const isEligible = p.status === "ordered" || p.id === grnPoId;
+      if (!isEligible) return false;
+
+      // If a supplier is selected, only keep POs that match this supplier by ID or name
+      if (grnSupplierId) {
+        const matchId = p.supplier_id != null && Number(p.supplier_id) === Number(grnSupplierId);
+        const matchName = Boolean(
+          grnSelectedSupplier?.supplier_name &&
+          p.supplier_name &&
+          p.supplier_name.trim().toLowerCase() === grnSelectedSupplier.supplier_name.trim().toLowerCase()
+        );
+        return matchId || matchName;
+      }
+
+      // If no supplier is selected yet, show all eligible orders
+      return true;
+    });
+  }, [purchaseOrders, grnPoId, grnSupplierId, grnSelectedSupplier]);
+
+  // Due date = invoice date + supplier payment terms, unless entered by hand.
+  useEffect(() => {
+    if (grnDueDateTouched) return;
+    const days = paymentTermDays(grnSelectedSupplier?.payment_terms);
+    setGrnDueDate(days !== null && grnInvoiceDate ? addDaysIso(grnInvoiceDate, days) : "");
+  }, [grnSelectedSupplier?.payment_terms, grnInvoiceDate, grnDueDateTouched]);
+
+  // Bill footer, mirroring the server-side calculation in create_goods_receipt.
+  const grnTotals = useMemo(() => {
+    const lines = grnItems.map(computeGrnLine);
+    const sum = (k: keyof ReturnType<typeof computeGrnLine>) => round2(lines.reduce((acc, l) => acc + l[k], 0));
+    const taxable = sum("taxable");
+    const gst = sum("gst");
+    const billDiscount = toNum(grnBillDiscount);
+    const adjustment = toNum(grnAdjustment);
+    const beforeRound = round2(taxable + gst - billDiscount + adjustment);
+    const net = Math.floor(beforeRound + 0.5);
+    const invoiceAmount = String(grnInvoiceAmount).trim() === "" ? null : toNum(grnInvoiceAmount);
+    return {
+      lines,
+      itemCount: grnItems.filter((it) => it.medicine_name.trim()).length,
+      qty: sum("qty"),
+      free: sum("free"),
+      gross: sum("gross"),
+      lineDiscount: sum("discount"),
+      taxable,
+      gst,
+      billDiscount,
+      adjustment,
+      roundOff: round2(net - beforeRound),
+      net,
+      invoiceAmount,
+      mismatch: invoiceAmount !== null && Math.abs(invoiceAmount - net) >= 1 ? round2(invoiceAmount - net) : 0,
+    };
+  }, [grnItems, grnBillDiscount, grnAdjustment, grnInvoiceAmount]);
+
+  const resetGrnForm = () => {
+    setGrnSupplierId(null);
+    setGrnInvoiceNo("");
+    setGrnInvoiceDate(new Date().toISOString().split("T")[0]);
+    setGrnPoId(null);
+    setGrnStockSource("CASH");
+    setGrnDueDate("");
+    setGrnDueDateTouched(false);
+    setGrnPaymentType("CREDIT");
+    setGrnBillDiscount("");
+    setGrnAdjustment("");
+    setGrnInvoiceAmount("");
+    setGrnNotes("");
+    setGrnItems([blankGrnItem()]);
+  };
 
   const [submittingGrn, setSubmittingGrn] = useState(false);
 
@@ -359,8 +501,20 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
   const handleExportGrnCsv = () => {
     downloadCsv(
       `grn_history_${grnFromDate || "all"}_to_${grnToDate || "all"}.csv`,
-      ["GRN Number", "Supplier Invoice", "Date", "Classification", "Status"],
-      filteredGoodsReceipts.map((g) => [g.grn_no, g.supplier_invoice_no || "", g.received_date || "", g.stock_source, g.status])
+      ["GRN Number", "Supplier", "Supplier Invoice", "Invoice Date", "Due Date", "Bill Type", "Classification", "Taxable", "GST", "Net Payable", "Status"],
+      filteredGoodsReceipts.map((g) => [
+        g.grn_no,
+        g.supplier_name || "",
+        g.supplier_invoice_no || "",
+        g.received_date || "",
+        g.due_date || "",
+        g.payment_type || "",
+        g.stock_source,
+        g.taxable_amount ?? "",
+        g.gst_amount ?? "",
+        g.net_amount ?? "",
+        g.status,
+      ])
     );
   };
 
@@ -377,21 +531,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
 
   // Add Item to GRN draft
   const handleAddGrnItem = () => {
-    setGrnItems([
-      ...grnItems,
-      {
-        medicine_name: "",
-        batch_no: "",
-        expiry_date: "",
-        received_qty: "",
-        free_qty: "",
-        unit_type: "Tablet",
-        unit_cost: "",
-        mrp: "",
-        selling_price: "",
-        gst_rate: "",
-      },
-    ]);
+    setGrnItems([...grnItems, blankGrnItem()]);
   };
 
   // When a Purchase Order is selected in "Link to Purchase Order (optional)",
@@ -406,6 +546,13 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
     // 1. Auto-set supplier
     if (po.supplier_id) {
       setGrnSupplierId(po.supplier_id);
+    } else if (po.supplier_name) {
+      const matchByName = suppliers.find(
+        (s) => s.supplier_name.trim().toLowerCase() === po.supplier_name?.trim().toLowerCase()
+      );
+      if (matchByName) {
+        setGrnSupplierId(matchByName.id);
+      }
     }
 
     // 2. Auto-set stock classification if set on PO
@@ -442,16 +589,14 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
         : "";
 
     const newLine: GoodsReceiptItem = {
+      ...blankGrnItem(),
       medicine_id: master?.id,
       medicine_name: po.medicine_name,
-      batch_no: "",
-      expiry_date: "",
+      manufacturer: master?.manufacturer || "",
+      hsn_code: master?.hsn_code || "",
       received_qty: po.quantity || 1,
-      free_qty: "",
       unit_type: unitType,
       unit_cost: costVal,
-      mrp: "",
-      selling_price: "",
       gst_rate: gstVal,
       storage_location: "",
     };
@@ -494,6 +639,9 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
       if (master && master.gst_rate !== null && master.gst_rate !== undefined && String(updated[idx].gst_rate ?? "") === "") {
         updated[idx].gst_rate = master.gst_rate;
       }
+      // Likewise HSN and manufacturer, when the line doesn't have them yet.
+      if (master?.hsn_code && !String(updated[idx].hsn_code ?? "").trim()) updated[idx].hsn_code = master.hsn_code;
+      if (master?.manufacturer && !String(updated[idx].manufacturer ?? "").trim()) updated[idx].manufacturer = master.manufacturer;
     }
     setGrnItems(updated);
   };
@@ -517,6 +665,19 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
         setNotice({ type: "warning", message: "All items must have Medicine Name, Batch No, and Expiry Date." });
         return;
       }
+      if (toNum(item.mrp) > 0 && toNum(item.selling_price) > toNum(item.mrp)) {
+        setNotice({ type: "warning", message: `${item.medicine_name}: Sale Rate cannot exceed MRP.` });
+        return;
+      }
+      const disc = toNum(item.discount_pct);
+      if (disc < 0 || disc > 100) {
+        setNotice({ type: "warning", message: `${item.medicine_name}: Discount % must be between 0 and 100.` });
+        return;
+      }
+    }
+    if (grnDueDate && grnInvoiceDate && grnDueDate < grnInvoiceDate) {
+      setNotice({ type: "warning", message: "Due Date cannot be before the Invoice Date." });
+      return;
     }
 
     setSubmittingGrn(true);
@@ -527,14 +688,25 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
         received_date: grnInvoiceDate,
         purchase_order_id: grnPoId,
         stock_source: grnStockSource,
+        due_date: grnDueDate || undefined,
+        payment_type: grnPaymentType,
+        bill_discount: toNum(grnBillDiscount),
+        adjustment: toNum(grnAdjustment),
+        invoice_amount: grnTotals.invoiceAmount ?? undefined,
+        notes: grnNotes.trim() || undefined,
         items: grnItems.map((it) => ({
           medicine_id: it.medicine_id ?? findMasterMedicine(it.medicine_name)?.id,
           medicine_name: it.medicine_name,
+          manufacturer: it.manufacturer?.trim() || undefined,
+          pack: it.pack?.trim() || undefined,
+          hsn_code: it.hsn_code?.trim() || undefined,
           batch_no: it.batch_no,
           mfg_date: it.mfg_date || undefined,
           expiry_date: it.expiry_date,
           qty_received: Number(it.received_qty || 1),
           qty_accepted: Number(it.received_qty || 1),
+          free_qty: toNum(it.free_qty),
+          discount_pct: toNum(it.discount_pct),
           purchase_price: Number(it.unit_cost || 0),
           mrp: Number(it.mrp || 0),
           selling_price: Number(it.selling_price || 0),
@@ -551,8 +723,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
       });
 
       setNotice({ type: "success", message: `GRN ${res.grn_no} created as Draft. Ready for verification.` });
-      setGrnInvoiceNo("");
-      setGrnPoId(null);
+      resetGrnForm();
       void loadData();
       setActiveTab("grn_history");
     } catch (err) {
@@ -959,13 +1130,16 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
           sections: [
             {
               title: "Inward Goods Receipt Notes",
-              headers: ["GRN Number", "Supplier Invoice", "Supplier", "Stock Source", "Receipt Date", "Status", "Items"],
+              headers: ["GRN Number", "Supplier Invoice", "Supplier", "Stock Source", "Invoice Date", "Due Date", "Bill Type", "Net Payable", "Status", "Items"],
               rows: goodsReceipts.map((g) => [
                 g.grn_no,
                 g.supplier_invoice_no || "-",
                 g.supplier_name || "-",
                 g.stock_source,
                 g.received_date || "-",
+                g.due_date || "-",
+                g.payment_type || "-",
+                g.net_amount != null ? formatInr(g.net_amount) : "-",
                 g.status.toUpperCase(),
                 `${g.items?.length || 0} batches`,
               ]),
@@ -1127,13 +1301,41 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                 className="ui-input"
                 style={{ width: "100%", padding: "0.45rem", borderRadius: "6px", border: "1px solid #cbd5e1" }}
                 value={grnSupplierId || ""}
-                onChange={(e) => setGrnSupplierId(parseInt(e.target.value) || null)}
+                onChange={(e) => {
+                  const newSupId = parseInt(e.target.value) || null;
+                  setGrnSupplierId(newSupId);
+                  // If a PO is currently linked, verify it belongs to this newly selected supplier; otherwise unlink it.
+                  if (grnPoId) {
+                    const currentPo = purchaseOrders.find((p) => p.id === grnPoId);
+                    if (currentPo) {
+                      const newSupplier = suppliers.find((s) => s.id === newSupId);
+                      const matchId = currentPo.supplier_id != null && newSupId != null && Number(currentPo.supplier_id) === Number(newSupId);
+                      const matchName = Boolean(
+                        newSupplier?.supplier_name &&
+                        currentPo.supplier_name &&
+                        currentPo.supplier_name.trim().toLowerCase() === newSupplier.supplier_name.trim().toLowerCase()
+                      );
+                      if (!matchId && !matchName) {
+                        setGrnPoId(null);
+                      }
+                    } else {
+                      setGrnPoId(null);
+                    }
+                  }
+                }}
               >
                 <option value="">Choose supplier...</option>
                 {suppliers.map((s) => (
                   <option key={s.id} value={s.id}>{s.supplier_name}</option>
                 ))}
               </select>
+              {grnSelectedSupplier && (grnSelectedSupplier.gst_number || grnSelectedSupplier.drug_license_no || grnSelectedSupplier.payment_terms) && (
+                <p style={{ margin: "4px 0 0 0", fontSize: "0.72rem", color: "#64748b", lineHeight: 1.4 }}>
+                  {grnSelectedSupplier.gst_number && <>GSTIN: {grnSelectedSupplier.gst_number}<br /></>}
+                  {grnSelectedSupplier.drug_license_no && <>DL No: {grnSelectedSupplier.drug_license_no}<br /></>}
+                  {grnSelectedSupplier.payment_terms && <>Terms: {grnSelectedSupplier.payment_terms}</>}
+                </p>
+              )}
             </div>
 
             <div>
@@ -1158,6 +1360,43 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                 value={grnInvoiceDate}
                 onChange={(e) => setGrnInvoiceDate(e.target.value)}
               />
+            </div>
+
+            <div>
+              <label htmlFor="grn-due-date" style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
+                Due Date:
+              </label>
+              <input
+                id="grn-due-date"
+                type="date"
+                className="ui-input"
+                style={{ width: "100%", padding: "0.45rem", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                value={grnDueDate}
+                min={grnInvoiceDate || undefined}
+                onChange={(e) => {
+                  setGrnDueDateTouched(true);
+                  setGrnDueDate(e.target.value);
+                }}
+              />
+              {!grnDueDateTouched && grnDueDate && (
+                <p style={{ margin: "4px 0 0 0", fontSize: "0.72rem", color: "#64748b" }}>From supplier payment terms</p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="grn-payment-type" style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
+                Bill Type:
+              </label>
+              <select
+                id="grn-payment-type"
+                className="ui-input"
+                style={{ width: "100%", padding: "0.45rem", borderRadius: "6px", border: "1px solid #cbd5e1" }}
+                value={grnPaymentType}
+                onChange={(e) => setGrnPaymentType(e.target.value as "CREDIT" | "CASH")}
+              >
+                <option value="CREDIT">Credit</option>
+                <option value="CASH">Cash</option>
+              </select>
             </div>
 
             <div>
@@ -1190,17 +1429,27 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                 }}
               >
                 <option value="">Not linked to an order</option>
-                {purchaseOrders.filter((p) => p.status === "ordered").map((p) => (
-                  <option key={p.id} value={p.id}>
-                    PO-{p.id} -- {p.medicine_name} (Qty {p.quantity}{p.supplier_name ? `, ${p.supplier_name}` : ""})
+                {grnAvailablePurchaseOrders.length === 0 && grnSupplierId ? (
+                  <option value="" disabled>
+                    No open purchase orders for {grnSelectedSupplier?.supplier_name || "this supplier"}
                   </option>
-                ))}
+                ) : (
+                  grnAvailablePurchaseOrders.map((p) => (
+                    <option key={p.id} value={p.id}>
+                      PO-{p.id} -- {p.medicine_name} (Qty {p.quantity}{p.supplier_name ? `, ${p.supplier_name}` : ""})
+                    </option>
+                  ))
+                )}
               </select>
-              {grnPoId && (
+              {grnPoId ? (
                 <p style={{ margin: "4px 0 0 0", fontSize: "0.75rem", color: "#00828a" }}>
                   This GRN will mark PO-{grnPoId} as received once verified.
                 </p>
-              )}
+              ) : grnSupplierId && grnAvailablePurchaseOrders.length > 0 ? (
+                <p style={{ margin: "4px 0 0 0", fontSize: "0.72rem", color: "#64748b" }}>
+                  Showing {grnAvailablePurchaseOrders.length} open purchase order{grnAvailablePurchaseOrders.length === 1 ? "" : "s"} for {grnSelectedSupplier?.supplier_name}.
+                </p>
+              ) : null}
             </div>
           </div>
 
@@ -1216,19 +1465,25 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
             </div>
 
             <div style={{ overflowX: "auto" }}>
-              <table className="pharmacy-data-table" style={{ width: "100%", borderCollapse: "collapse", fontSize: "0.825rem" }}>
+              <table className="pharmacy-data-table" style={{ width: "100%", minWidth: "1700px", borderCollapse: "collapse", fontSize: "0.825rem" }}>
                 <thead>
                   <tr style={{ borderBottom: "2px solid #e2e8f0", textAlign: "left", color: "#64748b" }}>
-                    <th style={{ padding: "0.5rem" }}>Medicine Name *</th>
-                    <th style={{ padding: "0.5rem", width: "150px" }}>Unit / Form *</th>
-                    <th style={{ padding: "0.5rem", width: "150px" }}>Store / Rack</th>
-                    <th style={{ padding: "0.5rem", width: "130px" }}>Batch No *</th>
+                    <th style={{ padding: "0.5rem", minWidth: "200px" }}>Medicine Name *</th>
+                    <th style={{ padding: "0.5rem", width: "100px" }}>Mfr</th>
+                    <th style={{ padding: "0.5rem", width: "80px" }}>Pack</th>
+                    <th style={{ padding: "0.5rem", width: "140px" }}>Unit / Form *</th>
+                    <th style={{ padding: "0.5rem", width: "130px" }}>Store / Rack</th>
+                    <th style={{ padding: "0.5rem", width: "100px" }}>HSN</th>
+                    <th style={{ padding: "0.5rem", width: "120px" }}>Batch No *</th>
                     <th style={{ padding: "0.5rem", width: "130px" }}>Expiry Date *</th>
-                    <th style={{ padding: "0.5rem", width: "80px", textAlign: "center" }}>Qty *</th>
-                    <th style={{ padding: "0.5rem", width: "80px", textAlign: "right" }}>Cost (₹)</th>
+                    <th style={{ padding: "0.5rem", width: "70px", textAlign: "center" }}>Qty *</th>
+                    <th style={{ padding: "0.5rem", width: "65px", textAlign: "center" }} title="Free / scheme quantity: added to stock, not billed">Free</th>
+                    <th style={{ padding: "0.5rem", width: "85px", textAlign: "right" }}>Rate (₹)</th>
                     <th style={{ padding: "0.5rem", width: "80px", textAlign: "right" }}>MRP (₹)</th>
-                    <th style={{ padding: "0.5rem", width: "80px", textAlign: "right" }}>Sale Rate (₹)</th>
-                    <th style={{ padding: "0.5rem", width: "70px", textAlign: "right" }}>GST %</th>
+                    <th style={{ padding: "0.5rem", width: "85px", textAlign: "right" }} title="Price charged to patients at dispense; cannot exceed MRP">Sale Rate (₹)</th>
+                    <th style={{ padding: "0.5rem", width: "65px", textAlign: "right" }}>Disc %</th>
+                    <th style={{ padding: "0.5rem", width: "65px", textAlign: "right" }}>GST %</th>
+                    <th style={{ padding: "0.5rem", width: "100px", textAlign: "right" }}>Amount (₹)</th>
                     <th style={{ padding: "0.5rem", textAlign: "center" }}></th>
                   </tr>
                 </thead>
@@ -1244,6 +1499,28 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                           value={item.medicine_name}
                           onChange={(e) => handleUpdateGrnItem(idx, "medicine_name", e.target.value)}
                           placeholder="Medicine name..."
+                        />
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <input
+                          type="text"
+                          className="ui-input"
+                          style={{ width: "100%", padding: "4px 8px" }}
+                          value={item.manufacturer ?? ""}
+                          onChange={(e) => handleUpdateGrnItem(idx, "manufacturer", e.target.value)}
+                          placeholder="Mfr"
+                          aria-label={`Manufacturer, line ${idx + 1}`}
+                        />
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <input
+                          type="text"
+                          className="ui-input"
+                          style={{ width: "100%", padding: "4px 8px" }}
+                          value={item.pack ?? ""}
+                          onChange={(e) => handleUpdateGrnItem(idx, "pack", e.target.value)}
+                          placeholder="1x10"
+                          aria-label={`Pack, line ${idx + 1}`}
                         />
                       </td>
                       <td style={{ padding: "0.4rem" }}>
@@ -1271,6 +1548,18 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                             <option key={loc.value} value={loc.value}>{loc.label}</option>
                           ))}
                         </select>
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          className="ui-input"
+                          style={{ width: "100%", padding: "4px 8px" }}
+                          value={item.hsn_code ?? ""}
+                          onChange={(e) => handleUpdateGrnItem(idx, "hsn_code", e.target.value.replace(/[^0-9]/g, "").slice(0, 8))}
+                          placeholder="3004"
+                          aria-label={`HSN code, line ${idx + 1}`}
+                        />
                       </td>
                       <td style={{ padding: "0.4rem" }}>
                         <input
@@ -1305,6 +1594,18 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                       <td style={{ padding: "0.4rem" }}>
                         <input
                           type="number"
+                          min={0}
+                          className="ui-input"
+                          style={{ width: "100%", padding: "4px 8px", textAlign: "center" }}
+                          value={item.free_qty ?? ""}
+                          placeholder="0"
+                          onChange={(e) => handleUpdateGrnItem(idx, "free_qty", e.target.value)}
+                          aria-label={`Free quantity, line ${idx + 1}`}
+                        />
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <input
+                          type="number"
                           step="0.01"
                           className="ui-input"
                           style={{ width: "100%", padding: "4px 8px", textAlign: "right" }}
@@ -1333,6 +1634,22 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                           value={item.selling_price ?? ""}
                           placeholder="0.00"
                           onChange={(e) => handleUpdateGrnItem(idx, "selling_price", e.target.value)}
+                          aria-invalid={toNum(item.mrp) > 0 && toNum(item.selling_price) > toNum(item.mrp)}
+                          title={toNum(item.mrp) > 0 && toNum(item.selling_price) > toNum(item.mrp) ? "Sale rate exceeds MRP" : undefined}
+                        />
+                      </td>
+                      <td style={{ padding: "0.4rem" }}>
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          step="0.01"
+                          className="ui-input"
+                          style={{ width: "100%", padding: "4px 8px", textAlign: "right" }}
+                          value={item.discount_pct ?? ""}
+                          placeholder="0"
+                          onChange={(e) => handleUpdateGrnItem(idx, "discount_pct", e.target.value)}
+                          aria-label={`Discount percent, line ${idx + 1}`}
                         />
                       </td>
                       <td style={{ padding: "0.4rem" }}>
@@ -1344,6 +1661,9 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                           placeholder="0"
                           onChange={(e) => handleUpdateGrnItem(idx, "gst_rate", e.target.value)}
                         />
+                      </td>
+                      <td style={{ padding: "0.4rem", textAlign: "right", fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap" }}>
+                        {formatInr(grnTotals.lines[idx]?.amount)}
                       </td>
                       <td style={{ padding: "0.4rem", textAlign: "center" }}>
                         {grnItems.length > 1 && (
@@ -1366,6 +1686,102 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                   <option key={m.id} value={m.name} />
                 ))}
               </datalist>
+            </div>
+          </div>
+
+          {/* Bill Summary: mirrors the footer of the supplier's tax invoice */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(300px, 1fr))", gap: "1rem", marginTop: "1.25rem" }}>
+            <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
+              <div>
+                <label htmlFor="grn-invoice-amount" style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
+                  Invoice Net Amount (as printed on bill):
+                </label>
+                <Input
+                  id="grn-invoice-amount"
+                  type="number"
+                  step="0.01"
+                  min={0}
+                  value={grnInvoiceAmount}
+                  onChange={(e) => setGrnInvoiceAmount(e.target.value)}
+                  placeholder="e.g. 6928.00"
+                />
+                {grnTotals.invoiceAmount !== null && (
+                  <p style={{ margin: "4px 0 0 0", fontSize: "0.75rem", fontWeight: 600, color: grnTotals.mismatch ? "#b91c1c" : "#15803d" }}>
+                    {grnTotals.mismatch
+                      ? `Does not match calculated net payable (difference ${formatInr(grnTotals.mismatch)}). Check quantities, rates and discounts.`
+                      : "Matches calculated net payable."}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label htmlFor="grn-notes" style={{ display: "block", fontSize: "0.8rem", fontWeight: 600, color: "#475569", marginBottom: "4px" }}>
+                  Notes:
+                </label>
+                <textarea
+                  id="grn-notes"
+                  className="ui-input"
+                  rows={3}
+                  style={{ width: "100%", padding: "0.45rem", borderRadius: "6px", border: "1px solid #cbd5e1", resize: "vertical" }}
+                  value={grnNotes}
+                  onChange={(e) => setGrnNotes(e.target.value)}
+                  placeholder="e.g. Received in good condition, 1 strip short"
+                />
+              </div>
+            </div>
+
+            <div style={{ background: "#f8fafc", border: "1px solid #e2e8f0", borderRadius: "8px", padding: "1rem", fontSize: "0.85rem" }}>
+              {(
+                [
+                  ["Items / Units", `${grnTotals.itemCount} items · ${grnTotals.qty} billed${grnTotals.free ? ` + ${grnTotals.free} free` : ""}`],
+                  ["Gross (Qty × Rate)", formatInr(grnTotals.gross)],
+                  ["Less: Line Discount", `− ${formatInr(grnTotals.lineDiscount)}`],
+                  ["Taxable Value", formatInr(grnTotals.taxable)],
+                  ["CGST", formatInr(grnTotals.gst / 2)],
+                  ["SGST", formatInr(grnTotals.gst / 2)],
+                ] as const
+              ).map(([label, value]) => (
+                <div key={label} style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", color: "#475569" }}>
+                  <span>{label}</span>
+                  <span style={{ fontWeight: 600, color: "#0f172a" }}>{value}</span>
+                </div>
+              ))}
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0", color: "#475569" }}>
+                <label htmlFor="grn-bill-discount">Less: Bill Discount (₹)</label>
+                <input
+                  id="grn-bill-discount"
+                  type="number"
+                  min={0}
+                  step="0.01"
+                  className="ui-input"
+                  style={{ width: "110px", padding: "3px 8px", textAlign: "right" }}
+                  value={grnBillDiscount}
+                  placeholder="0.00"
+                  onChange={(e) => setGrnBillDiscount(e.target.value)}
+                />
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "3px 0", color: "#475569" }}>
+                <label htmlFor="grn-adjustment" title="Credit note, freight or other +/- adjustment printed on the bill">
+                  Adjustment / Cr. Note (±₹)
+                </label>
+                <input
+                  id="grn-adjustment"
+                  type="number"
+                  step="0.01"
+                  className="ui-input"
+                  style={{ width: "110px", padding: "3px 8px", textAlign: "right" }}
+                  value={grnAdjustment}
+                  placeholder="0.00"
+                  onChange={(e) => setGrnAdjustment(e.target.value)}
+                />
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "3px 0", color: "#475569" }}>
+                <span>Rounding</span>
+                <span style={{ fontWeight: 600, color: "#0f172a" }}>{grnTotals.roundOff >= 0 ? "+" : "−"} {formatInr(Math.abs(grnTotals.roundOff))}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", marginTop: "6px", paddingTop: "8px", borderTop: "2px solid #e2e8f0", fontSize: "1rem" }}>
+                <span style={{ fontWeight: 700, color: "#0f172a" }}>Net Payable</span>
+                <span style={{ fontWeight: 800, color: "#00828a" }}>{formatInr(grnTotals.net)}</span>
+              </div>
             </div>
           </div>
 
@@ -1410,9 +1826,13 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                 <thead>
                   <tr style={{ borderBottom: "2px solid #e2e8f0", textAlign: "left", color: "#64748b" }}>
                     <th style={{ padding: "0.6rem 0.75rem" }}>GRN Number</th>
+                    <th style={{ padding: "0.6rem 0.75rem" }}>Supplier</th>
                     <th style={{ padding: "0.6rem 0.75rem" }}>Supplier Invoice</th>
-                    <th style={{ padding: "0.6rem 0.75rem" }}>Date</th>
+                    <th style={{ padding: "0.6rem 0.75rem" }}>Invoice Date</th>
+                    <th style={{ padding: "0.6rem 0.75rem" }}>Due Date</th>
+                    <th style={{ padding: "0.6rem 0.75rem" }}>Bill Type</th>
                     <th style={{ padding: "0.6rem 0.75rem" }}>Classification</th>
+                    <th style={{ padding: "0.6rem 0.75rem", textAlign: "right" }}>Net Payable</th>
                     <th style={{ padding: "0.6rem 0.75rem" }}>Status</th>
                     <th style={{ padding: "0.6rem 0.75rem", textAlign: "center" }}>Stock Action</th>
                   </tr>
@@ -1424,9 +1844,25 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                     return (
                       <tr key={grn.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                         <td style={{ padding: "0.6rem 0.75rem", fontWeight: 700, color: "#00828a" }}>{grn.grn_no}</td>
+                        <td style={{ padding: "0.6rem 0.75rem", color: "#475569" }}>{grn.supplier_name || "-"}</td>
                         <td style={{ padding: "0.6rem 0.75rem", fontWeight: 600 }}>{grn.supplier_invoice_no || "-"}</td>
                         <td style={{ padding: "0.6rem 0.75rem", color: "#64748b" }}>{grn.received_date || "-"}</td>
+                        <td style={{ padding: "0.6rem 0.75rem", color: "#64748b" }}>{grn.due_date || "-"}</td>
+                        <td style={{ padding: "0.6rem 0.75rem", color: "#475569" }}>{grn.payment_type ? grn.payment_type.charAt(0) + grn.payment_type.slice(1).toLowerCase() : "-"}</td>
                         <td style={{ padding: "0.6rem 0.75rem", color: "#475569" }}>{grn.stock_source}</td>
+                        <td
+                          style={{ padding: "0.6rem 0.75rem", textAlign: "right", fontWeight: 700, color: "#0f172a", whiteSpace: "nowrap" }}
+                          title={
+                            grn.invoice_amount != null && grn.net_amount != null && Math.abs(grn.invoice_amount - grn.net_amount) >= 1
+                              ? `Bill says ${formatInr(grn.invoice_amount)}`
+                              : undefined
+                          }
+                        >
+                          {grn.net_amount != null ? formatInr(grn.net_amount) : "-"}
+                          {grn.invoice_amount != null && grn.net_amount != null && Math.abs(grn.invoice_amount - grn.net_amount) >= 1 && (
+                            <span style={{ color: "#b91c1c", marginLeft: "4px" }}>⚠</span>
+                          )}
+                        </td>
                         <td style={{ padding: "0.6rem 0.75rem" }}>
                           <span
                             style={{
