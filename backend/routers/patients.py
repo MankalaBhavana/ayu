@@ -374,7 +374,7 @@ def admissions_create(patient_id: str, request: Request, payload: dict = Body(..
             review_fee_val = float(review_fee)
             if review_fee_val > 0:
                 payment_mode = normalize_payment_mode(payload.get("payment_mode"))
-                invoice_no = f"INV-OP-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+                invoice_no = f"INV-OP-{lq.current_ist_datetime().strftime('%Y%m%d%H%M%S%f')}"
                 invoice_id = lq.create_invoice(db, {
                     "invoice_no": invoice_no, "patient_id": patient_id, "module": "OP",
                     "doctor_name": doctor_name, "total_amount": review_fee_val, "paid_amount": 0,
@@ -575,6 +575,6 @@ def export_patients_csv(q: str | None = None, db: Session = Depends(get_db), use
             row_values.append(val if val is not None else "")
         writer.writerow(row_values)
 
-    filename_suffix = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename_suffix = lq.current_ist_datetime().strftime("%Y%m%d_%H%M%S")
     return StreamingResponse(io.BytesIO(csv_stream.getvalue().encode("utf-8-sig")), media_type="text/csv",
                               headers={"Content-Disposition": f'attachment; filename="patients_{filename_suffix}.csv"'})

@@ -1,5 +1,27 @@
 /// <reference types="vite/client" />
 
+interface ImportMetaEnv {
+  readonly VITE_API_BASE?: string;
+  readonly VITE_API_URL?: string;
+  readonly VITE_APP_URL?: string;
+  readonly VITE_CLINIC_NAME?: string;
+  readonly VITE_CLINIC_NAME_UPPER?: string;
+  readonly VITE_CLINIC_TAGLINE?: string;
+  readonly VITE_DOCTOR_NAME?: string;
+  readonly VITE_DOCTOR_QUALIFICATIONS?: string;
+  readonly VITE_DOCTOR_REG_NO?: string;
+  readonly VITE_CLINIC_ADDRESS_LINE1?: string;
+  readonly VITE_CLINIC_ADDRESS_LINE2?: string;
+  readonly VITE_CLINIC_ADDRESS_LINE3?: string;
+  readonly VITE_CLINIC_PHONE?: string;
+  readonly VITE_CLINIC_EMAIL?: string;
+  readonly VITE_DEFAULT_PHARMACY_NAME?: string;
+}
+
+interface ImportMeta {
+  readonly env: ImportMetaEnv;
+}
+
 interface RazorpayCheckoutInstance {
   open: () => void;
 }

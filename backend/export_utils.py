@@ -3,14 +3,23 @@ import io
 import os
 import re
 from datetime import datetime
+from database import IST_TIMEZONE
 from functools import lru_cache
 from fpdf import FPDF
 from docx import Document
 from docx.shared import Pt, RGBColor
 from docx.enum.text import WD_ALIGN_PARAGRAPH
 
-BRAND_NAME = "AYU POLYCLINIC & EMERGENCY CLINIC"
-BRAND_TAGLINE = "POLYCLINIC & DIAGNOSTICS"
+BRAND_NAME = os.getenv("CLINIC_NAME", "AYU POLYCLINIC & EMERGENCY CLINIC")
+BRAND_TAGLINE = os.getenv("CLINIC_TAGLINE", "POLYCLINIC & DIAGNOSTICS")
+CLINIC_DOCTOR_NAME = os.getenv("CLINIC_DOCTOR_NAME", "Dr. Sushanth. B")
+CLINIC_DOCTOR_QUALIFICATIONS = os.getenv("CLINIC_DOCTOR_QUALIFICATIONS", "MBBS (Gandhi), (FCCM)")
+CLINIC_DOCTOR_REG_NO = os.getenv("CLINIC_DOCTOR_REG_NO", "TSMC/FM/27444")
+CLINIC_ADDRESS_LINE1 = os.getenv("CLINIC_ADDRESS_LINE1", "GGF2+2F8, Old Alwal Road, Jonnabanda,")
+CLINIC_ADDRESS_LINE2 = os.getenv("CLINIC_ADDRESS_LINE2", "Chetana Housing Colony, Brundavan Colony,")
+CLINIC_ADDRESS_LINE3 = os.getenv("CLINIC_ADDRESS_LINE3", "Bollaram - 500010, Hyderabad.")
+CLINIC_PHONE = os.getenv("CLINIC_PHONE", "+91 6303346810")
+CLINIC_EMAIL = os.getenv("CLINIC_EMAIL", "dr.sushanth108@gmail.com")
 
 
 @lru_cache(maxsize=1)
@@ -65,14 +74,14 @@ def draw_pdf_brand_header(pdf, left_margin: float, top_y: float, title_width: fl
         
         pdf.set_x(left_margin)
         pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(100, 6, "Dr. Sushanth. B", ln=True)
+        pdf.cell(100, 6, CLINIC_DOCTOR_NAME, ln=True)
         
         pdf.set_x(left_margin)
         pdf.set_font("Helvetica", "", 9)
-        pdf.cell(100, 4.5, "MBBS (Gandhi), (FCCM)", ln=True)
+        pdf.cell(100, 4.5, CLINIC_DOCTOR_QUALIFICATIONS, ln=True)
         
         pdf.set_x(left_margin)
-        pdf.cell(100, 4.5, "TSMC/FM/27444", ln=True)
+        pdf.cell(100, 4.5, CLINIC_DOCTOR_REG_NO, ln=True)
         
         symbol_path = _footer_symbol_path()
         if symbol_path:
@@ -98,12 +107,12 @@ def draw_pdf_brand_header(pdf, left_margin: float, top_y: float, title_width: fl
         if include_doctor_details:
             pdf.set_xy(left_margin, top_y + 11)
             pdf.set_font("Helvetica", "B", 12.5)
-            pdf.cell(125, 6, "Dr. Sushanth. B", ln=True)
+            pdf.cell(125, 6, CLINIC_DOCTOR_NAME, ln=True)
             pdf.set_x(left_margin)
             pdf.set_font("Helvetica", "", 9)
-            pdf.cell(125, 4.5, "MBBS (Gandhi), (FCCM)", ln=True)
+            pdf.cell(125, 4.5, CLINIC_DOCTOR_QUALIFICATIONS, ln=True)
             pdf.set_x(left_margin)
-            pdf.cell(125, 4.5, "TSMC/FM/27444", ln=True)
+            pdf.cell(125, 4.5, CLINIC_DOCTOR_REG_NO, ln=True)
 
         logo_path = _frontend_logo_path() if use_ayu_logo else _clinic_pdf_asset_path("ayu_caduceus.png")
         if logo_path:
@@ -188,11 +197,11 @@ def draw_pdf_brand_footer(pdf, is_prescription: bool = False, left_margin: float
 
     # Address Text
     pdf.set_xy(right_x, footer_y)
-    pdf.cell(105, 3.4, _clean("GGF2+2F8, Old Alwal Road, Jonnabanda,"), ln=False)
+    pdf.cell(105, 3.4, _clean(CLINIC_ADDRESS_LINE1), ln=False)
     pdf.set_xy(right_x, footer_y + 3.4)
-    pdf.cell(105, 3.4, _clean("Chetana Housing Colony, Brundavan Colony,"), ln=False)
+    pdf.cell(105, 3.4, _clean(CLINIC_ADDRESS_LINE2), ln=False)
     pdf.set_xy(right_x, footer_y + 6.8)
-    pdf.cell(105, 3.4, _clean("Bollaram - 500010, Hyderabad."), ln=False)
+    pdf.cell(105, 3.4, _clean(CLINIC_ADDRESS_LINE3), ln=False)
 
     # Phone Icon
     ph_x, ph_y = right_x - 3.8, footer_y + 10.3
@@ -203,7 +212,7 @@ def draw_pdf_brand_footer(pdf, is_prescription: bool = False, left_margin: float
 
     # Phone Text
     pdf.set_xy(right_x, footer_y + 10.2)
-    pdf.cell(28, 3.4, _clean("+91 6303346810"), ln=False)
+    pdf.cell(28, 3.4, _clean(CLINIC_PHONE), ln=False)
 
     # Email Icon
     em_x, em_y = right_x + 30.0, footer_y + 10.6
@@ -216,7 +225,7 @@ def draw_pdf_brand_footer(pdf, is_prescription: bool = False, left_margin: float
 
     # Email Text
     pdf.set_xy(em_x + 4.8, footer_y + 10.2)
-    pdf.cell(60, 3.4, _clean("dr.sushanth108@gmail.com"), ln=False)
+    pdf.cell(60, 3.4, _clean(CLINIC_EMAIL), ln=False)
 
     # Standard bottom divider rule matching reference Screenshot 3
     pdf.set_draw_color(29, 66, 137)
@@ -285,7 +294,7 @@ _NON_PATIENT_DOC_TYPES = {"executive_dashboard", "reports_overview"}
 def generate_pdf(patient_name: str, doc_type: str, ocr_text: str, date_str: str = None) -> bytes:
     """Generate a hospital-standard A4 PDF with client hospital branding."""
     if date_str is None:
-        date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        date_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d %H:%M")
 
     is_patient_document = (doc_type or "").strip().lower() not in _NON_PATIENT_DOC_TYPES
     is_prescription = "prescription" in (doc_type or "").lower()
@@ -343,7 +352,7 @@ def generate_pdf(patient_name: str, doc_type: str, ocr_text: str, date_str: str 
             pdf.line(pdf.get_x(), pdf.get_y()+4.5, 195, pdf.get_y()+4.5)
             pdf.set_text_color(0, 0, 0)
             try:
-                gdt = datetime.strptime(date_str, "%Y-%m-%d %H:%M") if date_str else datetime.now()
+                gdt = datetime.strptime(date_str, "%Y-%m-%d %H:%M") if date_str else datetime.now(IST_TIMEZONE)
                 pdf.cell(30, 6, _pdf_clean(gdt.strftime("%d/%m/%Y")))
             except:
                 pdf.cell(30, 6, _pdf_clean(date_str or ""))
@@ -402,7 +411,7 @@ def generate_pdf(patient_name: str, doc_type: str, ocr_text: str, date_str: str 
             try:
                 generated_dt = datetime.strptime(date_str, "%Y-%m-%d %H:%M")
             except Exception:
-                generated_dt = datetime.now()
+                generated_dt = datetime.now(IST_TIMEZONE)
             meta = (
                 ("Print Date", generated_dt.strftime("%d/%m/%Y")),
                 ("Generated By", "HospAI System"),
@@ -778,7 +787,7 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
     pdf.set_text_color(50, 50, 50)
     pdf.cell(effective_width, 4.5, _clean(payload.get("subtitle") or ""), ln=True)
     
-    generated = datetime.now().strftime("%d/%m/%Y %I:%M %p")
+    generated = datetime.now(IST_TIMEZONE).strftime("%d/%m/%Y %I:%M %p")
     pdf.set_x(left_margin)
     pdf.set_font("Helvetica", "B", 8.5)
     pdf.set_text_color(50, 50, 50)
@@ -869,7 +878,7 @@ def generate_standard_report_pdf(payload: dict) -> bytes:
 def generate_word(patient_name: str, doc_type: str, ocr_text: str, date_str: str = None) -> bytes:
     """Generate Word document with OCR extracted text - properly formatted"""
     if date_str is None:
-        date_str = datetime.now().strftime("%Y-%m-%d %H:%M")
+        date_str = datetime.now(IST_TIMEZONE).strftime("%Y-%m-%d %H:%M")
 
     doc = Document()
 

@@ -1,22 +1,42 @@
 import type { User } from "../types";
 import { ADMIN_PERMISSIONS, MODULE_PERMISSIONS } from "./constants";
 
-const IST_TIMEZONE = "Asia/Kolkata";
+export const IST_TIMEZONE = "Asia/Kolkata";
 
-function parseTimestamp(value: string): Date | null {
+export function parseTimestamp(value: string): Date | null {
   const trimmed = value.trim();
   if (!trimmed) return null;
 
-  // Handle RFC 1123 formats (from Flask jsonify) natively before custom logic
+  // Handle RFC 1123 formats (from Flask jsonify / HTTP headers) natively before custom logic
   if (trimmed.includes(",") && (trimmed.includes("GMT") || trimmed.includes("UTC"))) {
     const nativeParsed = new Date(trimmed);
     if (!Number.isNaN(nativeParsed.getTime())) return nativeParsed;
   }
 
-  const normalized = trimmed.replace(" ", "T");
-  const hasOffset = /([zZ]|[+-]\d{2}:\d{2})$/.test(normalized);
-  const parsed = new Date(hasOffset ? normalized : `${normalized}Z`);
-  if (Number.isNaN(parsed.getTime())) return null;
+  let normalized = trimmed.replace(" ", "T");
+  // Check if string has explicit timezone offset like Z, +05:30, -04:00, etc.
+  const hasOffset = /([zZ]|[+-]\d{2}(?::?\d{2})?)$/.test(normalized);
+  if (!hasOffset) {
+    if (!normalized.includes("T")) {
+      // Date-only string like YYYY-MM-DD
+      const dateParts = normalized.split(/[-/]/);
+      if (dateParts.length === 3 && dateParts[0].length === 4) {
+        normalized = `${dateParts[0]}-${dateParts[1].padStart(2, "0")}-${dateParts[2].padStart(2, "0")}T00:00:00+05:30`;
+      } else {
+        const fallback = new Date(trimmed);
+        if (!Number.isNaN(fallback.getTime())) return fallback;
+      }
+    } else {
+      // Naive timestamp without timezone: in this hospital system it represents IST
+      normalized = `${normalized}+05:30`;
+    }
+  }
+
+  const parsed = new Date(normalized);
+  if (Number.isNaN(parsed.getTime())) {
+    const fallback = new Date(trimmed);
+    return Number.isNaN(fallback.getTime()) ? null : fallback;
+  }
   return parsed;
 }
 
@@ -57,7 +77,14 @@ function getISTDateTimeKeyFromDate(date: Date): string {
 
 export function formatDate(value?: string | null): string {
   if (!value) return "-";
-  return new Date(value).toLocaleDateString();
+  const parsed = parseTimestamp(value);
+  if (!parsed) return "-";
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: IST_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(parsed);
 }
 
 export function calculateAgeFromDob(dob: string): string {
@@ -140,7 +167,18 @@ export function calculateAgeFromDob(dob: string): string {
 
 export function formatDateTime(value?: string | null): string {
   if (!value) return "-";
-  return new Date(value).toLocaleString();
+  const parsed = parseTimestamp(value);
+  if (!parsed) return "-";
+  return new Intl.DateTimeFormat("en-IN", {
+    timeZone: IST_TIMEZONE,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: true,
+  }).format(parsed);
 }
 
 export function formatDateTimeIST(value?: string | null): string {

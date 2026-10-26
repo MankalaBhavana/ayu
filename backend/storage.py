@@ -17,11 +17,12 @@ PROJECT_ROOT = os.path.abspath(os.path.join(BACKEND_DIR, ".."))
 load_dotenv(os.path.join(PROJECT_ROOT, ".env"), override=False)
 load_dotenv(os.path.join(BACKEND_DIR, ".env"), override=False)
 
+from database import IST_TIMEZONE
 BUCKET_URL = (os.getenv("BUCKET_URL") or "").strip()
 
 
 def _timestamp() -> str:
-    return datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S_%f")
+    return datetime.now(IST_TIMEZONE).strftime("%Y%m%d_%H%M%S_%f")
 
 
 def _normalize_s3_parts(storage_path: str):

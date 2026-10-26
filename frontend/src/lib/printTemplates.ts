@@ -27,7 +27,7 @@ const BASE_STYLE = `
 `;
 
 /** A tabular print document -- invoices, reports, any real data table.
- * Rendered under the shared Sri Raksha Hospital letterhead that
+ * Rendered under the shared clinic letterhead that
  * printViaIframe() adds automatically. Never used for raw window.print()
  * of the live app UI. */
 export function buildPrintDocumentHtml(opts: {

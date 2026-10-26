@@ -106,7 +106,7 @@ def appointments_create(request: Request, payload: dict = Body(...), db: Session
     if appointment_date_str:
         try:
             app_date_str = appointment_date_str.split("T")[0].split(" ")[0]
-            if app_date_str < datetime.now().strftime("%Y-%m-%d"):
+            if app_date_str < lq.current_ist_datetime().strftime("%Y-%m-%d"):
                 raise HTTPException(status_code=400, detail="Appointment date cannot be earlier than today's date.")
         except HTTPException:
             raise
@@ -191,7 +191,7 @@ def appointments_razorpay_verify(request: Request, payload: dict = Body(...), db
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
 
-    invoice_no = f"INV-OP-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+    invoice_no = f"INV-OP-{lq.current_ist_datetime().strftime('%Y%m%d%H%M%S%f')}"
     invoice_id = lq.create_invoice(db, {
         "invoice_no": invoice_no, "patient_id": appointment_payload.get("patient_id"), "module": "OP",
         "doctor_name": appointment_payload.get("doctor_name"), "total_amount": amount, "paid_amount": 0,

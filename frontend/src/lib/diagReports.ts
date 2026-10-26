@@ -3,6 +3,8 @@
 // Reports History archive so their print/WhatsApp-share output stays
 // identical and isn't duplicated between the two pages.
 
+import { CLINIC_CONFIG } from "./clinicConfig";
+
 export type ReportRow = {
   id: number; order_item_id: number; report_type: string; version: number; status: string;
   service_name: string; department_type: string; order_no: string; patient_id: string; priority: string;
@@ -98,6 +100,6 @@ export function buildWhatsAppMessage(report: ReportDetail, content: Record<strin
     "",
     `*Authorized Specialist:* Dr. ${doctorName}`,
     "━━━━━━━━━━━━━━━━━━━━",
-    "Ayu Polyclinic & Emergency Clinic · Bollaram, Hyderabad · Ph: +91 6303346810",
+    `${CLINIC_CONFIG.name} · Bollaram, Hyderabad · Ph: ${CLINIC_CONFIG.phone}`,
   ].join("\n");
 }

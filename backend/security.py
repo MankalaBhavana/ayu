@@ -18,7 +18,7 @@ import bcrypt
 from sqlalchemy.orm import Session
 
 from models import DepartmentMaster, DoctorSchedules, Hospitals, Sessions, Users
-from database import DEFAULT_HOSPITAL_CODE
+from database import DEFAULT_HOSPITAL_CODE, IST_TIMEZONE
 
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "hospai_session")
 SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "12"))
@@ -124,18 +124,22 @@ def verify_password(password: str, hashed: str) -> bool:
         return False
 
 
+def _now_ist() -> datetime:
+    return datetime.now(IST_TIMEZONE)
+
+
 def _now_utc() -> datetime:
-    return datetime.now(timezone.utc)
+    return _now_ist()
 
 
 def _format_ts(value: datetime) -> str:
-    return value.astimezone(timezone.utc).isoformat()
+    return value.astimezone(IST_TIMEZONE).isoformat()
 
 
 def _parse_ts(value: Union[str, datetime]) -> datetime:
     parsed = value if isinstance(value, datetime) else datetime.fromisoformat(value)
     if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
+        parsed = parsed.replace(tzinfo=IST_TIMEZONE)
     return parsed
 
 
@@ -155,7 +159,7 @@ def verify_admin_route_password(password: str) -> bool:
 
 def create_admin_route_auth_token() -> str:
     nonce = secrets.token_urlsafe(18)
-    expires_at = int(_now_utc().timestamp()) + ADMIN_ROUTE_AUTH_TTL_SECONDS
+    expires_at = int(_now_ist().timestamp()) + ADMIN_ROUTE_AUTH_TTL_SECONDS
     payload = f"{nonce}:{expires_at}"
     signature = hmac.new(ADMIN_ROUTE_AUTH_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
     return f"{nonce}.{expires_at}.{signature}"
@@ -172,7 +176,7 @@ def verify_admin_route_auth_token(token: Optional[str]) -> bool:
         expires_at = int(expires_str)
     except ValueError:
         return False
-    if int(_now_utc().timestamp()) >= expires_at:
+    if int(_now_ist().timestamp()) >= expires_at:
         return False
     payload = f"{nonce}:{expires_at}"
     expected = hmac.new(ADMIN_ROUTE_AUTH_SECRET.encode(), payload.encode(), hashlib.sha256).hexdigest()
@@ -338,7 +342,7 @@ def set_hospital_status(db: Session, hospital_code: str, status: str, reason: Op
         return False
     if status_value == "inactive":
         hospital.status = "inactive"
-        hospital.disabled_at = datetime.utcnow()
+        hospital.disabled_at = _now_ist().replace(tzinfo=None)
         hospital.disabled_reason = reason
         db.query(Sessions).filter(Sessions.hospital_id == hospital.id).delete()
     else:
@@ -526,55 +530,38 @@ def reset_hospital_admin_password(db: Session, hospital_id: int, username: str, 
 # ----------------------------------------------------------- default seed --
 
 def create_default_users(db: Session):
-    """Seed baseline accounts on first run only (insert-only-if-absent)."""
+    """Seed a single admin account on first run only (insert-only-if-absent).
+    Credentials are read from DEFAULT_ADMIN_USERNAME / DEFAULT_ADMIN_PASSWORD env vars."""
     hospital_id = resolve_hospital_id(db)
-    default_admin_username = os.getenv("DEFAULT_ADMIN_USERNAME", "employee")
-    default_admin_password = os.getenv("DEFAULT_ADMIN_PASSWORD", "employee123")
+    default_admin_username = os.getenv("DEFAULT_ADMIN_USERNAME", "admin")
+    default_admin_password = os.getenv("DEFAULT_ADMIN_PASSWORD", "admin@123")
 
-    default_accounts = [
-        {
-            "username": default_admin_username, "password": default_admin_password,
-            "role": "employee", "access_role": "owner", "user_type": "admin",
-            "module_access": list(ASSIGNABLE_MODULES),
-            "job_role": "Owner / Admin", "department": "Administration", "employee_id": "EMP-EMPLOYEE",
-        },
-        {
-            "username": "staff", "password": "staff123",
-            "role": "staff", "access_role": "receptionist", "user_type": "normal",
-            "module_access": ["dashboard", "patient-registration", "patients", "queue-management", "billing", "laboratory"],
-            "job_role": "Front Desk Staff", "department": "Operations", "employee_id": "EMP-STAFF",
-        },
-        {
-            "username": "pharmacy", "password": "pharmacy123",
-            "role": "staff", "access_role": "receptionist", "user_type": "normal",
-            "module_access": ["pharmacy"],
-            "job_role": "Pharmacist", "department": "Pharmacy", "employee_id": "EMP-PHARMACY",
-        },
-    ]
+    exists = db.query(Users).filter(
+        Users.username == default_admin_username,
+        Users.hospital_id == hospital_id,
+    ).first()
+    if exists:
+        return
 
-    for account in default_accounts:
-        exists = db.query(Users).filter(Users.username == account["username"], Users.hospital_id == hospital_id).first()
-        if exists:
-            continue
-        user = Users(
-            hospital_id=hospital_id,
-            username=account["username"],
-            password_hash=hash_password(account["password"]),
-            role=account["role"],
-            access_role=account["access_role"],
-            user_type=account["user_type"],
-            module_access=modules_to_storage(account["module_access"]),
-            job_role=account["job_role"],
-            full_name=account["username"],
-            email="",
-            phone="",
-            department=account["department"],
-            employee_id=account["employee_id"],
-            status="active",
-            address="",
-            emergency_contact="",
-        )
-        db.add(user)
+    user = Users(
+        hospital_id=hospital_id,
+        username=default_admin_username,
+        password_hash=hash_password(default_admin_password),
+        role="employee",
+        access_role="owner",
+        user_type="admin",
+        module_access=modules_to_storage(list(ASSIGNABLE_MODULES)),
+        job_role="Owner / Admin",
+        full_name=default_admin_username,
+        email="",
+        phone="",
+        department="Administration",
+        employee_id="EMP-ADMIN",
+        status="active",
+        address="",
+        emergency_contact="",
+    )
+    db.add(user)
     db.commit()
 
 
@@ -620,14 +607,14 @@ def authenticate(db: Session, username: str, password: str, hospital_id: Optiona
 # ---------------------------------------------------------------- session --
 
 def purge_expired_sessions(db: Session):
-    now = _now_utc().replace(tzinfo=None)
+    now = _now_ist().replace(tzinfo=None)
     db.query(Sessions).filter(Sessions.expires_at <= now).delete()
     db.commit()
 
 
 def create_session(db: Session, user_id: int, hospital_id: int, ip_address: Optional[str] = None, user_agent: Optional[str] = None):
     purge_expired_sessions(db)
-    expires_at = _now_utc() + timedelta(hours=SESSION_TTL_HOURS)
+    expires_at = _now_ist() + timedelta(hours=SESSION_TTL_HOURS)
 
     for _attempt in range(5):
         token = secrets.token_urlsafe(32)
@@ -655,7 +642,7 @@ def get_session_user(db: Session, token: Optional[str]):
         return None
 
     expires_at = _parse_ts(session_row.expires_at)
-    if expires_at <= _now_utc():
+    if expires_at <= _now_ist():
         db.delete(session_row)
         db.commit()
         return None

@@ -6,7 +6,7 @@ bed_allocations, invoices, invoice_payments). Nothing here is sample data:
 an event, a charge, or a document only appears if a real row backs it.
 """
 from datetime import datetime, timedelta
-
+from database import IST_TIMEZONE
 from legacy_sql import get_connection
 
 
@@ -768,7 +768,7 @@ def get_patient_journey(db, patient_id, encounter_type=None, encounter_id=None):
             cursor.execute(
                 "SELECT * FROM pharmacy_sales WHERE patient_id = ? AND billing_type IN ('EMERGENCY', 'EMERGENCY_ACCOUNT', 'EMERGENCY_IMMEDIATE')"
                 " AND sold_at >= ? AND sold_at <= ?",
-                (patient_id, enc.get("arrival_at"), enc.get("disposition_at") or datetime.now()),
+                (patient_id, enc.get("arrival_at"), enc.get("disposition_at") or datetime.now(IST_TIMEZONE)),
             )
             pharmacy_rows = [dict(r) for r in cursor.fetchall()]
             grouped = {}

@@ -1,4 +1,5 @@
 import { renderAyuPdfHeaderHtml, renderAyuPdfFooterHtml } from "./pdfTemplate";
+import { CLINIC_CONFIG } from "./clinicConfig";
 
 /**
  * printViaIframe – shared print utility
@@ -69,7 +70,7 @@ function applySharedHospaiPrintFrame(html: string, options: SharedPrintOptions):
       </style>`;
     const compactHeader = `
       <div class="hospai-shared-label-mark" data-hospai-shared-print-shell>
-        <div class="brand">Ayu Polyclinic & Emergency Clinic</div>
+        <div class="brand">${escapeSharedPrintText(CLINIC_CONFIG.name)}</div>
         <div class="meta">${title} &middot; ${printDate} ${printTime}</div>
         <div class="rule"></div>
       </div>`;
@@ -245,7 +246,7 @@ function applySharedHospaiPrintFrame(html: string, options: SharedPrintOptions):
 
   const header = preserveDocumentHeader ? "" : `
     <header class="hospai-shared-print-shell" data-hospai-shared-print-shell>
-      ${renderAyuPdfHeaderHtml({ title: rawTitle, printDate, printTime, generatedBy: "Ayu Polyclinic & Emergency Clinic System" })}
+      ${renderAyuPdfHeaderHtml({ title: rawTitle, printDate, printTime, generatedBy: `${CLINIC_CONFIG.name} System` })}
     </header>`;
 
   const footer = includeFooter ? `

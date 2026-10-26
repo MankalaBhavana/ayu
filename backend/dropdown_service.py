@@ -75,12 +75,7 @@ DEFAULT_DROPDOWNS = [
     {"category": "counters", "value": "Counter 1 - Main OPD", "label": "Counter 1 - Main OPD", "sort_order": 2, "is_system": True},
     {"category": "counters", "value": "Counter 2 - Pharmacy & Diagnostics", "label": "Counter 2 - Pharmacy & Diagnostics", "sort_order": 3, "is_system": True},
 
-    # Cashiers (Billing & Accounts)
-    {"category": "cashiers", "value": "Ramesh Kumar", "label": "Ramesh Kumar", "sort_order": 1, "is_system": False},
-    {"category": "cashiers", "value": "Admin Cashier", "label": "Admin Cashier", "sort_order": 2, "is_system": False},
-    {"category": "cashiers", "value": "Priya Sharma", "label": "Priya Sharma", "sort_order": 3, "is_system": False},
-    {"category": "cashiers", "value": "K. Rajesh", "label": "K. Rajesh", "sort_order": 4, "is_system": False},
-    {"category": "cashiers", "value": "employee", "label": "employee (Admin)", "sort_order": 5, "is_system": False},
+    # Cashiers are automatically synced from active users in init_and_seed_dropdowns()
 ]
 
 def init_and_seed_dropdowns():

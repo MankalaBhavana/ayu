@@ -1,4 +1,4 @@
-import { formatDateIST, resolvePermissions, stripUploadTimestampPrefix } from "./format";
+import { formatDateIST, formatDateTimeIST, getISTDateKey, resolvePermissions, stripUploadTimestampPrefix } from "./format";
 
 describe("resolvePermissions", () => {
   test("returns explicit user permissions when provided", () => {
@@ -73,4 +73,32 @@ describe("format helpers", () => {
     expect(formatDateIST(undefined)).toBe("Unknown Date");
     expect(formatDateIST("not-a-date")).toBe("Unknown Date");
   });
+
+  test("converts explicit UTC ISO timestamp (Z) to IST (+05:30)", () => {
+    // 06:15:00 UTC = 11:45:00 IST
+    const formatted = formatDateTimeIST("2026-10-26T06:15:00Z");
+    expect(formatted).toBe("26 Oct 2026, 11:45:00 am IST");
+  });
+
+  test("converts explicit UTC offset (+00:00) to IST (+05:30)", () => {
+    const formatted = formatDateTimeIST("2026-10-26T06:15:00+00:00");
+    expect(formatted).toBe("26 Oct 2026, 11:45:00 am IST");
+  });
+
+  test("converts RFC 1123 GMT string to IST", () => {
+    const formatted = formatDateTimeIST("Mon, 26 Oct 2026 06:15:00 GMT");
+    expect(formatted).toBe("26 Oct 2026, 11:45:00 am IST");
+  });
+
+  test("preserves naive IST database timestamp without adding +5:30 again", () => {
+    // 12:15:17 stored as local IST in DB should remain 12:15:17 in IST
+    const formatted = formatDateTimeIST("2026-10-20 12:15:17");
+    expect(formatted).toBe("20 Oct 2026, 12:15:17 pm IST");
+  });
+
+  test("preserves naive date key on same day for evening times", () => {
+    // 20:30:00 in IST is 8:30 PM on Oct 20, must not flip to Oct 21
+    expect(getISTDateKey("2026-10-20 20:30:00")).toBe("2026-10-20");
+  });
 });
+

@@ -3,6 +3,7 @@
  * Reproduces Reference Images 1 and 2 identically across all modules.
  */
 import { PRINT_CADUCEUS_DATA_URI, PRINT_BRAND_HEADER_DATA_URI } from "./printBrand";
+import { CLINIC_CONFIG } from "./clinicConfig";
 
 export const AYU_PDF_COLORS = {
   primary: "#1d4289",
@@ -35,7 +36,7 @@ export function renderAyuPdfHeaderHtml(options?: PdfHeaderOptions): string {
   const printTime =
     options?.printTime ||
     now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
-  const generatedBy = options?.generatedBy || "Ayu Polyclinic & Emergency Clinic System";
+  const generatedBy = options?.generatedBy || `${CLINIC_CONFIG.name} System`;
   const logoSrc = options?.brandLogoDataUri || (options?.useAyuLogo !== false ? PRINT_BRAND_HEADER_DATA_URI : PRINT_CADUCEUS_DATA_URI);
 
   const titleSection = options?.title
@@ -54,12 +55,12 @@ export function renderAyuPdfHeaderHtml(options?: PdfHeaderOptions): string {
     <div class="ayu-shared-header-shell" style="width:100%;font-family:Arial,Helvetica,sans-serif;box-sizing:border-box;margin-bottom:12px;color:#1d4289;">
       <div class="ayu-shared-brand-bar" style="display:flex;align-items:flex-start;justify-content:space-between;gap:16px;min-height:82px;padding-bottom:6px;">
         <div style="display:flex;flex-direction:column;align-items:flex-start;">
-          <div style="display:inline-block;margin:0 0 5px;border-bottom:2px solid #1d4289;padding-bottom:2px;font-size:21px;white-space:nowrap;font-weight:900;line-height:1.1;color:#1d4289;">AYU POLYCLINIC & EMERGENCY CLINIC</div>
-          <div style="font-size:16px;font-weight:800;line-height:1.2;color:#1d4289;">Dr. Sushanth. B</div>
-          <div style="margin-top:2px;font-size:11px;font-weight:700;line-height:1.25;color:#1d4289;">MBBS (Gandhi), (FCCM)</div>
-          <div style="font-size:11px;font-weight:700;line-height:1.25;color:#1d4289;">TSMC/FM/27444</div>
+          <div style="display:inline-block;margin:0 0 5px;border-bottom:2px solid #1d4289;padding-bottom:2px;font-size:21px;white-space:nowrap;font-weight:900;line-height:1.1;color:#1d4289;">${CLINIC_CONFIG.nameUpper}</div>
+          <div style="font-size:16px;font-weight:800;line-height:1.2;color:#1d4289;">${CLINIC_CONFIG.doctorName}</div>
+          <div style="margin-top:2px;font-size:11px;font-weight:700;line-height:1.25;color:#1d4289;">${CLINIC_CONFIG.doctorQualifications}</div>
+          <div style="font-size:11px;font-weight:700;line-height:1.25;color:#1d4289;">${CLINIC_CONFIG.doctorRegNo}</div>
         </div>
-        <img src="${logoSrc}" alt="Ayu Polyclinic & Emergency Clinic Logo" style="width:78px;height:76px;object-fit:contain;object-position:center top;display:block;flex:0 0 auto;" />
+        <img src="${logoSrc}" alt="${CLINIC_CONFIG.name} Logo" style="width:78px;height:76px;object-fit:contain;object-position:center top;display:block;flex:0 0 auto;" />
       </div>
       ${titleSection}
     </div>
@@ -108,20 +109,20 @@ function renderAyuPdfFooterBandHtml(): string {
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${w} ${h}" style="position:absolute;left:${left}mm;top:${top}mm;width:${w}mm;height:${h}mm;display:block;overflow:visible;" aria-hidden="true">${body}</svg>`;
 
   return `
-      <div class="ayu-shared-footer-band" role="img" aria-label="24/7 Emergency, Ambulance Service, Home Care Service Available. GGF2+2F8, Old Alwal Road, Jonnabanda, Chetana Housing Colony, Brundavan Colony, Bollaram - 500010, Hyderabad. Phone +91 6303346810. Email dr.sushanth108@gmail.com" style="position:relative;width:100%;height:15.3mm;margin:0;padding:0;border-top:0.35mm solid #1d4289;border-bottom:0.35mm solid #1d4289;box-sizing:content-box;overflow:visible;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
+      <div class="ayu-shared-footer-band" role="img" aria-label="24/7 Emergency, Ambulance Service, Home Care Service Available. ${escapeHtml(CLINIC_CONFIG.addressLine1)} ${escapeHtml(CLINIC_CONFIG.addressLine2)} ${escapeHtml(CLINIC_CONFIG.addressLine3)} Phone ${escapeHtml(CLINIC_CONFIG.phone)}. Email ${escapeHtml(CLINIC_CONFIG.email)}" style="position:relative;width:100%;height:15.3mm;margin:0;padding:0;border-top:0.35mm solid #1d4289;border-bottom:0.35mm solid #1d4289;box-sizing:content-box;overflow:visible;-webkit-print-color-adjust:exact;print-color-adjust:exact;">
         ${service(1.5, "- 24/7 Emergency")}
         ${service(5.3, "- Ambulance Service")}
         ${service(9.1, "- Home Care Service Available")}
         ${icon(50, 4, 11.7, 7.2, `<rect x="0" y="0" width="8.5" height="6" fill="#1e567a"/><rect x="8.5" y="2.5" width="3.2" height="3.5" fill="#1e567a"/><circle cx="2.7" cy="6.1" r="1.1" fill="#000"/><circle cx="9.3" cy="6.1" r="1.1" fill="#000"/><rect x="3.4" y="1.2" width="1.4" height="3.6" fill="#fff"/><rect x="2.3" y="2.3" width="3.6" height="1.4" fill="#fff"/>`)}
         ${icon(62.8, 1.5, 0.4, 12.5, `<rect x="0" y="0" width="0.4" height="12.5" fill="#1e567a"/>`)}
         ${icon(67.2, 1.8, 2.6, 3.6, `<circle cx="1.3" cy="1.3" r="1.3" fill="#1e567a"/><polygon points="0,1.3 2.6,1.3 1.3,3.6" fill="#1e567a"/><circle cx="1.3" cy="1.3" r="0.5" fill="#fff"/>`)}
-        ${address(1.5, "GGF2+2F8, Old Alwal Road, Jonnabanda,")}
-        ${address(4.9, "Chetana Housing Colony, Brundavan Colony,")}
-        ${address(8.3, "Bollaram - 500010, Hyderabad.")}
+        ${address(1.5, CLINIC_CONFIG.addressLine1)}
+        ${address(4.9, CLINIC_CONFIG.addressLine2)}
+        ${address(8.3, CLINIC_CONFIG.addressLine3)}
         ${icon(67.2, 11.8, 2.2, 3.2, `<rect x="0" y="0" width="2.2" height="3.2" fill="#1e567a"/><rect x="0.3" y="0.3" width="1.6" height="2" fill="#fff"/>`)}
-        ${address(11.7, "+91 6303346810")}
+        ${address(11.7, CLINIC_CONFIG.phone)}
         ${icon(101, 12.1, 3.6, 2.6, `<rect x="0" y="0" width="3.6" height="2.6" fill="#fff" stroke="#1e567a" stroke-width="0.3"/><polyline points="0,0 1.8,1.3 3.6,0" fill="none" stroke="#1e567a" stroke-width="0.3"/>`)}
-        <div style="${reset}left:106.8mm;top:11.7mm;height:3.4mm;line-height:3.4mm;font-size:7.8pt;">dr.sushanth108@gmail.com</div>
+        <div style="${reset}left:106.8mm;top:11.7mm;height:3.4mm;line-height:3.4mm;font-size:7.8pt;">${escapeHtml(CLINIC_CONFIG.email)}</div>
       </div>`;
 }
 

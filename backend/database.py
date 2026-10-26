@@ -29,7 +29,12 @@ if DATABASE_URL.startswith("postgres://"):
 if not DATABASE_URL.startswith("postgresql://"):
     raise RuntimeError("DATABASE_URL must be a PostgreSQL connection string (postgresql://...).")
 
-engine = create_engine(DATABASE_URL, pool_pre_ping=True, future=True)
+engine = create_engine(
+    DATABASE_URL,
+    pool_pre_ping=True,
+    future=True,
+    connect_args={"options": "-c timezone=Asia/Kolkata"},
+)
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
 IST_TIMEZONE = timezone(timedelta(hours=5, minutes=30))

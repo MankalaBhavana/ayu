@@ -13,6 +13,7 @@ import { filterInteger, filterDecimal } from "../lib/format";
 import { printViaIframe } from "../lib/printViaIframe";
 import { PRINT_WATERMARK_DATA_URI, PRINT_RX_SYMBOL_DATA_URI, PRINT_CADUCEUS_DATA_URI } from "../lib/printBrand";
 import { renderAyuPdfFooterHtml } from "../lib/pdfTemplate";
+import { CLINIC_CONFIG } from "../lib/clinicConfig";
 
 type Props = { setNotice: Dispatch<SetStateAction<Notice | null>>; view: "prescription" | "ip-admission" | "nurse-station" | "discharge-summary" };
 
@@ -101,7 +102,7 @@ export const buildPrescriptionHtml = (data: {
   labTests?: string;
 }) => {
   // Principal doctor name displayed on all clinic letterheads and PDFs
-  const docName = "Dr. Sushanth. B";
+  const docName = CLINIC_CONFIG.doctorName;
   const validMeds: PrescriptionMedicine[] = data.medicines ? data.medicines.filter(m => m.medicine_name.trim()) : [];
   const adviceLines = (data.advice || "").split(/\r?\n/).map(l => l.trim()).filter(Boolean);
   const extraLines = adviceLines.length + (data.labTests ? 1 : 0) + (data.followUpDate ? 1 : 0);
@@ -227,10 +228,10 @@ export const buildPrescriptionHtml = (data: {
       ? `
       <div class="rx-header">
         <div class="rx-header-left">
-          <h1 class="rx-clinic-title">AYU POLYCLINIC & EMERGENCY CLINIC</h1>
+          <h1 class="rx-clinic-title">${CLINIC_CONFIG.nameUpper}</h1>
           <div class="rx-doctor-name">${docName}</div>
-          <div class="rx-doctor-qual">MBBS (Gandhi), (FCCM)</div>
-          <div class="rx-doctor-qual">TSMC/FM/27444</div>
+          <div class="rx-doctor-qual">${CLINIC_CONFIG.doctorQualifications}</div>
+          <div class="rx-doctor-qual">${CLINIC_CONFIG.doctorRegNo}</div>
         </div>
         <img src="${PRINT_CADUCEUS_DATA_URI}" class="rx-logo-img" alt="Caduceus" />
       </div>
@@ -272,8 +273,8 @@ export const buildPrescriptionHtml = (data: {
       : `
       <div class="rx-header-cont">
         <div>
-          <div class="rx-clinic-title-sm">AYU POLYCLINIC & EMERGENCY CLINIC <span style="font-size:12px;font-weight:700;color:#64748b;text-transform:none;">(Prescription Cont.)</span></div>
-          <div class="rx-doctor-sm">${docName} &bull; MBBS (Gandhi), (FCCM) &bull; TSMC/FM/27444</div>
+          <div class="rx-clinic-title-sm">${CLINIC_CONFIG.nameUpper} <span style="font-size:12px;font-weight:700;color:#64748b;text-transform:none;">(Prescription Cont.)</span></div>
+          <div class="rx-doctor-sm">${docName} &bull; ${CLINIC_CONFIG.doctorQualifications} &bull; ${CLINIC_CONFIG.doctorRegNo}</div>
         </div>
         <div class="rx-header-cont-right">
           <div><span class="rx-field-label-sm">Patient:</span> <strong>${escapePrescriptionHtml(data.patientName || "-")}</strong></div>
@@ -333,7 +334,7 @@ export const buildPrescriptionHtml = (data: {
 <html>
 <head>
   <meta charset="utf-8" />
-  <title>AYU POLYCLINIC & EMERGENCY CLINIC - Doctor Prescription</title>
+  <title>${CLINIC_CONFIG.nameUpper} - Doctor Prescription</title>
 </head>
 <body style="margin: 0; padding: 0; background: #ffffff;">
   <div class="rx-print-wrap" data-hospai-shared-print-shell>
@@ -1209,7 +1210,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
         <div className="module-unified-topbar">
           <div className="module-topbar-breadcrumb-row">
             <div className="module-topbar-breadcrumb">
-              <span className="breadcrumb-root" onClick={() => window.history.back()}>Ayu Polyclinic & Emergency Clinic</span>
+              <span className="breadcrumb-root" onClick={() => window.history.back()}>{CLINIC_CONFIG.name}</span>
               <span className="breadcrumb-sep">/</span>
               <span>OP Management</span>
               <span className="breadcrumb-sep">/</span>

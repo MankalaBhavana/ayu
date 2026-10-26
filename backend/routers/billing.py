@@ -26,7 +26,7 @@ def billing_invoices(patient_id: str | None = None, module: str | None = None, d
 def billing_create_invoice(request: Request, payload: dict = Body(...), db: Session = Depends(get_db),
                             user: dict = Depends(require_permissions("billing.write"))):
     validate_required_fields(payload, ["module", "total_amount"])
-    invoice_no = payload.get("invoice_no") or f"INV-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+    invoice_no = payload.get("invoice_no") or f"INV-{lq.current_ist_datetime().strftime('%Y%m%d%H%M%S%f')}"
     invoice_id = lq.create_invoice(db, {
         "invoice_no": invoice_no, "patient_id": payload.get("patient_id"), "module": payload.get("module", "OP"),
         "doctor_name": payload.get("doctor_name"), "clinic_name": payload.get("clinic_name"),
@@ -73,7 +73,7 @@ def billing_razorpay_order(request: Request, payload: dict = Body(...), db: Sess
         raise HTTPException(status_code=400, detail="invoice_id must be a valid number.")
     if not lq.get_invoice_by_id(db, invoice_id):
         raise HTTPException(status_code=404, detail="Invoice not found")
-    receipt = payload.get("receipt") or f"bill-{invoice_id}-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+    receipt = payload.get("receipt") or f"bill-{invoice_id}-{lq.current_ist_datetime().strftime('%Y%m%d%H%M%S%f')}"
     notes = payload.get("notes") if isinstance(payload.get("notes"), dict) else {}
     notes = {**notes, "invoice_id": str(invoice_id), "hospital_id": str(hospital_id)}
     try:
@@ -136,7 +136,7 @@ def billing_direct_payment(request: Request, payload: dict = Body(...), db: Sess
         raise HTTPException(status_code=400, detail="Amount must be greater than zero.")
     payment_for = str(payload.get("payment_for") or payload.get("module") or "OP").strip()
     module = normalize_billing_module(payment_for)
-    invoice_no = f"PAY-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+    invoice_no = f"PAY-{lq.current_ist_datetime().strftime('%Y%m%d%H%M%S%f')}"
     invoice_id = lq.create_invoice(db, {
         "invoice_no": invoice_no, "patient_id": payload.get("patient_id"), "module": module,
         "clinic_name": payload.get("patient_name"), "referral_source": payment_for, "total_amount": amount,

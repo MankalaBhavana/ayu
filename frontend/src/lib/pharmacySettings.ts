@@ -9,7 +9,9 @@ export type PharmacyPrintSettings = {
   gstin: string;
 };
 
-export const DEFAULT_PHARMACY_NAME = "AYU POLYCLINIC & EMERGENCY CLINIC";
+import { CLINIC_CONFIG } from "./clinicConfig";
+
+export const DEFAULT_PHARMACY_NAME = CLINIC_CONFIG.defaultPharmacyName;
 export const PHARMACY_SETTINGS_UPDATED_EVENT = "ayu-pharmacy-settings-updated";
 
 const EMPTY_SETTINGS: PharmacyPrintSettings = { pharmacy_name: "", address_line: "", dl_number: "", gstin: "" };

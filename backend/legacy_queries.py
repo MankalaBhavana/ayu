@@ -1065,7 +1065,7 @@ def get_patient_details(db, patient_id, hospital_id=None):
                     
                     from datetime import datetime
                     last_dt = datetime.strptime(str(last_visit["appointment_date"]).split("T")[0].split(" ")[0], "%Y-%m-%d")
-                    curr_dt = datetime.now()
+                    curr_dt = current_ist_datetime().replace(tzinfo=None)
                     diff_days = (curr_dt - last_dt).days
                     if 0 <= diff_days <= 7:
                         data["eligible_for_free_followup"] = True
@@ -1515,10 +1515,8 @@ def add_admission(db, patient_id, notes="", hospital_id=None):
     scoped_hospital_id = hospital_id or resolve_hospital_id(db)
     with get_connection(db) as conn:
         cursor = conn.cursor()
-        # NOTE: admission_date stored as UTC via CURRENT_TIMESTAMP (matches
-        # patients.created_at pattern). Converted to IST only at display
-        # time via date_clause(). Do NOT store IST wall-clock time here --
-        # see deployment notes re: timezone consistency.
+        # NOTE: admission_date stored in IST via CURRENT_TIMESTAMP (with
+        # database session timezone locked to Asia/Kolkata).
         cursor.execute(
             """
             INSERT INTO admissions (hospital_id, patient_id, admission_date, notes)
@@ -1620,10 +1618,8 @@ def add_document(db,
     scoped_hospital_id = hospital_id or resolve_hospital_id(db)
     with get_connection(db) as conn:
         cursor = conn.cursor()
-        # NOTE: created_at stored as UTC via CURRENT_TIMESTAMP (matches
-        # patients.created_at pattern). Converted to IST only at display
-        # time via date_clause(). Do NOT store IST wall-clock time here --
-        # see deployment notes re: timezone consistency.
+        # NOTE: created_at stored in IST via CURRENT_TIMESTAMP (with
+        # database session timezone locked to Asia/Kolkata).
         cursor.execute(
             """
             INSERT INTO documents (
@@ -2531,7 +2527,7 @@ def create_op_appointment_with_invoice(db, payload, consultation_fee, username):
         invoice_id = None
         payment_id = None
         if consultation_fee > 0:
-            invoice_no = f"INV-OP-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+            invoice_no = f"INV-OP-{current_ist_datetime().strftime('%Y%m%d%H%M%S%f')}"
             
             # Use Operator Name as single source of truth, fallback to username
             op_name = payload.get("operator_name")
@@ -3965,7 +3961,7 @@ def create_encounter(db, data):
     encounter_type = data.get("encounter_type", "OP")
     encounter_no = None
     if encounter_type == "EMERGENCY":
-        encounter_no = f"ER-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+        encounter_no = f"ER-{current_ist_datetime().strftime('%Y%m%d%H%M%S%f')}"
     with get_connection(db) as conn:
         cursor = conn.cursor()
         cursor.execute(
@@ -4319,7 +4315,7 @@ def create_invoice(db, data):
                         gender,
                         data.get("module"),
                         "OPD",
-                        datetime.now().strftime("%Y-%m-%d"),
+                        current_ist_datetime().strftime("%Y-%m-%d"),
                         "Cash",
                         None,
                         disc_pct,
@@ -5045,9 +5041,9 @@ def get_revenue_summary(db, collection_date=None, collection_month=None):
                 try:
                     curr_date = datetime.strptime(collection_date, "%Y-%m-%d").date()
                 except Exception:
-                    curr_date = datetime.now().date()
+                    curr_date = current_ist_datetime().date()
             else:
-                curr_date = datetime.now().date()
+                curr_date = current_ist_datetime().date()
                 
             m_start = curr_date.replace(day=1).isoformat()
             if curr_date.month == 12:
@@ -5966,7 +5962,7 @@ def create_goods_receipt(db, data):
         if payment_type not in ("CREDIT", "CASH"):
             raise ValueError("payment_type must be CREDIT or CASH.")
 
-        grn_no = f"GRN-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+        grn_no = f"GRN-{current_ist_datetime().strftime('%Y%m%d%H%M%S%f')}"
         cursor.execute(
             """
             INSERT INTO goods_receipts (grn_no, purchase_order_id, received_date, supplier_invoice_no, status, stock_source, idempotency_key, idempotency_payload_hash, supplier_id,
@@ -6358,7 +6354,7 @@ def create_pharmacy_dispense(db, data, username):
                     batch
                     and batch["batch_status"] == "available"
                     and batch["qty_available"] > 0
-                    and (not batch["expiry_date"] or str(batch["expiry_date"]) > str(datetime.now().date()))
+                    and (not batch["expiry_date"] or str(batch["expiry_date"]) > str(current_ist_datetime().date()))
                 )
                 candidate_batches = [batch] if eligible else []
             else:
@@ -6459,7 +6455,7 @@ def create_pharmacy_dispense(db, data, username):
                 route = line.get("route") or "Oral"
                 freq = line.get("frequency") or "OD"
                 # Generate dose schedules
-                now = datetime.now()
+                now = current_ist_datetime().replace(tzinfo=None)
                 doses_per_day = 2 if "BD" in freq.upper() else (3 if "TDS" in freq.upper() else (4 if "QID" in freq.upper() else 1))
                 intervals = [8, 14, 20][:doses_per_day] if doses_per_day > 1 else [9]
                 for d in range(min(dispensed_qty, 10)):
@@ -6499,7 +6495,7 @@ def create_pharmacy_dispense(db, data, username):
         is_insurance = False
         # Only generate an immediate invoice for OPD / external; IPD and Emergency Account run on patient account settled at discharge / encounter close
         if total_amount > 0 and (patient_id or sale_type == "external") and billing_type not in ("IPD_RUNNING", "EMERGENCY_ACCOUNT"):
-            invoice_no = f"INV-PHM-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+            invoice_no = f"INV-PHM-{current_ist_datetime().strftime('%Y%m%d%H%M%S%f')}"
             is_insurance = (
                 payment_mode.lower() == "insurance"
                 or billing_type in ("OPD_INSURANCE", "INSURANCE", "IPD_INSURANCE")
@@ -7692,7 +7688,8 @@ def get_pharmacy_summary(db, target_date=None):
 
 
 def create_purchase_request(db, data, username):
-    pr_no = f"PR-{datetime.now().strftime('%Y%m%d%H%M%S')}-{datetime.now().microsecond:06d}"
+    pr_dt = current_ist_datetime()
+    pr_no = f"PR-{pr_dt.strftime('%Y%m%d%H%M%S')}-{pr_dt.microsecond:06d}"
     pref_supplier = data.get("preferred_supplier_id") or data.get("supplier_id")
     supplier_phone = data.get("supplier_phone") or data.get("phone")
     with get_connection(db) as conn:
@@ -8072,7 +8069,7 @@ def create_ward_indent(db, data, username):
     mis-attributed to a stale ward. Clinical fields (dose/frequency/route)
     must come from the real order; a missing one is surfaced as a validation
     error rather than silently defaulted to "tablet"/"oral"/"OD"."""
-    indent_no = f"IND-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+    indent_no = f"IND-{current_ist_datetime().strftime('%Y%m%d%H%M%S%f')}"
     patient_id = data["patient_id"]
     admission_id = data.get("admission_id")
     doctor_name = data.get("doctor_name")
@@ -8131,7 +8128,7 @@ def create_ward_indent(db, data, username):
                     item["frequency"],
                     item["route"],
                     int(item["quantity_ordered"]),
-                    item.get("start_at") or datetime.now(),
+                    item.get("start_at") or current_ist_datetime().replace(tzinfo=None),
                     item.get("end_at"),
                     bool(item.get("is_prn", False)),
                     item.get("instructions"),
@@ -8594,7 +8591,7 @@ def settle_inpatient_discharge(db, data, username):
     paid_amount = max(0.0, round(total_amount - advance_paid, 2))
     due_amount = 0.0
 
-    now_str = datetime.now().strftime("%Y%m%d%H%M%S")
+    now_str = current_ist_datetime().strftime("%Y%m%d%H%M%S")
     invoice_no = f"INV-DIS-{now_str}"
 
     with get_connection(db) as conn:
@@ -10755,13 +10752,13 @@ def update_diag_package(db, package_id, data):
 
 def _generate_diag_order_no():
     import random
-    return f"LABORD-{datetime.now().strftime('%y%m%d%H%M%S')}{random.randint(10, 99)}"
+    return f"LABORD-{current_ist_datetime().strftime('%y%m%d%H%M%S')}{random.randint(10, 99)}"
 
 
 
 def _generate_specimen_no():
     import random
-    return f"SPC-{datetime.now().strftime('%y%m%d')}-{random.randint(1000, 9999)}"
+    return f"SPC-{current_ist_datetime().strftime('%y%m%d')}-{random.randint(1000, 9999)}"
 
 
 
@@ -10949,7 +10946,7 @@ def confirm_diag_order(db, order_id, username=None):
         subtotal = sum(float(i["amount"]) for i in items)
         invoice_id = None
         if order["encounter_type"] in ("OP", "EMERGENCY", "EXTERNAL"):
-            invoice_no = f"INV-LAB-{datetime.now().strftime('%Y%m%d%H%M%S%f')}"
+            invoice_no = f"INV-LAB-{current_ist_datetime().strftime('%Y%m%d%H%M%S%f')}"
             cursor.execute(
                 """
                 INSERT INTO invoices (invoice_no, patient_id, module, referral_source, subtotal, tax, discount, total_amount, due_amount, payment_status, created_by)
@@ -11239,12 +11236,12 @@ def _tat_status(start_at, target_hours, end_at=None):
             start_at = datetime.fromisoformat(start_at)
         except ValueError:
             return {"elapsed_hours": None, "tat_target_hours": None, "tat_status": None}
-    end = end_at or datetime.now()
+    end = end_at or current_ist_datetime().replace(tzinfo=None)
     if isinstance(end, str):
         try:
             end = datetime.fromisoformat(end)
         except ValueError:
-            end = datetime.now()
+            end = current_ist_datetime().replace(tzinfo=None)
     elapsed_hours = max((end - start_at).total_seconds() / 3600.0, 0.0)
     if elapsed_hours > target:
         status = "overdue"
@@ -12162,7 +12159,7 @@ def log_diag_equipment_maintenance(db, data, username=None):
             (
                 data["equipment_id"], data.get("service_date"), data.get("service_type"), data.get("findings"),
                 data.get("work_performed"), data.get("responsible", username), data.get("completion_status", "completed"),
-                data.get("next_due_date"), datetime.now() if data.get("mark_unavailable") else None,
+                data.get("next_due_date"), current_ist_datetime().replace(tzinfo=None) if data.get("mark_unavailable") else None,
             ),
         )
         log_id = cursor.lastrowid
