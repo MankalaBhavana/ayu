@@ -12,6 +12,7 @@ from database import db_session
 import security
 import legacy_sql
 import legacy_queries
+import init_db
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
@@ -47,15 +48,9 @@ app.add_middleware(
 # --------------------------------------------------------------- startup --
 @app.on_event("startup")
 def on_startup():
-    """Seed the baseline accounts on first run (schema itself comes from the
-    restored Postgres dump / SQLAlchemy models, not created here)."""
-    with db_session() as db:
-        security.create_default_users(db)
-        security.create_default_clinical_master(db)
-        with legacy_sql.get_connection(db) as conn:
-            legacy_queries.ensure_lab_diagnostics_tables(conn)
-            legacy_queries.ensure_pharmacy_master_schema(conn)
-        db.commit()
+    """Ensure PostgreSQL database exists, create all 116 ORM tables, run migrations,
+    and seed baseline accounts on startup."""
+    init_db.init_all()
 
 
 # ------------------------------------------------------------ error handling --
