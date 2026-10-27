@@ -676,7 +676,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
   const [historyLoading, setHistoryLoading] = useState(false);
   const [expandedHistoryId, setExpandedHistoryId] = useState<number | null>(null);
   // Visit-based prescription: save_token for idempotency (prevents duplicate records on rapid Save clicks)
-  const generateToken = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Math.random().toString(36).slice(2, 11)}`;
+  const generateToken = () => crypto.randomUUID ? crypto.randomUUID() : `${Date.now()}-${Array.from(crypto.getRandomValues(new Uint8Array(8)), b => b.toString(16).padStart(2, "0")).join("")}`;
   const [saveToken, setSaveToken] = useState(() => generateToken());
   const [saving, setSaving] = useState(false);
 

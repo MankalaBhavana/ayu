@@ -635,9 +635,9 @@ export default function LabPage({ setNotice, user }: Props) {
         body: JSON.stringify({ category_type: activeTab, category_name: newCategoryName.trim() })
       });
       if (activeTab === "lab") {
-        setLabCategories(prev => [...prev, newCategoryName.trim()].sort());
+        setLabCategories(prev => [...prev, newCategoryName.trim()].sort((a, b) => a.localeCompare(b)));
       } else {
-        setDiagnosticCategories(prev => [...prev, newCategoryName.trim()].sort());
+        setDiagnosticCategories(prev => [...prev, newCategoryName.trim()].sort((a, b) => a.localeCompare(b)));
       }
       setCategory(newCategoryName.trim());
       setNewCategoryName("");

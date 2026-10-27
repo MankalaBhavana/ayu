@@ -10751,14 +10751,14 @@ def update_diag_package(db, package_id, data):
 
 
 def _generate_diag_order_no():
-    import random
-    return f"LABORD-{current_ist_datetime().strftime('%y%m%d%H%M%S')}{random.randint(10, 99)}"
+    import secrets
+    return f"LABORD-{current_ist_datetime().strftime('%y%m%d%H%M%S')}{10 + secrets.randbelow(90)}"
 
 
 
 def _generate_specimen_no():
-    import random
-    return f"SPC-{current_ist_datetime().strftime('%y%m%d')}-{random.randint(1000, 9999)}"
+    import secrets
+    return f"SPC-{current_ist_datetime().strftime('%y%m%d')}-{1000 + secrets.randbelow(9000)}"
 
 
 

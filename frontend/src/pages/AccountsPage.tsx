@@ -657,14 +657,14 @@ export default function AccountsPage({ setNotice, view = "ledger" }: Props) {
     if (finalPaid > 0 && finalPaid >= currentTotal) displayStatus = "Paid";
 
     const uniqueDepartments = Array.from(new Set([...masterDepartments, ...doctorSchedules.map(s => s.department).filter(Boolean)])) as string[];
-    uniqueDepartments.sort();
+    uniqueDepartments.sort((a, b) => a.localeCompare(b));
     
     const availableDoctors = doctorSchedules.filter(s => 
       !doctorForm.department || s.department === doctorForm.department
     ).map(s => s.doctor_name).filter(Boolean) as string[];
     
     const uniqueDoctors = Array.from(new Set(availableDoctors));
-    uniqueDoctors.sort();
+    uniqueDoctors.sort((a, b) => a.localeCompare(b));
     
     const handleDepartmentChange = (dept: string) => {
       const deptDoctors = doctorSchedules.filter(s => s.department === dept).map(s => s.doctor_name).filter(Boolean);

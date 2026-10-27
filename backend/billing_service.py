@@ -1078,7 +1078,7 @@ def get_ip_discharge_details(db: Session, admission_id: Any):
 
         # Create charges_version hash
         version_str = f"{admission_id}:{gross_charges}:{net_bill}:{len(beds)}:{pharmacy_net}"
-        charges_version = hashlib.md5(version_str.encode()).hexdigest()
+        charges_version = hashlib.sha256(version_str.encode()).hexdigest()
 
         return {
             "admission": dict(adm),
