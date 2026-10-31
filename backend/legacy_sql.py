@@ -114,21 +114,30 @@ def run(db: Session, sql: str, params=None) -> LegacyResult:
     if is_insert:
         sql_with_returning = stripped.rstrip().rstrip(";") + " RETURNING id"
         try:
-            result = db.execute(text(sql_with_returning), pdict)
-            lastrowid = None
-            try:
-                row = result.fetchone()
-                if row is not None:
-                    lastrowid = row[0]
-            except Exception:
+            with db.begin_nested():
+                result = db.execute(text(sql_with_returning), pdict)
+                lastrowid = None
+                try:
+                    row = result.fetchone()
+                    if row is not None:
+                        lastrowid = row[0]
+                except Exception:
+                    pass
+                return LegacyResult(result, lastrowid=lastrowid)
+        except Exception as exc:
+            exc_str = str(exc).lower()
+            if ("column" in exc_str and "id" in exc_str) or ("has no column named id" in exc_str):
                 pass
-            return LegacyResult(result, lastrowid=lastrowid)
-        except Exception:
-            # Table may not have an 'id' column - fall back without RETURNING.
-            db.rollback()
+            else:
+                db.rollback()
+                raise
 
-    result = db.execute(text(named_sql), pdict)
-    return LegacyResult(result)
+    try:
+        result = db.execute(text(named_sql), pdict)
+        return LegacyResult(result)
+    except Exception:
+        db.rollback()
+        raise
 
 
 def one(db: Session, sql: str, params=None):
@@ -197,4 +206,8 @@ def get_connection(db: Session):
     """Drop-in replacement for the original `get_connection()` context
     manager, bound to the FastAPI-injected session instead of opening a
     new psycopg2 connection."""
-    yield _CompatConn(db)
+    try:
+        yield _CompatConn(db)
+    except Exception:
+        db.rollback()
+        raise

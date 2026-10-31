@@ -5543,6 +5543,17 @@ def ensure_pharmacy_master_schema(conn):
         )
         """
     )
+    cursor.execute("SELECT column_name FROM information_schema.columns WHERE table_name = 'pharmacy_sales'")
+    sales_columns = {row[0] for row in cursor.fetchall()}
+    for column, ddl in (
+        ("sale_type", "TEXT DEFAULT 'internal'"),
+        ("customer_name", "TEXT"),
+        ("customer_age", "TEXT"),
+        ("customer_dob", "TEXT"),
+        ("customer_mobile", "TEXT"),
+    ):
+        if column not in sales_columns:
+            cursor.execute(f"ALTER TABLE pharmacy_sales ADD COLUMN {column} {ddl}")
     link_inventory_to_medicine_master(cursor)
     conn.commit()
 
@@ -5798,19 +5809,19 @@ def update_pharmacy_supplier(db, supplier_id, data):
 def delete_pharmacy_supplier(db, supplier_id):
     with get_connection(db) as conn:
         cursor = conn.cursor()
-        cursor.execute("UPDATE pharmacy_purchases SET supplier_id = NULL WHERE supplier_id = ?", (supplier_id,))
         try:
-            cursor.execute("UPDATE pharmacy_purchase_requests SET preferred_supplier_id = NULL WHERE preferred_supplier_id = ?", (supplier_id,))
+            cursor.execute("UPDATE pharmacy_purchases SET supplier_id = NULL WHERE supplier_id = ?", (supplier_id,))
+            cursor.execute("UPDATE purchase_requests SET preferred_supplier_id = NULL WHERE preferred_supplier_id = ?", (supplier_id,))
+            cursor.execute("UPDATE purchase_requests SET supplier_id = NULL WHERE supplier_id = ?", (supplier_id,))
+            cursor.execute("UPDATE pharmacy_inventory SET supplier_id = NULL WHERE supplier_id = ?", (supplier_id,))
+            cursor.execute("UPDATE goods_receipts SET supplier_id = NULL WHERE supplier_id = ?", (supplier_id,))
+            cursor.execute("DELETE FROM pharmacy_suppliers WHERE id = ?", (supplier_id,))
+            deleted = cursor.rowcount > 0
+            conn.commit()
+            return deleted
         except Exception:
-            pass
-        try:
-            cursor.execute("UPDATE pharmacy_purchase_requests SET supplier_id = NULL WHERE supplier_id = ?", (supplier_id,))
-        except Exception:
-            pass
-        cursor.execute("DELETE FROM pharmacy_suppliers WHERE id = ?", (supplier_id,))
-        deleted = cursor.rowcount > 0
-        conn.commit()
-        return deleted
+            conn.rollback()
+            raise
 
 
 
@@ -7691,15 +7702,14 @@ def create_purchase_request(db, data, username):
     pr_dt = current_ist_datetime()
     pr_no = f"PR-{pr_dt.strftime('%Y%m%d%H%M%S')}-{pr_dt.microsecond:06d}"
     pref_supplier = data.get("preferred_supplier_id") or data.get("supplier_id")
-    supplier_phone = data.get("supplier_phone") or data.get("phone")
     with get_connection(db) as conn:
         cursor = conn.cursor()
         cursor.execute(
             """
-            INSERT INTO purchase_requests (pr_no, requested_by, status, priority, notes, preferred_supplier_id, supplier_id, supplier_phone)
-            VALUES (?, ?, 'pending', ?, ?, ?, ?, ?)
+            INSERT INTO purchase_requests (pr_no, requested_by, status, priority, notes, preferred_supplier_id, supplier_id)
+            VALUES (?, ?, 'pending', ?, ?, ?, ?)
             """,
-            (pr_no, username, data.get("priority", "normal"), data.get("notes"), pref_supplier, pref_supplier, supplier_phone),
+            (pr_no, username, data.get("priority", "normal"), data.get("notes"), pref_supplier, pref_supplier),
         )
         pr_id = cursor.lastrowid
         for item in data.get("items", []):
@@ -7734,7 +7744,7 @@ def list_purchase_requests(db, status=None):
         if status:
             cursor.execute(
                 """
-                SELECT pr.*, s.supplier_name, COALESCE(pr.supplier_phone, s.phone) AS supplier_phone
+                SELECT pr.*, s.supplier_name, s.phone AS supplier_phone
                 FROM purchase_requests pr
                 LEFT JOIN pharmacy_suppliers s ON COALESCE(pr.preferred_supplier_id, pr.supplier_id) = s.id
                 WHERE pr.status = ?
@@ -7745,7 +7755,7 @@ def list_purchase_requests(db, status=None):
         else:
             cursor.execute(
                 """
-                SELECT pr.*, s.supplier_name, COALESCE(pr.supplier_phone, s.phone) AS supplier_phone
+                SELECT pr.*, s.supplier_name, s.phone AS supplier_phone
                 FROM purchase_requests pr
                 LEFT JOIN pharmacy_suppliers s ON COALESCE(pr.preferred_supplier_id, pr.supplier_id) = s.id
                 ORDER BY pr.created_at DESC

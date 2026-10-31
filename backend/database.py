@@ -26,8 +26,11 @@ if DATABASE_URL.startswith("sqlite"):
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
 
-if not DATABASE_URL.startswith("postgresql://"):
+if not (DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("postgresql+")):
     raise RuntimeError("DATABASE_URL must be a PostgreSQL connection string (postgresql://...).")
+
+if DATABASE_URL.startswith("postgresql://"):
+    DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://"):]
 
 engine = create_engine(
     DATABASE_URL,
@@ -46,6 +49,9 @@ def get_db():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()
 
@@ -56,5 +62,8 @@ def db_session():
     db = SessionLocal()
     try:
         yield db
+    except Exception:
+        db.rollback()
+        raise
     finally:
         db.close()

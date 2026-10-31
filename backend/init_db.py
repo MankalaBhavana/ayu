@@ -64,6 +64,7 @@ def run_sql_migrations(target_engine):
     migration_files = [
         "migrations_insurance_providers.sql",
         "migrations_billing_v2.sql",
+        "migrations_pharmacy_v2.sql",
     ]
     with target_engine.connect() as conn:
         for fname in migration_files:

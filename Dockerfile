@@ -46,5 +46,5 @@ EXPOSE 8000
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8000/api/health || exit 1
 
-# Start server using uvicorn (auto-inits schemas on startup)
-CMD ["python", "-m", "uvicorn", "main:app", "--app-dir", "backend", "--host", "0.0.0.0", "--port", "8000"]
+# Start server using gunicorn with uvicorn workers (auto-inits schemas on startup)
+CMD ["gunicorn", "main:app", "--chdir", "backend", "-k", "uvicorn.workers.UvicornWorker", "--bind", "0.0.0.0:8000", "--workers", "2", "--timeout", "120"]

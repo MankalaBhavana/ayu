@@ -360,6 +360,7 @@ class DiagServices(Base):
     department: Mapped[Optional[str]] = mapped_column(Text)
     active: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text('true'))
     turnaround_time: Mapped[Optional[str]] = mapped_column(Text)
+    turnaround_hours: Mapped[Optional[float]] = mapped_column(REAL)
     preparation_requirements: Mapped[Optional[str]] = mapped_column(Text)
     specimen_type: Mapped[Optional[str]] = mapped_column(Text)
     container_type: Mapped[Optional[str]] = mapped_column(Text)
@@ -1143,6 +1144,9 @@ class InvoicePayments(Base):
     converted_from_mode: Mapped[Optional[str]] = mapped_column(Text)
     converted_to_mode: Mapped[Optional[str]] = mapped_column(Text)
     created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    canonical_receipt_id: Mapped[Optional[int]] = mapped_column(Integer)
+    canonical_allocation_id: Mapped[Optional[int]] = mapped_column(Integer)
+    receipt_no: Mapped[Optional[str]] = mapped_column(Text)
 
 
 class Invoices(Base):
@@ -1765,6 +1769,8 @@ class PharmacyInventory(Base):
     mrp: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
     supplier_id: Mapped[Optional[int]] = mapped_column(Integer)
     unit_type: Mapped[Optional[str]] = mapped_column(Text)
+    gst_rate: Mapped[Optional[float]] = mapped_column(REAL)
+    storage_location: Mapped[Optional[str]] = mapped_column(Text)
 
 
 class PharmacyPurchases(Base):
@@ -1839,6 +1845,11 @@ class PharmacySales(Base):
     admission_id: Mapped[Optional[int]] = mapped_column(Integer)
     indent_id: Mapped[Optional[int]] = mapped_column(Integer)
     billing_type: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'OPD_IMMEDIATE'::text"))
+    sale_type: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'internal'::text"))
+    customer_name: Mapped[Optional[str]] = mapped_column(Text)
+    customer_age: Mapped[Optional[str]] = mapped_column(Text)
+    customer_dob: Mapped[Optional[str]] = mapped_column(Text)
+    customer_mobile: Mapped[Optional[str]] = mapped_column(Text)
 
 
 class PharmacySuppliers(Base):
@@ -2362,6 +2373,9 @@ class DoctorPayoutPayments(Base):
     amount: Mapped[float] = mapped_column(REAL, nullable=False)
     paid_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
     notes: Mapped[Optional[str]] = mapped_column(Text)
+    cashier_session_id: Mapped[Optional[int]] = mapped_column(Integer)
+    payment_mode: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'bank_transfer'::text"))
+    transaction_ref: Mapped[Optional[str]] = mapped_column(Text)
 
     payout: Mapped['DoctorPayouts'] = relationship('DoctorPayouts', back_populates='doctor_payout_payments')
 
@@ -2436,6 +2450,8 @@ class PurchaseRequestItems(Base):
     min_level: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('10'))
     estimated_unit_cost: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
     notes: Mapped[Optional[str]] = mapped_column(Text)
+    strength_form: Mapped[Optional[str]] = mapped_column(Text)
+    unit: Mapped[Optional[str]] = mapped_column(Text)
 
     pr: Mapped['PurchaseRequests'] = relationship('PurchaseRequests', back_populates='purchase_request_items')
 

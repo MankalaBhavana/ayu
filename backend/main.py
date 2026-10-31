@@ -64,7 +64,12 @@ async def handle_global_exception(request: Request, exc: Exception):
     if isinstance(exc, ValueError):
         return JSONResponse(status_code=400, content={"error": str(exc)})
     if isinstance(exc, IntegrityError):
-        return JSONResponse(status_code=409, content={"error": "Database integrity error. A required record is missing or duplicate data exists."})
+        orig_msg = str(getattr(exc, "orig", exc)).lower()
+        if "foreign key" in orig_msg or "violates foreign key constraint" in orig_msg:
+            return JSONResponse(status_code=409, content={"error": "Cannot complete action: record is referenced by or depends on another entity."})
+        if "unique" in orig_msg or "duplicate key" in orig_msg:
+            return JSONResponse(status_code=409, content={"error": "A record with this identifier already exists."})
+        return JSONResponse(status_code=409, content={"error": "Database integrity constraint violation."})
     if isinstance(exc, OperationalError):
         return JSONResponse(status_code=500, content={"error": "Database operation failed. Please try again later."})
     return JSONResponse(status_code=500, content={"error": "Internal Server Error", "message": "An unexpected server error occurred. Please try again."})
