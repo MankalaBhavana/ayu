@@ -9,10 +9,12 @@ from sqlalchemy.orm import sessionmaker, Session
 
 BASE_DIR = os.path.dirname(__file__)
 PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
-# Same .env resolution order as the original Flask app: project root first,
-# then backend/.env, neither overriding already-set environment variables.
-load_dotenv(os.path.join(PROJECT_ROOT, ".env"), override=False)
-load_dotenv(os.path.join(BASE_DIR, ".env"), override=False)
+# Env file resolution (local runs; Docker passes app.env via env_file):
+# project root first, then backend/, app.env before .env, never overriding
+# variables that are already set.
+for _env_dir in (PROJECT_ROOT, BASE_DIR):
+    for _env_name in ("app.env", ".env"):
+        load_dotenv(os.path.join(_env_dir, _env_name), override=False)
 
 DATABASE_URL = (os.getenv("DATABASE_URL") or "").strip()
 if not DATABASE_URL:

@@ -1,0 +1,21 @@
+# Keep the backend build context small and secret-free
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+htmlcov/
+.coverage
+
+# Env files are injected at runtime (docker compose env_file), never baked in
+.env
+*.env
+
+# Runtime uploads are a volume, not image content
+uploads/*
+!uploads/.gitkeep
+
+*.log
+.DS_Store
+Dockerfile
+.dockerignore

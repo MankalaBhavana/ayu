@@ -13,14 +13,19 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine.url import make_url
 
 # Load environment
-load_dotenv(PROJECT_ROOT / ".env", override=False)
-load_dotenv(BACKEND_DIR / ".env", override=False)
+for _env_dir in (PROJECT_ROOT, BACKEND_DIR):
+    for _env_name in ("app.env", ".env"):
+        load_dotenv(_env_dir / _env_name, override=False)
 
 from database import DATABASE_URL, engine, db_session
 from models import Base
 import security
 import legacy_sql
 import legacy_queries
+
+
+# Arbitrary constant identifying the startup-initialisation advisory lock.
+INIT_LOCK_KEY = 482_910_337
 
 
 def ensure_database_exists():
@@ -88,6 +93,19 @@ def init_all():
     print("[INIT_DB] Starting database initialization...")
     ensure_database_exists()
 
+    # Every app worker runs this on startup; serialise them so concurrent
+    # CREATE TABLE / migrations on a fresh database cannot collide.
+    with engine.connect() as lock_conn:
+        lock_conn.execute(text("SELECT pg_advisory_lock(:key)"), {"key": INIT_LOCK_KEY})
+        try:
+            _init_schema_and_seed()
+        finally:
+            lock_conn.execute(text("SELECT pg_advisory_unlock(:key)"), {"key": INIT_LOCK_KEY})
+
+    print("[INIT_DB] Database initialization completed successfully.")
+
+
+def _init_schema_and_seed():
     print("[INIT_DB] Creating ORM tables from SQLAlchemy models...")
     Base.metadata.create_all(bind=engine)
     print(f"[INIT_DB] Verified {len(Base.metadata.tables)} ORM tables.")
@@ -107,8 +125,6 @@ def init_all():
     # Runs last so it also covers tables created by the legacy ensure_* helpers.
     print("[INIT_DB] Normalising timestamp columns to TIMESTAMPTZ...")
     run_sql_migrations(engine, ["migrations_timestamptz.sql"])
-
-    print("[INIT_DB] Database initialization completed successfully.")
 
 
 if __name__ == "__main__":

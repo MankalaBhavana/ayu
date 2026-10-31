@@ -1,28 +1,30 @@
 # HospAI Backend API Reference & Route Directory
 
-> Comprehensive specification of all backend REST API routes in HospAI / Ayu Polyclinic & Emergency Clinic. Automatically generated and synchronized with FastAPI endpoints.
+> Every backend REST route in HospAI / Ayu Polyclinic & Emergency Clinic, generated from the registered FastAPI routes.
 
 **Total Registered Endpoints:** 275 paths | **356 HTTP Operations**  
-**Base URL:** `http://127.0.0.1:8000` (Local) / Current Cloudflare Tunnel  
-**Authentication:** Cookie-based Session (`hospai_session`) or Bearer token; Tenant isolation via `X-Hospital-Code` header.
+**Base URL:** `http://127.0.0.1:8000` (backend, local) / `http://<host>/` (Docker: nginx proxies `/api/*` to the backend)  
+**Authentication:** Cookie-based session (`hospai_session`); tenant isolation via `X-Hospital-Code` header.  
+**Interactive docs:** `GET /docs` (Swagger UI) and `GET /openapi.json` on the backend.
 
 ---
 
 ## Table of Contents
 
-- [Authentication & Session Management (#authentication-session-management)](#authentication-session-management) — *17 routes*
-- [Platform & Multi-Hospital Administration (#platform-multi-hospital-administration)](#platform-multi-hospital-administration) — *5 routes*
-- [Patients & Identity Management (#patients-identity-management)](#patients-identity-management) — *23 routes*
-- [Clinical Consultations & OP Workflow (#clinical-consultations-op-workflow)](#clinical-consultations-op-workflow) — *29 routes*
-- [Employees, Wards & IP Bed Allocations (#employees-wards-ip-bed-allocations)](#employees-wards-ip-bed-allocations) — *44 routes*
-- [Billing, Invoices & Collections (#billing-invoices-collections)](#billing-invoices-collections) — *38 routes*
-- [Pharmacy Operations & Inventory (#pharmacy-operations-inventory)](#pharmacy-operations-inventory) — *52 routes*
-- [eMAR (Electronic Medication Administration) (#emar-electronic-medication-administration)](#emar-electronic-medication-administration) — *6 routes*
-- [Laboratory & Diagnostic Services (#laboratory-diagnostic-services)](#laboratory-diagnostic-services) — *68 routes*
-- [Ancillary Operations (OT, Legacy Lab, Finance & HR) (#ancillary-operations-ot-legacy-lab-finance-hr)](#ancillary-operations-ot-legacy-lab-finance-hr) — *53 routes*
-- [Executive Analytics & Financial Reports (#executive-analytics-financial-reports)](#executive-analytics-financial-reports) — *14 routes*
-- [System Configuration & Master Dropdowns (#system-configuration-master-dropdowns)](#system-configuration-master-dropdowns) — *4 routes*
-- [System & Infrastructure Endpoints (#system-infrastructure-endpoints)](#system-infrastructure-endpoints) — *3 routes*
+- [Authentication & Session Management](#authentication--session-management) — *17 routes*
+- [Platform & Multi-Hospital Administration](#platform--multi-hospital-administration) — *5 routes*
+- [Patients & Identity Management](#patients--identity-management) — *23 routes*
+- [Clinical Consultations & OP Workflow](#clinical-consultations--op-workflow) — *29 routes*
+- [Employees, Wards & IP Bed Allocations](#employees-wards--ip-bed-allocations) — *44 routes*
+- [Billing, Invoices & Collections](#billing-invoices--collections) — *38 routes*
+- [Pharmacy Operations & Inventory](#pharmacy-operations--inventory) — *52 routes*
+- [eMAR (Electronic Medication Administration)](#emar-electronic-medication-administration) — *6 routes*
+- [Laboratory & Diagnostic Services](#laboratory--diagnostic-services) — *68 routes*
+- [Ancillary Operations (OT, Legacy Lab, Finance & HR)](#ancillary-operations-ot-legacy-lab-finance--hr) — *53 routes*
+- [Executive Analytics & Financial Reports](#executive-analytics--financial-reports) — *14 routes*
+- [System Configuration & Master Dropdowns](#system-configuration--master-dropdowns) — *4 routes*
+- [System & Infrastructure Endpoints](#system--infrastructure-endpoints) — *3 routes*
+- [Date & Time Format](#date--time-format)
 
 ---
 
@@ -31,7 +33,7 @@
 | Header | Required | Type | Description |
 | :--- | :--- | :--- | :--- |
 | `Content-Type` | Optional (`application/json`) | String | Must be `application/json` for POST/PUT requests with payloads. |
-| `X-Hospital-Code` | Optional (default: `sri_raksha`) | String | Scopes all database queries to the targeted hospital tenant database partition. |
+| `X-Hospital-Code` | Optional (default: `DEFAULT_HOSPITAL_CODE`) | String | Scopes all database queries to the targeted hospital tenant. |
 | `Cookie` | Required for protected routes | String | Session cookie `hospai_session` obtained upon successful login. |
 | `X-Platform-Admin-Username` | Platform routes only | String | Superadmin credential for platform tenant management. |
 | `X-Platform-Admin-Password` | Platform routes only | String | Superadmin credential for platform tenant management. |
@@ -84,7 +86,7 @@ _Multi-tenant hospital registration, tenant activation/deactivation, and superad
 
 ## Patients & Identity Management
 
-_Patient records, demographic profile, UHID registration, search, and consents._
+_Patient records, demographic profile, UHID registration, search, documents, and consents._
 
 **Route Count:** 23
 
@@ -98,18 +100,18 @@ _Patient records, demographic profile, UHID registration, search, and consents._
 | **`POST`** | `/api/export/word` | Export Word | - | Payload |
 | **`GET`** | `/api/insurance-providers` | Insurance Providers List | - | - |
 | **`POST`** | `/api/insurance-providers` | Insurance Providers Create | - | Payload |
-| **`POST`** | `/api/ocr` | Ocr Extract | - | JSON |
+| **`POST`** | `/api/ocr` | Ocr Extract | - | Payload |
 | **`GET`** | `/api/patients` | Patients List | `q`, `visit_status` | - |
 | **`POST`** | `/api/patients` | Patients Create | - | Payload |
 | **`GET`** | `/api/patients/next-id` | Patients Next Id | - | - |
-| **`DELETE`** | `/api/patients/{patient_id}` | Patients Delete | - | - |
 | **`GET`** | `/api/patients/{patient_id}` | Patients Read | - | - |
 | **`PUT`** | `/api/patients/{patient_id}` | Patients Update | - | Payload |
+| **`DELETE`** | `/api/patients/{patient_id}` | Patients Delete | - | - |
 | **`GET`** | `/api/patients/{patient_id}/active-admission` | Patient Active Admission | - | - |
 | **`GET`** | `/api/patients/{patient_id}/admissions` | Admissions List | - | - |
 | **`POST`** | `/api/patients/{patient_id}/admissions` | Admissions Create | - | Payload |
 | **`GET`** | `/api/patients/{patient_id}/documents` | Documents List | - | - |
-| **`POST`** | `/api/patients/{patient_id}/documents` | Documents Create | - | JSON |
+| **`POST`** | `/api/patients/{patient_id}/documents` | Documents Create | - | Payload |
 | **`GET`** | `/api/patients/{patient_id}/journey` | Patients Journey | `encounter_type`, `encounter_id` | - |
 | **`GET`** | `/api/patients/{patient_id}/last-consultation` | Get Patient Last Consultation | - | - |
 | **`POST`** | `/api/patients/{patient_id}/verify-insurance` | Patients Verify Insurance | - | Payload |
@@ -137,8 +139,8 @@ _Outpatient clinic workflow, doctor appointments, token queues, clinical vitals,
 | **`GET`** | `/api/hospital/summary` | Dashboard Hospital Summary | `date`, `target_date` | - |
 | **`GET`** | `/api/op/doctor-schedules` | Op Doctor Schedules List | `date`, `doctor_name`, `status`, `department` | - |
 | **`POST`** | `/api/op/doctor-schedules` | Op Doctor Schedules Create | - | Payload |
-| **`DELETE`** | `/api/op/doctor-schedules/{schedule_id}` | Op Doctor Schedules Delete | - | - |
 | **`PUT`** | `/api/op/doctor-schedules/{schedule_id}` | Op Doctor Schedules Update | - | Payload |
+| **`DELETE`** | `/api/op/doctor-schedules/{schedule_id}` | Op Doctor Schedules Delete | - | - |
 | **`GET`** | `/api/op/doctors` | Op Doctors List | `department` | - |
 | **`GET`** | `/api/op/summary` | Op Summary | `date` | - |
 | **`GET`** | `/api/prescriptions` | Prescriptions List | `patient_id` | - |
@@ -185,9 +187,9 @@ _Staff and doctor management, module permissions, IP ward bed allocation, transf
 | **`POST`** | `/api/employees` | Employees Create | - | Payload |
 | **`GET`** | `/api/employees/search` | Employees Search | `q` | - |
 | **`GET`** | `/api/employees/stats` | Employees Stats | - | - |
-| **`DELETE`** | `/api/employees/{employee_id}` | Employees Delete | - | - |
 | **`GET`** | `/api/employees/{employee_id}` | Employees Get | - | - |
 | **`PUT`** | `/api/employees/{employee_id}` | Employees Update | - | Payload |
+| **`DELETE`** | `/api/employees/{employee_id}` | Employees Delete | - | - |
 | **`POST`** | `/api/employees/{employee_id}/activate` | Employees Activate | - | - |
 | **`POST`** | `/api/employees/{employee_id}/deactivate` | Employees Deactivate | - | - |
 | **`GET`** | `/api/encounters` | Encounters List | `encounter_type`, `active_only` | - |
@@ -226,21 +228,21 @@ _Patient invoices, cash/insurance payments, partial due collections, doctor payo
 | **`POST`** | `/api/billing/cashier-session/open` | Billing Cashier Session Open | - | Payload |
 | **`GET`** | `/api/billing/claims` | Billing Claims | `invoice_id`, `status` | - |
 | **`POST`** | `/api/billing/claims` | Billing Create Claim | - | Payload |
-| **`DELETE`** | `/api/billing/claims/{claim_id}` | Billing Delete Claim | - | - |
 | **`PUT`** | `/api/billing/claims/{claim_id}` | Billing Update Claim | - | Payload |
+| **`DELETE`** | `/api/billing/claims/{claim_id}` | Billing Delete Claim | - | - |
 | **`POST`** | `/api/billing/collect-multi` | Billing Collect Multi | - | Payload |
 | **`POST`** | `/api/billing/direct-payment` | Billing Direct Payment | - | Payload |
-| **`GET`** | `/api/billing/doctor-payouts/details` | Billing Doctor Payouts Details | `metric` (req), `month`, `department`, `q` | - |
+| **`GET`** | `/api/billing/doctor-payouts/details` | Billing Doctor Payouts Details | `metric`, `month`, `department`, `q` | - |
 | **`POST`** | `/api/billing/doctor-payouts/statements/{statement_id}/pay` | Billing Doctor Payouts Pay | - | Payload |
 | **`GET`** | `/api/billing/doctor-payouts/summary` | Billing Doctor Payouts Summary | `month`, `department`, `q` | - |
 | **`GET`** | `/api/billing/invoices` | Billing Invoices | `patient_id`, `module` | - |
 | **`POST`** | `/api/billing/invoices` | Billing Create Invoice | - | Payload |
-| **`DELETE`** | `/api/billing/invoices/{invoice_id}` | Billing Delete Invoice | - | - |
 | **`PUT`** | `/api/billing/invoices/{invoice_id}` | Billing Update Invoice | - | Payload |
+| **`DELETE`** | `/api/billing/invoices/{invoice_id}` | Billing Delete Invoice | - | - |
 | **`POST`** | `/api/billing/invoices/{invoice_id}/payments` | Billing Record Payment | - | Payload |
 | **`POST`** | `/api/billing/ip-discharge/finalise` | Billing Ip Discharge Finalise | - | Payload |
 | **`GET`** | `/api/billing/ip-discharge/{admission_id}` | Billing Ip Discharge | - | - |
-| **`GET`** | `/api/billing/overview-details` | Billing Overview Details | `metric` (req), `date` | - |
+| **`GET`** | `/api/billing/overview-details` | Billing Overview Details | `metric`, `date` | - |
 | **`GET`** | `/api/billing/overview-stats` | Billing Overview Stats | `date`, `cashier`, `counter` | - |
 | **`GET`** | `/api/billing/patient-bills/{patient_id}` | Billing Patient Bills | - | - |
 | **`POST`** | `/api/billing/razorpay/order` | Billing Razorpay Order | - | Payload |
@@ -262,14 +264,14 @@ _Patient invoices, cash/insurance payments, partial due collections, doctor payo
 
 ## Pharmacy Operations & Inventory
 
-_Real-time medicine master, batch FEFO dispensing, stock movements, purchase requisitions (PR), purchase orders (PO), goods receipt notes (GRN), and supplier ledgers._
+_Medicine master, batch FEFO dispensing, stock movements, purchase requisitions (PR), purchase orders (PO), goods receipt notes (GRN), and supplier ledgers._
 
 **Route Count:** 52
 
 | Method | Endpoint Path | Action / Summary | Query Parameters | Payload |
 | :--- | :--- | :--- | :--- | :--- |
 | **`POST`** | `/api/pharmacy/dispense` | Pharmacy Dispense | - | Payload |
-| **`GET`** | `/api/pharmacy/dues` | Pharmacy Get Dues | `id` (req) | - |
+| **`GET`** | `/api/pharmacy/dues` | Pharmacy Get Dues | `id` | - |
 | **`GET`** | `/api/pharmacy/external-customers` | Pharmacy External Customers | `q` | - |
 | **`GET`** | `/api/pharmacy/goods-receipts` | Pharmacy Goods Receipts List | - | - |
 | **`POST`** | `/api/pharmacy/goods-receipts` | Pharmacy Goods Receipts Create | - | Payload |
@@ -287,8 +289,8 @@ _Real-time medicine master, batch FEFO dispensing, stock movements, purchase req
 | **`GET`** | `/api/pharmacy/prescriptions` | Pharmacy Prescriptions List | `status` | - |
 | **`GET`** | `/api/pharmacy/purchase-orders` | Pharmacy Purchase Orders List | `status` | - |
 | **`POST`** | `/api/pharmacy/purchase-orders` | Pharmacy Purchase Orders Create | - | Payload |
-| **`DELETE`** | `/api/pharmacy/purchase-orders/{purchase_id}` | Pharmacy Purchase Orders Delete | - | - |
 | **`PUT`** | `/api/pharmacy/purchase-orders/{purchase_id}` | Pharmacy Purchase Orders Update | - | Payload |
+| **`DELETE`** | `/api/pharmacy/purchase-orders/{purchase_id}` | Pharmacy Purchase Orders Delete | - | - |
 | **`GET`** | `/api/pharmacy/purchase-requests` | Pharmacy Purchase Requests List | `status` | - |
 | **`POST`** | `/api/pharmacy/purchase-requests` | Pharmacy Purchase Requests Create | - | Payload |
 | **`POST`** | `/api/pharmacy/purchase-requests/{pr_id}/approve` | Pharmacy Purchase Requests Approve | - | Payload |
@@ -311,8 +313,8 @@ _Real-time medicine master, batch FEFO dispensing, stock movements, purchase req
 | **`GET`** | `/api/pharmacy/summary` | Pharmacy Summary | `date`, `target_date` | - |
 | **`GET`** | `/api/pharmacy/suppliers` | Pharmacy Suppliers List | - | - |
 | **`POST`** | `/api/pharmacy/suppliers` | Pharmacy Suppliers Create | - | Payload |
-| **`DELETE`** | `/api/pharmacy/suppliers/{supplier_id}` | Pharmacy Suppliers Delete | - | - |
 | **`PUT`** | `/api/pharmacy/suppliers/{supplier_id}` | Pharmacy Suppliers Update | - | Payload |
+| **`DELETE`** | `/api/pharmacy/suppliers/{supplier_id}` | Pharmacy Suppliers Delete | - | - |
 | **`GET`** | `/api/pharmacy/suppliers/{supplier_id}/ledger` | Pharmacy Supplier Ledger Get | - | - |
 | **`POST`** | `/api/pharmacy/suppliers/{supplier_id}/payments` | Pharmacy Supplier Payment Create | - | Payload |
 | **`PUT`** | `/api/pharmacy/ward-indent-items/{item_id}` | Pharmacy Ward Indent Item Update | - | Payload |
@@ -342,7 +344,7 @@ _Nursing medication administration schedules, status updates, and dosage logs fo
 
 ## Laboratory & Diagnostic Services
 
-_Diagnostic order billing, sample collection, laboratory result recording, radiology/imaging attachments, doctor approvals, and test master catalogue._
+_Diagnostic orders, sample collection, result entry, radiology/imaging, report authorisation, quality control, and test catalogue._
 
 **Route Count:** 68
 
@@ -411,9 +413,9 @@ _Diagnostic order billing, sample collection, laboratory result recording, radio
 | **`POST`** | `/api/diag/reports/{report_id}/submit` | Diag Report Submit | - | - |
 | **`GET`** | `/api/diag/services` | Diag Services List | `service_type`, `department`, `active_only`, `q` | - |
 | **`POST`** | `/api/diag/services` | Diag Services Create | - | Payload |
-| **`DELETE`** | `/api/diag/services/{service_id}` | Diag Services Deactivate | - | - |
 | **`GET`** | `/api/diag/services/{service_id}` | Diag Service Detail | - | - |
 | **`PUT`** | `/api/diag/services/{service_id}` | Diag Services Update | - | Payload |
+| **`DELETE`** | `/api/diag/services/{service_id}` | Diag Services Deactivate | - | - |
 | **`PUT`** | `/api/diag/services/{service_id}/parameters` | Diag Service Parameters Update | - | Payload |
 | **`GET`** | `/api/lab/vendors-list` | Diag Lab Vendors For Referral | - | - |
 
@@ -421,7 +423,7 @@ _Diagnostic order billing, sample collection, laboratory result recording, radio
 
 ## Ancillary Operations (OT, Legacy Lab, Finance & HR)
 
-_Operation theatre schedules, legacy laboratory bills, company ledger entries, expense vouchers, and employee records._
+_Operation theatre schedules, legacy laboratory bills, ledger entries, expense vouchers, HR records, and audit logs._
 
 **Route Count:** 53
 
@@ -429,63 +431,63 @@ _Operation theatre schedules, legacy laboratory bills, company ledger entries, e
 | :--- | :--- | :--- | :--- | :--- |
 | **`GET`** | `/api/accounts/doctors` | Accounts Doctor Payouts List | `doctor_name` | - |
 | **`POST`** | `/api/accounts/doctors` | Accounts Doctor Payouts Create | - | Payload |
-| **`DELETE`** | `/api/accounts/doctors/{payout_id}` | Accounts Doctor Payouts Delete | - | - |
 | **`PUT`** | `/api/accounts/doctors/{payout_id}` | Accounts Doctor Payouts Update | - | Payload |
+| **`DELETE`** | `/api/accounts/doctors/{payout_id}` | Accounts Doctor Payouts Delete | - | - |
 | **`GET`** | `/api/accounts/ledger` | Accounts Ledger List | `entry_type` | - |
 | **`POST`** | `/api/accounts/ledger` | Accounts Ledger Create | - | Payload |
-| **`DELETE`** | `/api/accounts/ledger/{entry_id}` | Accounts Ledger Delete | - | - |
 | **`PUT`** | `/api/accounts/ledger/{entry_id}` | Accounts Ledger Update | - | Payload |
+| **`DELETE`** | `/api/accounts/ledger/{entry_id}` | Accounts Ledger Delete | - | - |
 | **`GET`** | `/api/accounts/summary` | Accounts Summary | - | - |
 | **`GET`** | `/api/accounts/vendors` | Accounts Vendor Payments List | `vendor_name` | - |
 | **`POST`** | `/api/accounts/vendors` | Accounts Vendor Payments Create | - | Payload |
-| **`DELETE`** | `/api/accounts/vendors/{payment_id}` | Accounts Vendor Payments Delete | - | - |
 | **`PUT`** | `/api/accounts/vendors/{payment_id}` | Accounts Vendor Payments Update | - | Payload |
+| **`DELETE`** | `/api/accounts/vendors/{payment_id}` | Accounts Vendor Payments Delete | - | - |
 | **`GET`** | `/api/audit/logs` | Audit Logs List | `module`, `limit` | - |
 | **`GET`** | `/api/hr/attendance` | Hr Attendance List | `employee_id` | - |
 | **`POST`** | `/api/hr/attendance` | Hr Attendance Create | - | Payload |
-| **`DELETE`** | `/api/hr/attendance/{attendance_id}` | Hr Attendance Delete | - | - |
 | **`PUT`** | `/api/hr/attendance/{attendance_id}` | Hr Attendance Update | - | Payload |
+| **`DELETE`** | `/api/hr/attendance/{attendance_id}` | Hr Attendance Delete | - | - |
 | **`GET`** | `/api/hr/departments` | Hr Departments List | - | - |
 | **`POST`** | `/api/hr/departments` | Hr Departments Create | - | Payload |
-| **`DELETE`** | `/api/hr/departments/{department_id}` | Hr Departments Delete | - | - |
 | **`PUT`** | `/api/hr/departments/{department_id}` | Hr Departments Update | - | Payload |
+| **`DELETE`** | `/api/hr/departments/{department_id}` | Hr Departments Delete | - | - |
 | **`GET`** | `/api/hr/leaves` | Hr Leaves List | `employee_id` | - |
 | **`POST`** | `/api/hr/leaves` | Hr Leaves Create | - | Payload |
 | **`DELETE`** | `/api/hr/leaves/{leave_id}` | Hr Leaves Delete | - | - |
 | **`POST`** | `/api/hr/leaves/{leave_id}/status` | Hr Leave Status Update | - | Payload |
 | **`GET`** | `/api/hr/payroll` | Hr Payroll List | `employee_id` | - |
 | **`POST`** | `/api/hr/payroll` | Hr Payroll Create | - | Payload |
-| **`DELETE`** | `/api/hr/payroll/{payroll_id}` | Hr Payroll Delete | - | - |
 | **`PUT`** | `/api/hr/payroll/{payroll_id}` | Hr Payroll Update | - | Payload |
-| **`DELETE`** | `/api/lab/categories` | Lab Categories Delete | - | Payload |
+| **`DELETE`** | `/api/hr/payroll/{payroll_id}` | Hr Payroll Delete | - | - |
 | **`GET`** | `/api/lab/categories` | Lab Categories List | `type` | - |
 | **`POST`** | `/api/lab/categories` | Lab Categories Create | - | Payload |
+| **`DELETE`** | `/api/lab/categories` | Lab Categories Delete | - | Payload |
 | **`GET`** | `/api/lab/diagnostics` | Lab Diagnostics List | `patient_id`, `doctor_name` | - |
 | **`POST`** | `/api/lab/diagnostics` | Lab Diagnostics Create | - | Payload |
-| **`DELETE`** | `/api/lab/diagnostics/{diagnostic_id}` | Lab Diagnostics Delete | - | - |
 | **`PUT`** | `/api/lab/diagnostics/{diagnostic_id}` | Lab Diagnostics Update | - | Payload |
+| **`DELETE`** | `/api/lab/diagnostics/{diagnostic_id}` | Lab Diagnostics Delete | - | - |
 | **`GET`** | `/api/lab/diagnostics/{diagnostic_id}/payments` | Lab Diagnostic Payments Get | - | - |
 | **`POST`** | `/api/lab/diagnostics/{diagnostic_id}/payments` | Lab Diagnostic Payments Post | - | Payload |
 | **`GET`** | `/api/lab/summary` | Lab Summary | - | - |
 | **`GET`** | `/api/lab/vendors` | Lab Vendors List | - | - |
 | **`POST`** | `/api/lab/vendors` | Lab Vendors Create | - | Payload |
-| **`DELETE`** | `/api/lab/vendors/{vendor_id}` | Lab Vendors Delete | - | - |
 | **`PUT`** | `/api/lab/vendors/{vendor_id}` | Lab Vendors Update | - | Payload |
+| **`DELETE`** | `/api/lab/vendors/{vendor_id}` | Lab Vendors Delete | - | - |
 | **`GET`** | `/api/ot/summary` | Ot Summary | - | - |
 | **`GET`** | `/api/ot/surgeries` | Ot Surgeries List | `theatre_id`, `status` | - |
 | **`POST`** | `/api/ot/surgeries` | Ot Surgeries Create | - | Payload |
-| **`DELETE`** | `/api/ot/surgeries/{surgery_id}` | Ot Surgeries Delete | - | - |
 | **`PUT`** | `/api/ot/surgeries/{surgery_id}` | Ot Surgeries Update | - | Payload |
+| **`DELETE`** | `/api/ot/surgeries/{surgery_id}` | Ot Surgeries Delete | - | - |
 | **`GET`** | `/api/ot/theatres` | Ot Theatres List | - | - |
 | **`POST`** | `/api/ot/theatres` | Ot Theatres Create | - | Payload |
-| **`DELETE`** | `/api/ot/theatres/{theatre_id}` | Ot Theatres Delete | - | - |
 | **`PUT`** | `/api/ot/theatres/{theatre_id}` | Ot Theatres Update | - | Payload |
+| **`DELETE`** | `/api/ot/theatres/{theatre_id}` | Ot Theatres Delete | - | - |
 
 ---
 
 ## Executive Analytics & Financial Reports
 
-_Live revenue statistics, departmental collection summaries, daily close reconciliations, and printable PDF exports._
+_Live revenue statistics, departmental collection summaries, daily close reconciliations, and printable PDF/Word exports._
 
 **Route Count:** 14
 
@@ -503,7 +505,7 @@ _Live revenue statistics, departmental collection summaries, daily close reconci
 | **`GET`** | `/api/reports/overview` | Reports Overview | - | - |
 | **`GET`** | `/api/reports/patient-history` | Reports Patient History | `date`, `type`, `value` | - |
 | **`GET`** | `/api/reports/revenue-summary` | Reports Revenue Summary | `date` | - |
-| **`POST`** | `/api/share/upload` | Share Upload | - | JSON |
+| **`POST`** | `/api/share/upload` | Share Upload | - | Payload |
 | **`GET`** | `/api/share/view/{share_token}` | Share View | - | - |
 
 ---
@@ -518,21 +520,28 @@ _Customizable dropdown lists, medical department configurations, and hospital ma
 | :--- | :--- | :--- | :--- | :--- |
 | **`GET`** | `/api/config/dropdowns` | List Dropdowns | `category`, `active_only` | - |
 | **`POST`** | `/api/config/dropdowns` | Create Dropdown | - | Payload |
-| **`DELETE`** | `/api/config/dropdowns/{option_id}` | Delete Dropdown | - | - |
 | **`PUT`** | `/api/config/dropdowns/{option_id}` | Update Dropdown | - | Payload |
+| **`DELETE`** | `/api/config/dropdowns/{option_id}` | Delete Dropdown | - | - |
 
 ---
 
 ## System & Infrastructure Endpoints
 
-_Health probes, CORS preflight handlers, and frontend web asset routing._
+_CORS preflight handler and frontend web asset routing (when the backend serves the built frontend)._
 
 **Route Count:** 3
 
 | Method | Endpoint Path | Action / Summary | Query Parameters | Payload |
 | :--- | :--- | :--- | :--- | :--- |
 | **`GET`** | `/` | Serve Frontend Index | - | - |
-| **`OPTIONS`** | `/api/{full_path:path}` | Global CORS Preflight Options Handler | - | - |
+| **`OPTIONS`** | `/api/{full_path}` | Preflight | - | - |
 | **`GET`** | `/{frontend_path}` | Serve Frontend Asset Or Route | - | - |
 
 ---
+
+## Date & Time Format
+
+- **Responses:** every datetime is ISO-8601 with an explicit IST offset, e.g. `2026-10-31T12:20:00+05:30`. Date-only fields are `YYYY-MM-DD` (IST calendar date).
+- **Requests:** send datetimes with an offset (`+05:30` or `Z`, both stored correctly) or as naive `YYYY-MM-DDTHH:mm[:ss]`, which is interpreted as IST. Send dates as `YYYY-MM-DD`.
+- **Date filters** (`date`, `target_date`, `from_date`/`to_date`, ...) are IST calendar days.
+- See *Time Zones* in `README.md` for the full convention.

@@ -1,7 +1,11 @@
-# Environment secrets — never commit real credentials
+# Environment secrets — never commit real credentials.
+# db.env / app.env are committed as templates with placeholder values only;
+# keep real values out of git (e.g. `git update-index --skip-worktree db.env app.env`).
 .env
+.env.*
 *.env
-!.env.example
+!db.env
+!app.env
 
 # Python
 __pycache__/

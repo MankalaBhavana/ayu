@@ -1,41 +1,56 @@
+# Ayu HIMS - full stack: PostgreSQL + FastAPI backend + nginx/React frontend
+#   docker compose up -d --build
+# Settings: db.env (database container) and app.env (backend).
 services:
   db:
     image: postgres:16-alpine
     container_name: ayu-postgres
     restart: unless-stopped
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER:-postgres}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres123}
-      POSTGRES_DB: ${POSTGRES_DB:-hospital}
-      # Timestamps are stored as TIMESTAMPTZ (absolute instants); this only makes
-      # psql/admin sessions display them in IST. The app sets IST per connection.
-      TZ: Asia/Kolkata
-      PGTZ: Asia/Kolkata
+    env_file:
+      - db.env
+    # Server default time zone = IST (applies to existing volumes too).
+    # Timestamps are TIMESTAMPTZ, so this affects display/defaults only.
+    command: ["postgres", "-c", "timezone=Asia/Kolkata", "-c", "log_timezone=Asia/Kolkata"]
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:
-      - "5432:5432"
+      - "127.0.0.1:5432:5432"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-postgres} -d ${POSTGRES_DB:-hospital}"]
+      test: ["CMD-SHELL", "pg_isready -U \"$${POSTGRES_USER}\" -d \"$${POSTGRES_DB}\""]
       interval: 10s
       timeout: 5s
       retries: 5
 
-  app:
+  backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
-    container_name: ayu-app
+    container_name: ayu-backend
     restart: unless-stopped
+    env_file:
+      - app.env
     depends_on:
       db:
         condition: service_healthy
-    env_file:
-      - .env
-    environment:
-      DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres123}@db:5432/${POSTGRES_DB:-hospital}
+    volumes:
+      - uploads_data:/app/uploads
+    expose:
+      - "8000"
+
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: /api
+    container_name: ayu-frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
     ports:
-      - "8000:8000"
+      - "80:80"
 
 volumes:
   postgres_data:
+  uploads_data:

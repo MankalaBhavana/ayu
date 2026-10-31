@@ -1,0 +1,18 @@
+# Dependencies and build output are produced inside the image
+node_modules/
+dist/
+.vite/
+coverage/
+
+# Never bake env files into the image (use build args)
+.env
+.env.*
+*.env
+
+# Test-only artifacts
+tests/e2e/artifacts/
+
+*.log
+.DS_Store
+Dockerfile
+.dockerignore

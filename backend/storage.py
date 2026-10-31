@@ -14,8 +14,9 @@ except Exception:  # pragma: no cover - dependency guard
 
 BACKEND_DIR = os.path.abspath(os.path.dirname(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(BACKEND_DIR, ".."))
-load_dotenv(os.path.join(PROJECT_ROOT, ".env"), override=False)
-load_dotenv(os.path.join(BACKEND_DIR, ".env"), override=False)
+for _env_dir in (PROJECT_ROOT, BACKEND_DIR):
+    for _env_name in ("app.env", ".env"):
+        load_dotenv(os.path.join(_env_dir, _env_name), override=False)
 
 from database import IST_TIMEZONE
 BUCKET_URL = (os.getenv("BUCKET_URL") or "").strip()

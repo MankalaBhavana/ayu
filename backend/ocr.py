@@ -20,13 +20,14 @@ except Exception:  # pragma: no cover - dependency guard
 
 
 _CURRENT_FILE = Path(__file__).resolve()
-_BACKEND_DIR = _CURRENT_FILE.parents[1]
-_PROJECT_ROOT = _CURRENT_FILE.parents[2]
+_BACKEND_DIR = _CURRENT_FILE.parent
+_PROJECT_ROOT = _CURRENT_FILE.parents[1]
 
 
 def _load_environment():
-    load_dotenv(_BACKEND_DIR / ".env", override=False)
-    load_dotenv(_PROJECT_ROOT / ".env", override=False)
+    for env_dir in (_PROJECT_ROOT, _BACKEND_DIR):
+        for env_name in ("app.env", ".env"):
+            load_dotenv(env_dir / env_name, override=False)
 
 
 def _resolve_api_key():
@@ -34,8 +35,8 @@ def _resolve_api_key():
     if key:
         return key
 
-    backend_env = dotenv_values(_BACKEND_DIR / ".env")
-    root_env = dotenv_values(_PROJECT_ROOT / ".env")
+    backend_env = {**dotenv_values(_BACKEND_DIR / ".env"), **dotenv_values(_BACKEND_DIR / "app.env")}
+    root_env = {**dotenv_values(_PROJECT_ROOT / ".env"), **dotenv_values(_PROJECT_ROOT / "app.env")}
     key = (backend_env.get("GEMINI_API_KEY") or root_env.get("GEMINI_API_KEY") or "").strip()
     if key:
         return key

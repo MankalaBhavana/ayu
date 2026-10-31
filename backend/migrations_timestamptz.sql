@@ -12,6 +12,8 @@ DO $$
 DECLARE
     tbl record;
 BEGIN
+    -- Serialise concurrent app workers running this at startup.
+    PERFORM pg_advisory_xact_lock(hashtext('ayu_migrations_timestamptz'));
     FOR tbl IN
         SELECT c.table_schema,
                c.table_name,
