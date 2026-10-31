@@ -15,7 +15,9 @@ export function parseTimestamp(value: string): Date | null {
 
   let normalized = trimmed.replace(" ", "T");
   // Check if string has explicit timezone offset like Z, +05:30, -04:00, etc.
-  const hasOffset = /([zZ]|[+-]\d{2}(?::?\d{2})?)$/.test(normalized);
+  // An offset can only follow a time ("...T10:00+05:30"); a bare date such as
+  // "2026-10-31" must not have its "-31" mistaken for a UTC offset.
+  const hasOffset = /T.*([zZ]|[+-]\d{2}(?::?\d{2})?)$/.test(normalized);
   if (!hasOffset) {
     if (!normalized.includes("T")) {
       // Date-only string like YYYY-MM-DD
@@ -144,6 +146,19 @@ export function diffISTCalendarDays(from: DateInput, to: DateInput): number | nu
     return Date.UTC(y, m - 1, d);
   };
   return Math.round((utc(b) - utc(a)) / 86_400_000);
+}
+
+/**
+ * When an appointment actually happened, for display and sorting. Older
+ * walk-in bookings were saved with a date only (00:00 IST); for those, use the
+ * record's creation time if it is on the same IST day instead of "12:00 am".
+ */
+export function resolveAppointmentAt(appointmentDate?: string | null, createdAt?: string | null): string | null {
+  if (!appointmentDate) return createdAt || null;
+  const key = getISTDateTimeKey(appointmentDate);
+  const isMidnight = key.endsWith(" 00:00:00");
+  if (isMidnight && createdAt && toISTDateKey(createdAt) === key.slice(0, 10)) return createdAt;
+  return appointmentDate;
 }
 
 /** Hour (0-23) of the instant in IST. */

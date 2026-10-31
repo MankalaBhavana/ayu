@@ -1,4 +1,4 @@
-import { addDaysToDateKey, currentMonthIST, diffISTCalendarDays, formatDateIST, formatDateOnlyIST, formatDateTimeIST, formatIST, formatTimeIST, getISTDateKey, getISTHour, istDateKeyOffset, nowISTISOString, resolvePermissions, stripUploadTimestampPrefix, toISTDateKey, toISTDateTimeLocal, todayIST } from "./format";
+import { addDaysToDateKey, resolveAppointmentAt, currentMonthIST, diffISTCalendarDays, formatDateIST, formatDateOnlyIST, formatDateTimeIST, formatIST, formatTimeIST, getISTDateKey, getISTHour, istDateKeyOffset, nowISTISOString, resolvePermissions, stripUploadTimestampPrefix, toISTDateKey, toISTDateTimeLocal, todayIST } from "./format";
 
 describe("resolvePermissions", () => {
   test("returns explicit user permissions when provided", () => {
@@ -127,6 +127,8 @@ describe("IST helpers (independent of device timezone)", () => {
     expect(toISTDateKey("2026-10-31T01:15:00+05:30")).toBe("2026-10-31");
     expect(toISTDateKey("2026-10-30T19:45:00Z")).toBe("2026-10-31");
     expect(toISTDateKey("2026-10-31")).toBe("2026-10-31");
+    // a bare date is IST midnight, not UTC midnight (05:30 IST)
+    expect(toISTDateTimeLocal("2026-10-31")).toBe("2026-10-31T00:00");
     expect(toISTDateTimeLocal("2026-10-30T19:45:00Z")).toBe("2026-10-31T01:15");
     expect(toISTDateTimeLocal("2026-10-31T00:05:00+05:30")).toBe("2026-10-31T00:05");
   });
@@ -143,5 +145,18 @@ describe("IST helpers (independent of device timezone)", () => {
     expect(addDaysToDateKey("2026-03-01", -1)).toBe("2026-02-28");
     expect(diffISTCalendarDays("2026-10-30T23:30:00+05:30", "2026-10-31T00:30:00+05:30")).toBe(1);
     expect(diffISTCalendarDays("2026-10-31", "2026-10-31 23:59:59")).toBe(0);
+  });
+});
+
+describe("resolveAppointmentAt", () => {
+  test("uses created_at for date-only (midnight IST) appointments on the same day", () => {
+    expect(resolveAppointmentAt("2026-10-31T00:00:00+05:30", "2026-10-31T15:21:42+05:30")).toBe("2026-10-31T15:21:42+05:30");
+    expect(resolveAppointmentAt("2026-10-31", "2026-10-31 15:21:42")).toBe("2026-10-31 15:21:42");
+  });
+
+  test("keeps real scheduled times and future date-only bookings", () => {
+    expect(resolveAppointmentAt("2026-10-31T09:30:00+05:30", "2026-10-31T08:00:00+05:30")).toBe("2026-10-31T09:30:00+05:30");
+    expect(resolveAppointmentAt("2026-11-05T00:00:00+05:30", "2026-10-31T15:21:42+05:30")).toBe("2026-11-05T00:00:00+05:30");
+    expect(resolveAppointmentAt(null, "2026-10-31T15:21:42+05:30")).toBe("2026-10-31T15:21:42+05:30");
   });
 });

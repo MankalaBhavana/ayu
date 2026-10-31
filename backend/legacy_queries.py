@@ -2272,8 +2272,38 @@ def _normalize_appointment_status(status_str):
 
 
 
+def _resolve_appointment_datetime(value, time_hint=None):
+    """Return (appointment_datetime, was_date_only).
+
+    Walk-in/registration bookings often send only a date ("2026-10-31"), which
+    PostgreSQL would store as 00:00 and every timeline would show as 12:00 am.
+    For such values use the explicit time hint ("15:20", "3:20 PM") when given,
+    otherwise the current IST time if the date is today. A date-only booking for
+    another day keeps its date (no real time is known yet)."""
+    text_value = str(value or "").strip()
+    if not text_value or "T" in text_value or " " in text_value:
+        return value, False
+    try:
+        day = date.fromisoformat(text_value[:10])
+    except ValueError:
+        return value, False
+    match = re.match(r"^(\d{1,2}):(\d{2})(?::\d{2})?\s*([AaPp][Mm])?$", str(time_hint or "").strip())
+    if match:
+        hour, minute, meridiem = int(match.group(1)), int(match.group(2)), (match.group(3) or "").lower()
+        if meridiem == "pm" and hour < 12:
+            hour += 12
+        elif meridiem == "am" and hour == 12:
+            hour = 0
+        if hour < 24 and minute < 60:
+            return datetime(day.year, day.month, day.day, hour, minute), True
+    now = current_ist_datetime().replace(tzinfo=None, microsecond=0)
+    if day == now.date():
+        return now, True
+    return value, True
+
+
 def create_appointment(db, data):
-    appointment_date = data["appointment_date"]
+    appointment_date, date_only = _resolve_appointment_datetime(data["appointment_date"], data.get("appointment_time"))
     appointment_day = str(appointment_date).split("T")[0].split(" ")[0]
     with get_connection(db) as conn:
         cursor = conn.cursor()
@@ -2375,8 +2405,9 @@ def create_op_appointment_with_invoice(db, payload, consultation_fee, username):
     from datetime import datetime
     with get_connection(db) as conn:
         # 1. Create Appointment (Inlined logic to avoid nested commits)
-        appointment_date = payload["appointment_date"]
-        appointment_day = str(appointment_date).split("T")[0].split(" ")[0]
+        raw_appointment_date = payload["appointment_date"]
+        appointment_date, date_only = _resolve_appointment_datetime(raw_appointment_date, payload.get("appointment_time"))
+        appointment_day = str(raw_appointment_date).split("T")[0].split(" ")[0]
         cursor = conn.cursor()
 
         doctor_name = (payload.get("doctor_name") or "").strip()
@@ -2389,14 +2420,17 @@ def create_op_appointment_with_invoice(db, payload, consultation_fee, username):
             # same booking (same patient+doctor+slot) within a few seconds
             # returns the appointment that was just created instead of
             # erroring out or creating a duplicate token/invoice.
+            # A date-only booking gets the current time filled in, so match it
+            # on the day rather than on an exact timestamp.
+            slot_condition = "DATE(appointment_date) = DATE(?)" if date_only else "appointment_date = ?"
             cursor.execute(
-                """
+                f"""
                 SELECT id, token_no FROM appointments
-                WHERE patient_id = ? AND doctor_name = ? AND appointment_date = ?
+                WHERE patient_id = ? AND doctor_name = ? AND {slot_condition}
                   AND created_at >= (CURRENT_TIMESTAMP - INTERVAL '10 seconds')
                 ORDER BY created_at DESC LIMIT 1
                 """,
-                (patient_id, doctor_name, appointment_date),
+                (patient_id, doctor_name, appointment_day if date_only else appointment_date),
             )
             recent_duplicate = cursor.fetchone()
             if recent_duplicate:

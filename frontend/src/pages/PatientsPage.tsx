@@ -6,7 +6,7 @@ import DocumentUploadDropzone from "../components/DocumentUploadDropzone";
 import { Alert, Badge, Button, Checkbox, ConfirmDialog, Input, Select, Table, TableCell, TableHead, TableRow, Tabs, TabsContent, TabsTrigger, Textarea } from "../components/ui";
 import { API_BASE, SUPPORTED_DOCUMENT_ACCEPT, SUPPORTED_DOCUMENT_EXTENSIONS } from "../lib/constants";
 import { apiFetch, reportError } from "../lib/api";
-import { calculateAgeFromDob, formatDate, formatDateTimeIST, getISTDateTimeKey, getTimestamp, stripUploadTimestampPrefix, formatDateOnlyIST, formatIST, formatTimeIST, todayIST } from "../lib/format";
+import { calculateAgeFromDob, formatDate, formatDateTimeIST, getISTDateTimeKey, getTimestamp, stripUploadTimestampPrefix, formatDateOnlyIST, formatIST, formatTimeIST, todayIST, resolveAppointmentAt } from "../lib/format";
 import { printViaIframe } from "../lib/printViaIframe";
 import { exportPDF, downloadPDF } from "../lib/exportService";
 import { renderAyuPdfHeaderHtml, renderAyuPdfFooterHtml } from "../lib/pdfTemplate";
@@ -1348,7 +1348,7 @@ function PatientDetail({
       events.push({
         key: `appointment-${appt.id}`,
         label: "Appointment",
-        at: appt.appointment_date,
+        at: resolveAppointmentAt(appt.appointment_date, appt.created_at),
         detail: `Dr. ${appt.doctor_name || "Unknown"} - ${appt.department || "General"} (${(appt.status || "Scheduled").replace(/_/g, " ")})`,
         isAppointment: true,
       })
@@ -1611,7 +1611,7 @@ function PatientDetail({
                       <div key={`appointment-${appt.id}`} className="care-note-card">
                         <div className="care-note-head">
                           <strong>Consultation Fee - Token #{appt.token_no}</strong>
-                          <span className="muted">{formatAppointmentDate(appt.appointment_date)}</span>
+                          <span className="muted">{formatAppointmentDate(resolveAppointmentAt(appt.appointment_date, appt.created_at))}</span>
                         </div>
                         <p>
                           Doctor: {appt.doctor_name || "Unassigned"} · Fee: {formatCurrency(appt.consultation_fee)}

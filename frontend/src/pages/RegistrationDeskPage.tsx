@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { Button, Input, Label, Select, Textarea } from "../components/ui";
 import { apiFetch, reportError } from "../lib/api";
 import { notifyDepartmentsChanged, onDepartmentsChanged } from "../lib/departments";
-import { formatDateTime, formatDateOnlyIST, formatIST, toDate, todayIST, diffISTCalendarDays } from "../lib/format";
+import { formatDateTime, formatDateOnlyIST, formatIST, toDate, todayIST, diffISTCalendarDays, resolveAppointmentAt } from "../lib/format";
 import { openRazorpayCheckout } from "../lib/razorpay";
 import type { Appointment, Notice, Patient } from "../types";
 import { PRINT_BRAND_HEADER_DATA_URI } from "../lib/printBrand";
@@ -1617,7 +1617,7 @@ const activeDepartments = (data.departments || []).filter((department) => {
             {patientAppointmentHistory.length === 0 ? <p className="muted">Select or enter a patient to view today's matching appointment history.</p> : null}
             {patientAppointmentHistory.map((item) => (
               <p key={item.id} className="muted">
-                {formatDateTime(item.appointment_date)} · {item.doctor_name || "Doctor not assigned"} · {item.department || "Department not assigned"} · {item.status.replace("_", " ")}
+                {formatDateTime(resolveAppointmentAt(item.appointment_date, item.created_at))} · {item.doctor_name || "Doctor not assigned"} · {item.department || "Department not assigned"} · {item.status.replace("_", " ")}
               </p>
             ))}
           </div>
@@ -1651,7 +1651,7 @@ const activeDepartments = (data.departments || []).filter((department) => {
                 <p><strong>Visit:</strong> {appointment.visit_type}</p>
                 <p><strong>Department:</strong> {appointment.department || "-"}</p>
                 <p><strong>Doctor:</strong> {appointment.doctor_name || "-"}</p>
-                <p><strong>Time:</strong> {formatDateTime(appointment.appointment_date)}</p>
+                <p><strong>Time:</strong> {formatDateTime(resolveAppointmentAt(appointment.appointment_date, appointment.created_at))}</p>
                 <p><strong>Status:</strong> {appointment.status.replace("_", " ")}</p>
                 {appointment.notes ? <p><strong>Notes:</strong> {appointment.notes}</p> : null}
                 <div className="module-card-actions">
