@@ -44,6 +44,10 @@ const STAGES: { key: string; label: string }[] = [
 const EMPTY_COLLECT_FORM = { identity_verified: false, container_type: "", collection_quantity: "", collection_unit: "mL", collection_location: "", collection_notes: "" };
 const EMPTY_RECEIVE_FORM = { accept: true, condition_on_receipt: "", rejection_reason: "" };
 
+// Quick parameter setup for a test that has none in the catalogue yet.
+type NewParam = { name: string; data_type: "numeric" | "text" | "qualitative"; unit: string; ref_low: string; ref_high: string; ref_text: string };
+const EMPTY_NEW_PARAM: NewParam = { name: "", data_type: "numeric", unit: "", ref_low: "", ref_high: "", ref_text: "" };
+
 export default function LabDiagnosticsLabPage({ setNotice, onNavigate }: Props) {
   const [rows, setRows] = useState<WorklistRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -64,6 +68,7 @@ export default function LabDiagnosticsLabPage({ setNotice, onNavigate }: Props) 
   const [equipmentList, setEquipmentList] = useState<Equipment[]>([]);
   const [qcHolds, setQcHolds] = useState<QcHold[]>([]);
   const [selectedEquipment, setSelectedEquipment] = useState<number | "">("");
+  const [newParams, setNewParams] = useState<NewParam[]>([{ ...EMPTY_NEW_PARAM }]);
 
   const load = async () => {
     setLoading(true);
@@ -96,6 +101,7 @@ export default function LabDiagnosticsLabPage({ setNotice, onNavigate }: Props) 
   const openItem = async (row: WorklistRow) => {
     setSelected(row);
     setResultValues({});
+    setNewParams([{ ...EMPTY_NEW_PARAM }]);
     setCollectForm(EMPTY_COLLECT_FORM);
     setReceiveForm(EMPTY_RECEIVE_FORM);
     try {
@@ -229,6 +235,39 @@ export default function LabDiagnosticsLabPage({ setNotice, onNavigate }: Props) 
       await refreshAfterMutation();
     } catch (err: any) {
       reportError(setNotice, err, "Could not save results.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  // Saves the quick-setup rows as this test's catalogue parameters (only offered
+  // while the test has none), then reloads the item so results can be entered.
+  const saveNewParameters = async () => {
+    if (!detail) return;
+    const toNumber = (v: string) => (v.trim() === "" ? null : Number(v));
+    const parameters = newParams
+      .filter((p) => p.name.trim())
+      .map((p, idx) => ({
+        name: p.name.trim(),
+        data_type: p.data_type,
+        unit: p.unit.trim() || null,
+        ref_low: p.data_type === "numeric" ? toNumber(p.ref_low) : null,
+        ref_high: p.data_type === "numeric" ? toNumber(p.ref_high) : null,
+        ref_text: p.ref_text.trim() || null,
+        display_order: idx,
+      }));
+    if (parameters.length === 0) { setNotice({ type: "warning", message: "Enter at least one parameter name." }); return; }
+    if (parameters.some((p) => Number.isNaN(p.ref_low) || Number.isNaN(p.ref_high))) {
+      setNotice({ type: "warning", message: "Reference low/high must be numbers." });
+      return;
+    }
+    setSaving(true);
+    try {
+      await apiFetch(`/api/diag/services/${detail.service_id}/parameters`, { method: "PUT", body: JSON.stringify({ parameters }) });
+      setNotice({ type: "success", message: `Parameters saved to the catalogue for ${detail.service_name}. You can now enter results.` });
+      if (selected) await openItem(selected);
+    } catch (err: any) {
+      reportError(setNotice, err, "Could not save parameters. Configuring the catalogue needs the Diagnostics catalogue permission.");
     } finally {
       setSaving(false);
     }
@@ -420,9 +459,47 @@ export default function LabDiagnosticsLabPage({ setNotice, onNavigate }: Props) 
                           </tr>
                         );
                       })}
-                      {detail.parameters.length === 0 && <tr><td colSpan={5} className="diag-empty">No parameters configured for this test in the catalogue.</td></tr>}
+                      {detail.parameters.length === 0 && <tr><td colSpan={5} className="diag-empty">No parameters configured for this test in the catalogue. Add them below to enter results.</td></tr>}
                     </tbody>
                   </table>
+                  {detail.parameters.length === 0 && (
+                    <div className="diag-note-box">
+                      <div className="diag-section-title">Set up parameters for {detail.service_name}</div>
+                      <p className="muted" style={{ marginTop: 0 }}>
+                        Saved to the test catalogue, so every future order of this test uses them. Reference ranges drive the abnormal/critical flags.
+                      </p>
+                      <table className="diag-data-table">
+                        <thead><tr><th>Parameter name</th><th>Type</th><th>Unit</th><th>Ref. low</th><th>Ref. high</th><th>Ref. text</th><th /></tr></thead>
+                        <tbody>
+                          {newParams.map((p, idx) => {
+                            const update = (patch: Partial<NewParam>) => setNewParams(newParams.map((row, i) => (i === idx ? { ...row, ...patch } : row)));
+                            return (
+                              <tr key={idx}>
+                                <td><Input aria-label="Parameter name" value={p.name} onChange={(e) => update({ name: e.target.value })} placeholder="e.g. Haemoglobin" /></td>
+                                <td>
+                                  <Select aria-label="Parameter type" value={p.data_type} onChange={(e) => update({ data_type: e.target.value as NewParam["data_type"] })}>
+                                    <option value="numeric">Numeric</option>
+                                    <option value="text">Text</option>
+                                    <option value="qualitative">Qualitative</option>
+                                  </Select>
+                                </td>
+                                <td><Input aria-label="Unit" value={p.unit} onChange={(e) => update({ unit: e.target.value })} placeholder="g/dL" /></td>
+                                <td><Input aria-label="Reference low" inputMode="decimal" value={p.ref_low} disabled={p.data_type !== "numeric"} onChange={(e) => update({ ref_low: e.target.value })} /></td>
+                                <td><Input aria-label="Reference high" inputMode="decimal" value={p.ref_high} disabled={p.data_type !== "numeric"} onChange={(e) => update({ ref_high: e.target.value })} /></td>
+                                <td><Input aria-label="Reference text" value={p.ref_text} onChange={(e) => update({ ref_text: e.target.value })} placeholder="e.g. Negative" /></td>
+                                <td>{newParams.length > 1 && <Button variant="ghost" onClick={() => setNewParams(newParams.filter((_, i) => i !== idx))}>Remove</Button>}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      <div className="diag-form-actions">
+                        <Button variant="secondary" onClick={() => setNewParams([...newParams, { ...EMPTY_NEW_PARAM }])}>+ Add parameter</Button>
+                        <Button variant="primary" disabled={saving} onClick={() => void saveNewParameters()}>{saving ? "Saving..." : "Save parameters"}</Button>
+                        {onNavigate && <Button variant="ghost" onClick={() => onNavigate("diag-catalogue")}>Open Test Catalogue</Button>}
+                      </div>
+                    </div>
+                  )}
                   <div className="diag-form-actions">
                     <Button variant="secondary" disabled={saving} onClick={() => void saveResults(true)}>Save draft</Button>
                     <Button variant="primary" disabled={saving || !!equipmentHold} onClick={() => void saveResults(false)}>Finalize results</Button>

@@ -10636,43 +10636,62 @@ def list_diag_service_parameters(db, service_id):
 
 
 def replace_diag_service_parameters(db, service_id, parameters):
-    """Replaces the full parameter set for a service with the given list.
-    Historical results already recorded keep their own copied unit/reference-range
+    """Sets the full parameter set for a service to the given list.
+
+    Parameters that come back with their existing `id` are updated in place, so
+    results already recorded against them (including in-progress drafts) stay
+    linked; parameters missing from the list are removed and ones without an
+    id are added. Historical results keep their own copied unit/reference-range
     values (see diag_results), so this never rewrites past reports."""
+    columns = (
+        "name", "data_type", "unit", "method", "ref_low", "ref_high", "ref_text",
+        "critical_low", "critical_high", "sex_specific", "age_min", "age_max",
+        "display_order", "calc_formula", "comments",
+    )
     with get_connection(db) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT id FROM diag_services WHERE id = ?", (service_id,))
         if not cursor.fetchone():
             raise ValueError("Service not found.")
-        cursor.execute("DELETE FROM diag_service_parameters WHERE service_id = ?", (service_id,))
+        cursor.execute("SELECT id FROM diag_service_parameters WHERE service_id = ?", (service_id,))
+        existing_ids = {row["id"] for row in cursor.fetchall()}
+
+        kept_ids = set()
         for idx, p in enumerate(parameters):
-            cursor.execute(
-                """
-                INSERT INTO diag_service_parameters (
-                    service_id, name, data_type, unit, method, ref_low, ref_high, ref_text,
-                    critical_low, critical_high, sex_specific, age_min, age_max, display_order,
-                    calc_formula, comments
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    service_id,
-                    p["name"],
-                    p.get("data_type", "numeric"),
-                    p.get("unit"),
-                    p.get("method"),
-                    p.get("ref_low"),
-                    p.get("ref_high"),
-                    p.get("ref_text"),
-                    p.get("critical_low"),
-                    p.get("critical_high"),
-                    p.get("sex_specific") or None,
-                    p.get("age_min"),
-                    p.get("age_max"),
-                    p.get("display_order", idx),
-                    p.get("calc_formula"),
-                    p.get("comments"),
-                ),
+            if not str(p.get("name") or "").strip():
+                raise ValueError("Every parameter needs a name.")
+            values = (
+                str(p["name"]).strip(),
+                p.get("data_type") or "numeric",
+                p.get("unit"),
+                p.get("method"),
+                p.get("ref_low"),
+                p.get("ref_high"),
+                p.get("ref_text"),
+                p.get("critical_low"),
+                p.get("critical_high"),
+                p.get("sex_specific") or None,
+                p.get("age_min"),
+                p.get("age_max"),
+                p.get("display_order", idx),
+                p.get("calc_formula"),
+                p.get("comments"),
             )
+            param_id = p.get("id")
+            if param_id in existing_ids:
+                cursor.execute(
+                    f"UPDATE diag_service_parameters SET {', '.join(f'{c} = ?' for c in columns)} WHERE id = ?",
+                    values + (param_id,),
+                )
+                kept_ids.add(param_id)
+            else:
+                cursor.execute(
+                    f"INSERT INTO diag_service_parameters (service_id, {', '.join(columns)}) "
+                    f"VALUES (?, {', '.join('?' for _ in columns)})",
+                    (service_id,) + values,
+                )
+        for removed_id in existing_ids - kept_ids:
+            cursor.execute("DELETE FROM diag_service_parameters WHERE id = ?", (removed_id,))
         conn.commit()
         return True
 

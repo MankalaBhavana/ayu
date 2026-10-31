@@ -255,6 +255,70 @@ describe("LabPage", () => {
     container.remove();
   });
 
+  test("lets lab staff set up parameters for a test that has none, then enter results", async () => {
+    mockLocalStorage();
+    const worklistRow = {
+      id: 7, order_id: 3, service_id: 11, service_name: "Test Svc", department_type: "LAB", progress_status: "received",
+      order_no: "LABORD-1", patient_id: "PAT-1", encounter_type: "IP", priority: "Routine",
+      patient_first_name: "shivani", patient_last_name: "p", specimen_id: 5, specimen_no: "SPC-1", specimen_status: "received",
+    };
+    let parameters: Array<Record<string, unknown>> = [];
+    const putBodies: any[] = [];
+    global.fetch = vi.fn((url: string, init?: RequestInit) => {
+      const u = String(url);
+      if (u.includes("/api/diag/lab/worklist")) return jsonResponse({ items: [worklistRow] });
+      if (u.includes("/api/diag/services/11/parameters") && init?.method === "PUT") {
+        const body = JSON.parse(String(init.body));
+        putBodies.push(body);
+        parameters = body.parameters.map((p: Record<string, unknown>, i: number) => ({ ...p, id: 100 + i }));
+        return jsonResponse({ status: "ok" });
+      }
+      if (u.includes("/api/diag/lab/items/7")) {
+        return jsonResponse({
+          id: 7, service_id: 11, service_name: "Test Svc", order_no: "LABORD-1", patient_id: "PAT-1", priority: "Routine",
+          encounter_type: "IP", specimens: [{ id: 5, specimen_no: "SPC-1", status: "received" }], parameters, results: [],
+        });
+      }
+      if (u.includes("/api/lab/vendors-list")) return jsonResponse({ vendors: [] });
+      return jsonResponse({});
+    }) as any;
+
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    const root = createRoot(container);
+    await act(async () => {
+      root.render(<LabDiagnosticsLabPage setNotice={vi.fn()} />);
+      await flush();
+    });
+
+    const rowButton = container.querySelector(".diag-worklist-row") as HTMLElement;
+    await act(async () => { fireEvent.click(rowButton); await flush(); });
+    expect(container.textContent).toContain("Set up parameters for Test Svc");
+
+    const nameInput = container.querySelector("input[aria-label='Parameter name']") as HTMLInputElement;
+    const unitInput = container.querySelector("input[aria-label='Unit']") as HTMLInputElement;
+    const lowInput = container.querySelector("input[aria-label='Reference low']") as HTMLInputElement;
+    const highInput = container.querySelector("input[aria-label='Reference high']") as HTMLInputElement;
+    await act(async () => {
+      fireEvent.change(nameInput, { target: { value: "Haemoglobin" } });
+      fireEvent.change(unitInput, { target: { value: "g/dL" } });
+      fireEvent.change(lowInput, { target: { value: "12" } });
+      fireEvent.change(highInput, { target: { value: "16" } });
+    });
+    const saveButton = Array.from(container.querySelectorAll("button")).find((b) => b.textContent === "Save parameters") as HTMLButtonElement;
+    await act(async () => { fireEvent.click(saveButton); await flush(); await flush(); });
+
+    expect(putBodies).toHaveLength(1);
+    expect(putBodies[0].parameters[0]).toMatchObject({ name: "Haemoglobin", data_type: "numeric", unit: "g/dL", ref_low: 12, ref_high: 16 });
+    // Item reloaded with the new parameter: the result row is now editable and the setup form is gone.
+    expect(container.textContent).not.toContain("Set up parameters for Test Svc");
+    expect(container.textContent).toContain("Haemoglobin");
+    expect(container.textContent).toContain("12 - 16");
+
+    act(() => { root.unmount(); });
+    container.remove();
+  });
+
   test("renders LabDiagnosticsImagingPage without crashing", async () => {
     mockLocalStorage();
     global.fetch = vi.fn((url: string) => {
