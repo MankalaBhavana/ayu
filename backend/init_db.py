@@ -14,7 +14,7 @@ from sqlalchemy.engine.url import make_url
 
 # Load environment
 for _env_dir in (PROJECT_ROOT, BACKEND_DIR):
-    for _env_name in ("app.env", ".env"):
+    for _env_name in (".env", "app.env"):
         load_dotenv(_env_dir / _env_name, override=False)
 
 from database import DATABASE_URL, engine, db_session

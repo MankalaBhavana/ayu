@@ -26,7 +26,7 @@ _PROJECT_ROOT = _CURRENT_FILE.parents[1]
 
 def _load_environment():
     for env_dir in (_PROJECT_ROOT, _BACKEND_DIR):
-        for env_name in ("app.env", ".env"):
+        for env_name in (".env", "app.env"):
             load_dotenv(env_dir / env_name, override=False)
 
 
@@ -35,8 +35,8 @@ def _resolve_api_key():
     if key:
         return key
 
-    backend_env = {**dotenv_values(_BACKEND_DIR / ".env"), **dotenv_values(_BACKEND_DIR / "app.env")}
-    root_env = {**dotenv_values(_PROJECT_ROOT / ".env"), **dotenv_values(_PROJECT_ROOT / "app.env")}
+    backend_env = {**dotenv_values(_BACKEND_DIR / "app.env"), **dotenv_values(_BACKEND_DIR / ".env")}
+    root_env = {**dotenv_values(_PROJECT_ROOT / "app.env"), **dotenv_values(_PROJECT_ROOT / ".env")}
     key = (backend_env.get("GEMINI_API_KEY") or root_env.get("GEMINI_API_KEY") or "").strip()
     if key:
         return key

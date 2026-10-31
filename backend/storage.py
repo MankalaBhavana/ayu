@@ -15,7 +15,7 @@ except Exception:  # pragma: no cover - dependency guard
 BACKEND_DIR = os.path.abspath(os.path.dirname(__file__))
 PROJECT_ROOT = os.path.abspath(os.path.join(BACKEND_DIR, ".."))
 for _env_dir in (PROJECT_ROOT, BACKEND_DIR):
-    for _env_name in ("app.env", ".env"):
+    for _env_name in (".env", "app.env"):
         load_dotenv(os.path.join(_env_dir, _env_name), override=False)
 
 from database import IST_TIMEZONE

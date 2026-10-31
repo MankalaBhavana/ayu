@@ -647,6 +647,17 @@ def ensure_lab_diagnostics_tables(conn):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_diag_qc_runs_equipment ON diag_qc_runs(equipment_id)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_diag_qc_holds_status ON diag_qc_holds(status)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_diag_reagent_expiry ON diag_reagent_lots(expiry_date)")
+    cursor.execute(
+        """
+        INSERT INTO diag_service_parameters (service_id, name, data_type, unit, ref_text, display_order)
+        SELECT s.id, COALESCE(NULLIF(TRIM(s.name), ''), 'Observation / Result'), 'text', '', 'Normal', 0
+        FROM diag_services s
+        WHERE s.service_type = 'LAB'
+          AND NOT EXISTS (
+              SELECT 1 FROM diag_service_parameters p WHERE p.service_id = s.id
+          )
+        """
+    )
 
 
 # ==================== Patient operations ====================
