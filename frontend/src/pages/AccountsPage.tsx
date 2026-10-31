@@ -4,7 +4,7 @@ import StatCard from "../components/StatCard";
 import { Button, Input, Label, Select, Table, TableCell, TableHead, TableRow } from "../components/ui";
 import { apiFetch, reportError } from "../lib/api";
 import { useDepartmentNames } from "../lib/departments";
-import { formatDate } from "../lib/format";
+import { formatDate, formatDateOnlyIST, todayIST } from "../lib/format";
 import type { Notice } from "../types";
 
 export type AccountsView = "overview" | "ledger" | "vendor-payments" | "doctor-payouts";
@@ -185,7 +185,8 @@ export default function AccountsPage({ setNotice, view = "ledger" }: Props) {
   const [savingVendor, setSavingVendor] = useState(false);
   const [savingDoctor, setSavingDoctor] = useState(false);
 
-  const currentDate = new Date();
+  // IST calendar today (month/year getters below must not use the device timezone)
+  const currentDate = new Date(`${todayIST()}T00:00:00`);
   const [filterMonth, setFilterMonth] = useState<string>(String(currentDate.getMonth() + 1).padStart(2, "0"));
   const [filterYear, setFilterYear] = useState<string>(String(currentDate.getFullYear()));
 
@@ -880,7 +881,7 @@ export default function AccountsPage({ setNotice, view = "ledger" }: Props) {
               </TableHead>
               {selectedPayout.payments.map((pmt: any) => (
                 <TableRow key={pmt.id}>
-                  <TableCell>{new Date(pmt.paid_date).toLocaleString("en-IN")}</TableCell>
+                  <TableCell>{formatDateOnlyIST(pmt.paid_date)}</TableCell>
                   <TableCell>{formatCurrency(pmt.amount)}</TableCell>
                   <TableCell>{pmt.notes || "-"}</TableCell>
                 </TableRow>
@@ -922,7 +923,7 @@ export default function AccountsPage({ setNotice, view = "ledger" }: Props) {
                           amount: String(payout.amount || 0),
                           paid_amount: String(payout.paid_amount || 0),
                           amount_to_pay: "",
-                          paid_date: new Date().toISOString().slice(0, 10),
+                          paid_date: todayIST(),
                           status: payout.status || "pending",
                           notes: payout.notes || "",
                           department: doctorSchedules.find(s => s.doctor_name === payout.doctor_name)?.department || "",

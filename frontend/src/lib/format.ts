@@ -63,7 +63,7 @@ function getISTDateTimeKeyFromDate(date: Date): string {
     hour: "2-digit",
     minute: "2-digit",
     second: "2-digit",
-    hour12: false,
+    hourCycle: "h23",
   }).formatToParts(date);
   const year = parts.find((part) => part.type === "year")?.value;
   const month = parts.find((part) => part.type === "month")?.value;
@@ -73,6 +73,120 @@ function getISTDateTimeKeyFromDate(date: Date): string {
   const second = parts.find((part) => part.type === "second")?.value;
   if (!year || !month || !day || !hour || !minute || !second) return "";
   return `${year}-${month}-${day} ${hour}:${minute}:${second}`;
+}
+
+// ---------------------------------------------------------------------------
+// IST helpers. The HIMS always works in Asia/Kolkata regardless of the
+// device/browser timezone. Never use toISOString() for a calendar date (it is
+// UTC, i.e. "yesterday" between 00:00 and 05:30 IST) and never call
+// toLocale*String() without timeZone: IST_TIMEZONE.
+// ---------------------------------------------------------------------------
+
+/** Accepts an API timestamp string, a Date, or epoch milliseconds. */
+export type DateInput = string | number | Date | null | undefined;
+
+export function toDate(value: DateInput): Date | null {
+  if (value === null || value === undefined || value === "") return null;
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value;
+  if (typeof value === "number") {
+    const d = new Date(value);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }
+  return parseTimestamp(String(value));
+}
+
+/** "YYYY-MM-DD" of the given instant (default: now) in IST. */
+export function toISTDateKey(value: DateInput = new Date()): string {
+  const d = toDate(value);
+  return d ? getISTDateKeyFromDate(d) : "";
+}
+
+/** Today's date in IST as "YYYY-MM-DD" (use for date inputs, filters, payloads). */
+export function todayIST(): string {
+  return getISTDateKeyFromDate(new Date());
+}
+
+/** Current month in IST as "YYYY-MM". */
+export function currentMonthIST(): string {
+  return todayIST().slice(0, 7);
+}
+
+/** Adds whole calendar days to a "YYYY-MM-DD" key (timezone independent). */
+export function addDaysToDateKey(dateKey: string, days: number): string {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  if (!y || !m || !d) return dateKey;
+  return new Date(Date.UTC(y, m - 1, d + days)).toISOString().slice(0, 10);
+}
+
+/** IST date key `days` days from today (negative for the past). */
+export function istDateKeyOffset(days: number): string {
+  return addDaysToDateKey(todayIST(), days);
+}
+
+/** Current instant as ISO-8601 with an explicit +05:30 offset, for API payloads. */
+export function nowISTISOString(): string {
+  return `${getISTDateTimeKeyFromDate(new Date()).replace(" ", "T")}+05:30`;
+}
+
+/** "YYYY-MM-DDTHH:mm" in IST, for <input type="datetime-local"> values. */
+export function toISTDateTimeLocal(value: DateInput): string {
+  const d = toDate(value);
+  return d ? getISTDateTimeKeyFromDate(d).slice(0, 16).replace(" ", "T") : "";
+}
+
+/** Whole IST calendar days from `from` to `to` (null if either is invalid). */
+export function diffISTCalendarDays(from: DateInput, to: DateInput): number | null {
+  const a = toISTDateKey(from);
+  const b = toISTDateKey(to);
+  if (!a || !b) return null;
+  const utc = (key: string) => {
+    const [y, m, d] = key.split("-").map(Number);
+    return Date.UTC(y, m - 1, d);
+  };
+  return Math.round((utc(b) - utc(a)) / 86_400_000);
+}
+
+/** Hour (0-23) of the instant in IST. */
+export function getISTHour(value: DateInput = new Date()): number {
+  const d = toDate(value);
+  if (!d) return 0;
+  return Number(getISTDateTimeKeyFromDate(d).slice(11, 13));
+}
+
+/**
+ * Formats a timestamp in IST. Drop-in replacement for
+ * `new Date(x).toLocaleString(locale, options)`; `fallback` is returned for
+ * empty or unparseable input.
+ */
+export function formatIST(
+  value: DateInput,
+  options: Intl.DateTimeFormatOptions = { dateStyle: "medium", timeStyle: "short" },
+  locale: string = "en-IN",
+  fallback = "-",
+): string {
+  const d = toDate(value);
+  if (!d) return fallback;
+  return new Intl.DateTimeFormat(locale, { ...options, timeZone: IST_TIMEZONE }).format(d);
+}
+
+/** IST date only, e.g. 31/10/2026 (en-IN) - replacement for toLocaleDateString(). */
+export function formatDateOnlyIST(
+  value: DateInput,
+  options: Intl.DateTimeFormatOptions = { day: "2-digit", month: "2-digit", year: "numeric" },
+  locale: string = "en-IN",
+  fallback = "-",
+): string {
+  return formatIST(value, options, locale, fallback);
+}
+
+/** IST time only, e.g. 02:30 pm - replacement for toLocaleTimeString(). */
+export function formatTimeIST(
+  value: DateInput,
+  options: Intl.DateTimeFormatOptions = { hour: "2-digit", minute: "2-digit", hour12: true },
+  locale: string = "en-IN",
+  fallback = "-",
+): string {
+  return formatIST(value, options, locale, fallback);
 }
 
 export function formatDate(value?: string | null): string {
@@ -145,7 +259,8 @@ export function calculateAgeFromDob(dob: string): string {
     }
   }
 
-  const today = new Date();
+  // "Today" is the IST calendar date, expressed as a local Date for comparison.
+  const today = new Date(`${todayIST()}T00:00:00`);
   if (birthYear < 1900 || birthYear > today.getFullYear()) return "";
 
   const birthDate = new Date(birthYear, birthMonth - 1, birthDay);

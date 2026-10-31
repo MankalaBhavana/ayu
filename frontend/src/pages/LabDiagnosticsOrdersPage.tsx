@@ -7,6 +7,7 @@ import { apiFetch, reportError } from "../lib/api";
 import type { Notice, Patient } from "../types";
 import { printViaIframe } from "../lib/printViaIframe";
 
+import { formatDateOnlyIST } from "../lib/format";
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
   onNavigate?: (pageId: string) => void;
@@ -146,7 +147,7 @@ export default function LabDiagnosticsOrdersPage({ setNotice, onNavigate }: Prop
         const kind = (a.visit_type || "").toLowerCase() === "emergency" ? "EMERGENCY" : "OP";
         opts.push({
           kind, id: a.id,
-          label: `${kind === "EMERGENCY" ? "Emergency" : "OPD"} visit · ${a.department || ""} · ${new Date(a.appointment_date).toLocaleDateString()}`.trim(),
+          label: `${kind === "EMERGENCY" ? "Emergency" : "OPD"} visit · ${a.department || ""} · ${formatDateOnlyIST(a.appointment_date)}`.trim(),
           doctor_name: a.doctor_name,
         });
       });
@@ -606,7 +607,7 @@ export default function LabDiagnosticsOrdersPage({ setNotice, onNavigate }: Prop
               {orders.map((o) => (
                 <div key={o.id} className={`diag-worklist-row ${selectedOrder?.id === o.id ? "active" : ""}`} onClick={() => void openOrder(o.id)}>
                   <div className="diag-worklist-row-top"><span>{o.order_no} &middot; {o.patient_name || o.patient_id}</span><span className={`diag-badge ${orderStatusBadgeClass(o.status)}`}>{o.status}</span></div>
-                  <div className="diag-worklist-row-meta"><span>{o.patient_id}</span><span>{o.encounter_type}</span><span>{o.priority}</span><span>{new Date(o.created_at).toLocaleDateString()}</span></div>
+                  <div className="diag-worklist-row-meta"><span>{o.patient_id}</span><span>{o.encounter_type}</span><span>{o.priority}</span><span>{formatDateOnlyIST(o.created_at)}</span></div>
                 </div>
               ))}
             </div>
@@ -695,7 +696,7 @@ export default function LabDiagnosticsOrdersPage({ setNotice, onNavigate }: Prop
                   <tr key={inv.id}>
                     <td>{inv.invoice_no}</td>
                     <td>{inv.patient_id}</td>
-                    <td>{inv.created_at ? new Date(inv.created_at).toLocaleDateString() : "-"}</td>
+                    <td>{inv.created_at ? formatDateOnlyIST(inv.created_at) : "-"}</td>
                     <td>{money(inv.total_amount)}</td>
                     <td>{money(inv.paid_amount)}</td>
                     <td>{money(inv.due_amount)}</td>

@@ -4,6 +4,7 @@ import { Button, Checkbox, Input, Label, Tabs, TabsTrigger } from "../components
 import { apiFetch, reportError } from "../lib/api";
 import type { Notice } from "../types";
 
+import { formatIST } from "../lib/format";
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
   onNavigate?: (pageId: string) => void;
@@ -263,7 +264,7 @@ export default function LabDiagnosticsImagingPage({ setNotice, onNavigate }: Pro
                 </div>
                 <div className="diag-worklist-row-meta">
                   <span>{r.service_name}</span>
-                  {r.scheduled_at && <span>{new Date(r.scheduled_at).toLocaleString()}</span>}
+                  {r.scheduled_at && <span>{formatIST(r.scheduled_at)}</span>}
                   {r.room && <span>{r.room}</span>}
                 </div>
               </div>

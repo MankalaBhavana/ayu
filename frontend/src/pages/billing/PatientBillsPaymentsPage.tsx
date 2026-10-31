@@ -5,6 +5,7 @@ import type { Notice } from "../../types";
 import { Button, Modal } from "../../components/ui";
 import { printViaIframe } from "../../lib/printViaIframe";
 import { buildPrintDocumentHtml } from "../../lib/printTemplates";
+import { formatIST, todayIST } from "../../lib/format";
 import "./billingTheme.css";
 
 type Props = {
@@ -22,7 +23,7 @@ const fmt = (n: number) =>
 
 export default function PatientBillsPaymentsPage({ setNotice, onNavigate, selectedPatient, onSelectPatient }: Props) {
   const [patientSearch, setPatientSearch] = useState("");
-  const [targetDate, setTargetDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [targetDate, setTargetDate] = useState(() => todayIST());
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<"unpaid" | "paid" | "all">("all");
@@ -1309,7 +1310,7 @@ export default function PatientBillsPaymentsPage({ setNotice, onNavigate, select
                               )}
                             </div>
                             <span style={{ fontSize: "0.75rem", color: "#94a3b8", fontWeight: 500 }}>
-                              {evt.created_at ? new Date(evt.created_at).toLocaleString("en-IN") : ""}
+                              {evt.created_at ? formatIST(evt.created_at) : ""}
                             </span>
                           </div>
                           {evt.description && (

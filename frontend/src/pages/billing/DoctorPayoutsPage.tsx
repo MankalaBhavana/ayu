@@ -7,6 +7,7 @@ import { printViaIframe } from "../../lib/printViaIframe";
 import { buildPrintDocumentHtml } from "../../lib/printTemplates";
 import { useDropdownOptions } from "../../lib/dropdownService";
 import { useDepartmentNames } from "../../lib/departments";
+import { currentMonthIST, formatDateOnlyIST, todayIST } from "../../lib/format";
 import "./billingTheme.css";
 
 type Props = {
@@ -21,7 +22,7 @@ const fmt = (n: number) =>
   });
 
 export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
-  const [periodMonth, setPeriodMonth] = useState(() => new Date().toISOString().slice(0, 7));
+  const [periodMonth, setPeriodMonth] = useState(() => currentMonthIST());
   const [department, setDepartment] = useState("All departments");
   const [searchQuery, setSearchQuery] = useState("");
   const [loading, setLoading] = useState(true);
@@ -52,7 +53,7 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
   const [payoutAmount, setPayoutAmount] = useState<string>("0");
   const [payoutMode, setPayoutMode] = useState<string>("Bank transfer");
   const [payoutRef, setPayoutRef] = useState<string>("");
-  const [paymentDate, setPaymentDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [paymentDate, setPaymentDate] = useState<string>(() => todayIST());
   const [submittingPayout, setSubmittingPayout] = useState(false);
 
   // Summary Card Details Pop-up Modal State (Issue 3)
@@ -175,7 +176,7 @@ export default function DoctorPayoutsPage({ setNotice, onNavigate }: Props) {
       title: `Doctor Payout Statement Summary`,
       subtitleLines: [
         `Ayu Polyclinic & Emergency Clinic · Medical Finance Department`,
-        `Period: September 2026 · Generated: ${new Date().toLocaleDateString("en-IN")}`,
+        `Period: September 2026 · Generated: ${formatDateOnlyIST(new Date())}`,
       ],
       meta: [
         { label: "Fees Earned", value: `₹${fmt(summary.fees_earned)}` },

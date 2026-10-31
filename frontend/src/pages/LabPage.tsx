@@ -10,6 +10,7 @@ import { PRINT_BRAND_HEADER_DATA_URI, PRINT_MEDICAL_SYMBOL_DATA_URI, PRINT_WATER
 import { renderAyuPdfHeaderHtml, renderAyuPdfFooterHtml } from "../lib/pdfTemplate";
 import { printViaIframe } from "../lib/printViaIframe";
 
+import { formatIST, todayIST } from "../lib/format";
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
   user?: User | null;
@@ -66,11 +67,11 @@ function formatAmount(amount: number) {
 }
 
 function getCurrentDate() {
-  return new Date().toISOString().split("T")[0];
+  return todayIST();
 }
 
 function compactDate() {
-  return new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  return todayIST().replace(/-/g, "");
 }
 
 function buildInvoiceNo(type: "lab" | "diagnostic", index: number) {
@@ -194,7 +195,7 @@ export default function LabPage({ setNotice, user }: Props) {
           remaining_due: remainingDue,
           payment_mode: collectPaymentMode,
           payment_id: data.record.id || collectPaymentRecord.id,
-          payment_date: new Date().toLocaleDateString("en-CA"),
+          payment_date: todayIST(),
           operator_name: data.record.operator_name || "System"
         };
         
@@ -209,7 +210,7 @@ export default function LabPage({ setNotice, user }: Props) {
   };
 
   const printReceiptHTML = (receipt: any) => {
-    const printedAt = new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+    const printedAt = formatIST(new Date(), { dateStyle: "medium", timeStyle: "short" });
     const html = `<!doctype html>
       <html>
         <head>
@@ -788,7 +789,7 @@ export default function LabPage({ setNotice, user }: Props) {
   };
 
   const printRecordBill = (record: DiagnosticRecord) => {
-    const printedAt = new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+    const printedAt = formatIST(new Date(), { dateStyle: "medium", timeStyle: "short" });
     const row = (label: string, value: unknown) => `
       <div class="journey-print-field">
         <span>${safeText(label)}</span>
@@ -1102,7 +1103,7 @@ export default function LabPage({ setNotice, user }: Props) {
       return;
     }
     
-    const printedAt = new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+    const printedAt = formatIST(new Date(), { dateStyle: "medium", timeStyle: "short" });
     const row = (label: string, value: unknown) => `
       <div class="journey-print-field">
         <span>${safeText(label)}</span>
@@ -1362,7 +1363,7 @@ export default function LabPage({ setNotice, user }: Props) {
       setNotice({ type: "warning", message: "Add at least one lab or diagnostic service with amount before printing." });
       return;
     }
-    const printedAt = new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+    const printedAt = formatIST(new Date(), { dateStyle: "medium", timeStyle: "short" });
     const row = (label: string, value: unknown) => `
       <div class="journey-print-field">
         <span>${safeText(label)}</span>

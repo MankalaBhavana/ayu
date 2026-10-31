@@ -9,7 +9,8 @@ import PdfExportDropdown from "../components/PdfExportDropdown";
 import type { DashboardAnalytics, DistributionItem, HospitalSummary, Patient, Stats, User, Notice } from "../types";
 import { PRINT_BRAND_HEADER_DATA_URI } from "../lib/printBrand";
 import { printViaIframe } from "../lib/printViaIframe";
-import DateCalendarPicker, { toIsoDate, parseIsoDate } from "../components/DateCalendarPicker";
+import DateCalendarPicker, { parseIsoDate } from "../components/DateCalendarPicker";
+import { formatIST, getISTHour, toISTDateKey, todayIST } from "../lib/format";
 
 type Props = {
   stats: Stats;
@@ -55,8 +56,7 @@ function patientCreatedIso(patient: Patient) {
   if (!raw) return "";
   const match = raw.match(/^(\d{4}-\d{2}-\d{2})/);
   if (match) return match[1];
-  const parsed = new Date(raw);
-  return Number.isNaN(parsed.getTime()) ? "" : toIsoDate(parsed);
+  return toISTDateKey(raw);
 }
 
 function patientDisplayName(patient: Patient) {
@@ -254,7 +254,7 @@ export default function DashboardPage({
       setCanShare(false);
     }
   }, []);
-  const todayIso = toIsoDate(new Date());
+  const todayIso = todayIST();
   const [profileOpen, setProfileOpen] = useState(false);
   const [todayPatientsOpen, setTodayPatientsOpen] = useState(false);
   const [revenuePopup, setRevenuePopup] = useState<"today" | "monthly" | "pharmacy" | "lab" | null>(null);
@@ -657,7 +657,7 @@ export default function DashboardPage({
 
 
 
-  const greetingHour = new Date().getHours();
+  const greetingHour = getISTHour();
   const timeOfDayGreeting = greetingHour < 12 ? "Good morning" : greetingHour < 17 ? "Good afternoon" : "Good evening";
   const firstName = (user?.full_name || user?.username || "").trim().split(/\s+/)[0];
   const dashboardHeadline = firstName ? `${timeOfDayGreeting}, ${firstName} 👋` : `${timeOfDayGreeting} 👋`;
@@ -684,7 +684,7 @@ export default function DashboardPage({
                 {refreshing
                   ? "Refreshing..."
                   : lastRefreshedAt
-                  ? `Last Refresh: ${lastRefreshedAt.toLocaleString("en-IN", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
+                  ? `Last Refresh: ${formatIST(lastRefreshedAt, { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit", second: "2-digit" })}`
                   : "Refresh"}
               </span>
             </button>

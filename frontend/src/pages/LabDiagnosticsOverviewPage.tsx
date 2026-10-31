@@ -5,6 +5,7 @@ import type { Notice } from "../types";
 import { Button, Modal } from "../components/ui";
 import { DonutChart } from "../components/charts";
 
+import { formatTimeIST } from "../lib/format";
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
   onNavigate?: (pageId: string) => void;
@@ -470,7 +471,7 @@ export default function LabDiagnosticsOverviewPage({ setNotice, onNavigate }: Pr
                   {a.contacted_person ? `Contacted: ${a.contacted_person}` : "⚠️ NOT NOTIFIED YET"}
                 </div>
                 <div style={{ fontSize: "11px", color: "#94a3b8", marginTop: "2px" }}>
-                  Reported: {new Date(a.raised_at).toLocaleTimeString()}
+                  Reported: {formatTimeIST(a.raised_at)}
                 </div>
               </div>
             </div>

@@ -7,6 +7,7 @@ import { printViaIframe } from "../lib/printViaIframe";
 import type { ReportRow, ReportDetail } from "../lib/diagReports";
 import { IMAGING_FIELDS, patientName, buildReportPrintHtml, buildWhatsAppMessage } from "../lib/diagReports";
 
+import { formatIST, nowISTISOString } from "../lib/format";
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
   onNavigate?: (pageId: string) => void;
@@ -225,7 +226,7 @@ export default function LabDiagnosticsReportsPage({ setNotice, onNavigate }: Pro
         body: JSON.stringify({ escalated_to: escalatedTo }),
       });
       setNotice({ type: "warning", message: "Escalated. This alert still needs to be contacted & resolved once someone responds." });
-      setAlertModal({ ...alertModal, escalated: true, escalated_to: escalatedTo, escalated_at: new Date().toISOString() });
+      setAlertModal({ ...alertModal, escalated: true, escalated_to: escalatedTo, escalated_at: nowISTISOString() });
       void loadAlerts();
     } catch (err: any) {
       reportError(setNotice, err, "Could not escalate this alert.");
@@ -456,7 +457,7 @@ export default function LabDiagnosticsReportsPage({ setNotice, onNavigate }: Pro
           <p>Patient: {patientName(alertModal.patient_first_name, alertModal.patient_last_name, alertModal.patient_id)} ({alertModal.patient_id}) -- Order {alertModal.order_no}</p>
           {alertModal.escalated && (
             <div className="diag-note-box diag-note-critical">
-              Escalated to {alertModal.escalated_to} {alertModal.escalated_at ? `at ${new Date(alertModal.escalated_at).toLocaleString()}` : ""} -- still needs to be contacted &amp; resolved.
+              Escalated to {alertModal.escalated_to} {alertModal.escalated_at ? `at ${formatIST(alertModal.escalated_at)}` : ""} -- still needs to be contacted &amp; resolved.
             </div>
           )}
           <div className="diag-form-grid">

@@ -6,6 +6,7 @@ import { downloadCsv } from "../../lib/csvExport";
 import type { Notice } from "../../types";
 import { generatePDFBlob, printPDF } from "../../lib/exportService";
 
+import { formatDateOnlyIST, formatIST, toISTDateKey } from "../../lib/format";
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
   onNavigate: (pageId: string) => void;
@@ -306,7 +307,7 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
     setPrintingSuppliers(true);
     try {
       const now = new Date();
-      const dateStr = now.toLocaleDateString("en-IN", {
+      const dateStr = formatIST(now, {
         day: "2-digit",
         month: "short",
         year: "numeric",
@@ -319,7 +320,7 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
         subtitle: `Total Registered Suppliers: ${suppliers.length} · Active: ${suppliers.filter((s) => s.status === "active").length} · Generated on ${dateStr}`,
         brand_logo: "ayu" as const,
         document_type: "Suppliers Directory Report",
-        filename: `Pharmacy_Suppliers_${now.toISOString().split("T")[0]}`,
+        filename: `Pharmacy_Suppliers_${toISTDateKey(now)}`,
         sections: [
           {
             title: "Registered Pharmacy Suppliers",
@@ -355,7 +356,7 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
     setPrintingLedger(true);
     try {
       const now = new Date();
-      const dateStr = now.toLocaleDateString("en-IN", {
+      const dateStr = formatIST(now, {
         day: "2-digit",
         month: "short",
         year: "numeric",
@@ -387,7 +388,7 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
             rows:
               selectedLedger.purchases && selectedLedger.purchases.length > 0
                 ? selectedLedger.purchases.map((p) => [
-                    p.created_at ? new Date(p.created_at).toLocaleDateString("en-IN") : "-",
+                    p.created_at ? formatDateOnlyIST(p.created_at) : "-",
                     p.entry_type || p.ref_no || p.type || "Order",
                     p.medicine_name,
                     p.quantity,
@@ -850,7 +851,7 @@ export default function PharmacySuppliers({ setNotice, onNavigate }: Props) {
                       return (
                         <tr key={p.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                           <td style={{ padding: "0.45rem", color: "#64748b", whiteSpace: "nowrap" }}>
-                            {p.created_at ? new Date(p.created_at).toLocaleDateString() : "-"}
+                            {p.created_at ? formatDateOnlyIST(p.created_at) : "-"}
                           </td>
                           <td style={{ padding: "0.45rem", whiteSpace: "nowrap" }}>
                             <span

@@ -13,6 +13,7 @@ import {
   fetchDropdownsByCategory,
   DropdownOption,
 } from "../../lib/dropdownService";
+import { currentMonthIST, formatIST, formatTimeIST, todayIST } from "../../lib/format";
 import "./billingTheme.css";
 
 type Props = {
@@ -28,8 +29,8 @@ const fmt = (n: number) =>
     maximumFractionDigits: 2,
   });
 
-const currentMonth = () => new Date().toISOString().slice(0, 7);
-const currentDate = () => new Date().toISOString().slice(0, 10);
+const currentMonth = () => currentMonthIST();
+const currentDate = () => todayIST();
 
 export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
   const [targetDate, setTargetDate] = useState(currentDate);
@@ -896,7 +897,7 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
                           <div style={{ display: "flex", justifyContent: "space-between" }}>
                             <span style={{ color: "#64748b" }}>Shift Opened:</span>
                             <span style={{ fontWeight: 600, color: "#0f172a" }}>
-                              {sess.opened_at ? new Date(sess.opened_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "08:30 AM"}
+                              {sess.opened_at ? formatTimeIST(sess.opened_at, { hour: "2-digit", minute: "2-digit" }) : "08:30 AM"}
                             </span>
                           </div>
                         </div>
@@ -1343,10 +1344,10 @@ export default function ReportsDayClosePage({ setNotice, onNavigate }: Props) {
                             </td>
                             <td style={{ color: "#64748b" }}>{s.counter_name || "Main Counter"}</td>
                             <td style={{ color: "#64748b", fontSize: "0.85rem" }}>
-                              {s.opened_at ? new Date(s.opened_at).toLocaleString() : "-"}
+                              {s.opened_at ? formatIST(s.opened_at) : "-"}
                             </td>
                             <td style={{ color: "#64748b", fontSize: "0.85rem" }}>
-                              {s.closed_at ? new Date(s.closed_at).toLocaleString() : "Active / Open"}
+                              {s.closed_at ? formatIST(s.closed_at) : "Active / Open"}
                             </td>
                             <td style={{ textAlign: "right", color: "#64748b" }}>₹{fmt(s.opening_float)}</td>
                             <td style={{ textAlign: "right", fontWeight: 600, color: "#0f172a" }}>

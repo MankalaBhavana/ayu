@@ -7,6 +7,7 @@ import { useDropdownOptions } from "../../lib/dropdownService";
 import type { Notice } from "../../types";
 import { generatePDFBlob, printPDF } from "../../lib/exportService";
 
+import { formatDateOnlyIST, todayIST, formatIST, toISTDateKey } from "../../lib/format";
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
   onNavigate: (pageId: string) => void;
@@ -268,7 +269,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
   // New GRN Entry Form State
   const [grnSupplierId, setGrnSupplierId] = useState<number | null>(null);
   const [grnInvoiceNo, setGrnInvoiceNo] = useState("");
-  const [grnInvoiceDate, setGrnInvoiceDate] = useState(new Date().toISOString().split("T")[0]);
+  const [grnInvoiceDate, setGrnInvoiceDate] = useState(todayIST());
   const [grnPoId, setGrnPoId] = useState<number | null>(null);
   const [grnStockSource, setGrnStockSource] = useState<"CASH" | "INSURANCE">("CASH");
   const [grnDueDate, setGrnDueDate] = useState("");
@@ -370,7 +371,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
   const resetGrnForm = () => {
     setGrnSupplierId(null);
     setGrnInvoiceNo("");
-    setGrnInvoiceDate(new Date().toISOString().split("T")[0]);
+    setGrnInvoiceDate(todayIST());
     setGrnPoId(null);
     setGrnStockSource("CASH");
     setGrnDueDate("");
@@ -1060,7 +1061,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
     setPrintingReport(true);
     try {
       const now = new Date();
-      const dateStr = now.toLocaleDateString("en-IN", {
+      const dateStr = formatIST(now, {
         day: "2-digit",
         month: "short",
         year: "numeric",
@@ -1076,7 +1077,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
           subtitle: `Total Purchase Requests: ${purchaseRequests.length} · Generated on ${dateStr}`,
           brand_logo: "ayu" as const,
           document_type: "Purchase Requests Report",
-          filename: `Pharmacy_Purchase_Requests_${now.toISOString().split("T")[0]}`,
+          filename: `Pharmacy_Purchase_Requests_${toISTDateKey(now)}`,
           sections: [
             {
               title: "Purchase Requisitions Summary",
@@ -1087,7 +1088,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                 pr.supplier_name || "-",
                 (pr.status || "PENDING").toUpperCase(),
                 `${pr.items?.length || 0} items`,
-                pr.created_at ? new Date(pr.created_at).toLocaleDateString("en-IN") : "-",
+                pr.created_at ? formatDateOnlyIST(pr.created_at) : "-",
               ]),
             },
           ],
@@ -1099,7 +1100,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
           subtitle: `Total Purchase Orders: ${purchaseOrders.length} · Generated on ${dateStr}`,
           brand_logo: "ayu" as const,
           document_type: "Purchase Orders Report",
-          filename: `Pharmacy_Purchase_Orders_${now.toISOString().split("T")[0]}`,
+          filename: `Pharmacy_Purchase_Orders_${toISTDateKey(now)}`,
           sections: [
             {
               title: "Approved & Active Purchase Orders",
@@ -1112,7 +1113,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                 `₹${(p.total_cost || 0).toFixed(2)}`,
                 p.supplier_name || "-",
                 (p.status || "ORDERED").toUpperCase(),
-                p.created_at ? new Date(p.created_at).toLocaleDateString("en-IN") : "-",
+                p.created_at ? formatDateOnlyIST(p.created_at) : "-",
               ]),
             },
           ],
@@ -1126,7 +1127,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
           subtitle: `Total GRN Deliveries: ${goodsReceipts.length} · Generated on ${dateStr}`,
           brand_logo: "ayu" as const,
           document_type: "GRN Inward History Report",
-          filename: `Pharmacy_GRN_History_${now.toISOString().split("T")[0]}`,
+          filename: `Pharmacy_GRN_History_${toISTDateKey(now)}`,
           sections: [
             {
               title: "Inward Goods Receipt Notes",
@@ -1153,7 +1154,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
           subtitle: `Inward Deliveries, Orders & Requisitions Comprehensive Report · Generated on ${dateStr}`,
           brand_logo: "ayu" as const,
           document_type: "Procurement Report",
-          filename: `Pharmacy_Purchases_Report_${now.toISOString().split("T")[0]}`,
+          filename: `Pharmacy_Purchases_Report_${toISTDateKey(now)}`,
           sections: [
             {
               title: "Goods Receipt Notes (Recent Inward Deliveries)",
@@ -1189,7 +1190,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                 pr.supplier_name || "-",
                 (pr.status || "PENDING").toUpperCase(),
                 `${pr.items?.length || 0} items`,
-                pr.created_at ? new Date(pr.created_at).toLocaleDateString("en-IN") : "-",
+                pr.created_at ? formatDateOnlyIST(pr.created_at) : "-",
               ]),
             },
           ],
@@ -2112,7 +2113,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                         </span>
                       </td>
                       <td style={{ padding: "0.5rem", color: "#64748b", fontSize: "0.8rem" }}>
-                        {pr.created_at ? new Date(pr.created_at).toLocaleDateString() : "-"}
+                        {pr.created_at ? formatDateOnlyIST(pr.created_at) : "-"}
                       </td>
                       <td style={{ padding: "0.5rem", textAlign: "right" }}>
                         <div style={{ display: "inline-flex", gap: "0.4rem", alignItems: "center" }}>
@@ -2242,7 +2243,7 @@ export default function PharmacyPurchasesGrn({ setNotice, onNavigate }: Props) {
                         </span>
                       </td>
                       <td style={{ padding: "0.5rem", color: "#64748b", fontSize: "0.8rem" }}>
-                        {po.created_at ? new Date(po.created_at).toLocaleDateString() : "-"}
+                        {po.created_at ? formatDateOnlyIST(po.created_at) : "-"}
                       </td>
                       <td style={{ padding: "0.5rem", textAlign: "right" }}>
                         {!isReceived ? (

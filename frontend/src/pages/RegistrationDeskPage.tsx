@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import { Button, Input, Label, Select, Textarea } from "../components/ui";
 import { apiFetch, reportError } from "../lib/api";
 import { notifyDepartmentsChanged, onDepartmentsChanged } from "../lib/departments";
-import { formatDateTime } from "../lib/format";
+import { formatDateTime, formatDateOnlyIST, formatIST, toDate, todayIST, diffISTCalendarDays } from "../lib/format";
 import { openRazorpayCheckout } from "../lib/razorpay";
 import type { Appointment, Notice, Patient } from "../types";
 import { PRINT_BRAND_HEADER_DATA_URI } from "../lib/printBrand";
@@ -156,13 +156,11 @@ function toggleAmPm(value?: string | null): string | undefined {
 
 function getAppointmentTimeLabel(value?: string | null) {
   if (!value) return "No appointment time selected";
-  const parsed = new Date(String(value).replace(" ", "T"));
-  if (Number.isNaN(parsed.getTime())) return `Time: ${value}`;
-  return parsed.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  return formatIST(value, { dateStyle: "medium", timeStyle: "short" }, "en-IN", `Time: ${value}`);
 }
 
 function openRegistrationDeskDocumentPrint(title: string, bodyHtml: string, _setNotice: Dispatch<SetStateAction<Notice | null>>) {
-  const printedAt = new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  const printedAt = formatIST(new Date(), { dateStyle: "medium", timeStyle: "short" });
   const html = `<!doctype html><html><head><title>${safeText(title)}</title><style>@page{size:A4 portrait;margin:10mm}*{box-sizing:border-box}body{margin:0;background:#fff;color:#111827;font-family:Arial,Helvetica,sans-serif;font-size:11px}.journey-print-sheet{width:100%}.journey-print-topline{display:flex;justify-content:space-between;margin-bottom:4px;color:#111827;font-size:9px}.journey-print-header{display:flex;justify-content:space-between;align-items:flex-start;gap:20px;margin-bottom:14px}.journey-print-brand{display:flex;align-items:center;gap:12px}.journey-print-brand img{width:130px;height:auto;max-height:58px;object-fit:contain}.journey-print-title{text-align:right}.journey-print-title h1{margin:0 0 6px;color:#111827;font-size:18px;text-decoration:underline}.journey-print-title p{margin:2px 0;color:#334155}.journey-print-section{border:1px solid #111827;border-bottom:0;margin-top:0}.journey-print-section:last-child{border-bottom:1px solid #111827}.journey-print-section h2{margin:0;padding:6px 8px;border-bottom:1px solid #111827;background:#eef7fb;color:#062f56;font-size:12px;letter-spacing:.04em;text-transform:uppercase}.journey-print-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.journey-print-grid.four{grid-template-columns:repeat(4,minmax(0,1fr))}.journey-print-field{min-height:36px;padding:7px 8px;border-right:1px solid #111827;border-bottom:1px solid #111827}.journey-print-field:nth-child(2n){border-right:0}.journey-print-grid.four .journey-print-field:nth-child(2n){border-right:1px solid #111827}.journey-print-grid.four .journey-print-field:nth-child(4n){border-right:0}.journey-print-field span{display:block;margin-bottom:4px;color:#334155;font-size:9px;font-weight:800;text-transform:uppercase}.journey-print-field strong{display:block;color:#111827;font-size:11px;line-height:1.35;white-space:pre-wrap}.journey-print-table{width:100%;border-collapse:collapse}.journey-print-table th,.journey-print-table td{padding:7px 8px;border-right:1px solid #111827;border-bottom:1px solid #111827;text-align:left;vertical-align:top}.journey-print-table th:last-child,.journey-print-table td:last-child{border-right:0}.journey-print-table th{color:#334155;font-size:9px;text-transform:uppercase;letter-spacing:.04em}.journey-print-sign{display:grid;grid-template-columns:repeat(3,1fr);gap:22px;margin-top:28px}.journey-print-sign div{padding-top:24px;border-top:1px solid #111827;text-align:center;font-weight:700}.muted-note{padding:8px;border-bottom:1px solid #111827;line-height:1.45;color:#334155}</style></head><body><main class="journey-print-sheet"><div class="journey-print-topline"><span>${safeText(printedAt)}</span><span>${safeText(title)}</span></div><header class="journey-print-header"><div class="journey-print-brand"><img src="${PRINT_BRAND_HEADER_DATA_URI}" alt="Logo"/></div><div class="journey-print-title"><h1>${safeText(title)}</h1><p><strong>Printed:</strong> ${safeText(printedAt)}</p></div></header>${bodyHtml}<div class="journey-print-sign"><div>Patient / Guardian</div><div>Prepared By</div><div>Authorized Signatory</div></div></main></body></html>`;
   printViaIframe(html);
 }
@@ -174,7 +172,7 @@ function printConsentDocument(form: typeof DEFAULT_CONSENT_FORM, setNotice: Disp
   }
   const field = (label: string, value: unknown) => `<div class="journey-print-field"><span>${safeText(label)}</span><strong>${safeText(value || "-")}</strong></div>`;
   const consentLabel = CONSENT_TYPE_OPTIONS.find((item) => item.value === form.consent_type)?.label || form.consent_type || "-";
-  const body = `<section class="journey-print-section"><h2>Patient Information</h2><div class="journey-print-grid">${field("Patient Name", form.patient_name)}${field("UHID / Patient ID", form.patient_id)}${field("Mobile", form.mobile)}${field("Age / Gender", `${form.age || "-"} / ${form.gender || "-"}`)}</div></section><section class="journey-print-section"><h2>Consent Details</h2><div class="journey-print-grid">${field("Consent Type", consentLabel)}${field("Doctor / Consultant", form.doctor_name)}${field("Signed By", form.signed_by)}${field("Relationship", form.relation_to_patient)}${field("Attender Mobile", form.attender_mobile)}${field("Consent Status", form.status)}${field("Document Reference", form.document_reference)}${field("Consent Summary", form.notes)}</div></section><section class="journey-print-section"><h2>Signatures</h2><div class="journey-print-grid">${field("Patient Signature", form.patient_signature)}${field("Attender Signature", form.attender_signature)}${field("Doctor Signature", form.doctor_signature)}${field("Date", new Date().toLocaleDateString("en-IN"))}</div></section>`;
+  const body = `<section class="journey-print-section"><h2>Patient Information</h2><div class="journey-print-grid">${field("Patient Name", form.patient_name)}${field("UHID / Patient ID", form.patient_id)}${field("Mobile", form.mobile)}${field("Age / Gender", `${form.age || "-"} / ${form.gender || "-"}`)}</div></section><section class="journey-print-section"><h2>Consent Details</h2><div class="journey-print-grid">${field("Consent Type", consentLabel)}${field("Doctor / Consultant", form.doctor_name)}${field("Signed By", form.signed_by)}${field("Relationship", form.relation_to_patient)}${field("Attender Mobile", form.attender_mobile)}${field("Consent Status", form.status)}${field("Document Reference", form.document_reference)}${field("Consent Summary", form.notes)}</div></section><section class="journey-print-section"><h2>Signatures</h2><div class="journey-print-grid">${field("Patient Signature", form.patient_signature)}${field("Attender Signature", form.attender_signature)}${field("Doctor Signature", form.doctor_signature)}${field("Date", formatDateOnlyIST(new Date()))}</div></section>`;
   openRegistrationDeskDocumentPrint("Consent Desk Report", body, setNotice);
 }
 
@@ -184,7 +182,7 @@ function printInsuranceDocument(form: typeof DEFAULT_INSURANCE_FORM & Record<str
     return;
   }
   const field = (label: string, value: unknown) => `<div class="journey-print-field"><span>${safeText(label)}</span><strong>${safeText(value || "-")}</strong></div>`;
-  const body = `<section class="journey-print-section"><h2>Patient Information</h2><div class="journey-print-grid">${field("Patient Name", form.patient_name)}${field("UHID / Patient ID", form.patient_id)}${field("Insurer", form.insurer_name)}${field("Status", form.verification_status)}</div></section><section class="journey-print-section"><h2>Insurance / TPA Details</h2><div class="journey-print-grid">${field("Policy Number", form.policy_number)}${field("Member ID", form.member_id)}${field("TPA Name", form.tpa_name)}${field("Pre-Authorization No", form.preauth_no)}${field("Approved Amount", form.approved_amount ? `₹${form.approved_amount}` : "-")}${field("Document Reference", form.document_reference)}${field("Coverage Notes", form.coverage_notes)}${field("Date", new Date().toLocaleDateString("en-IN"))}</div></section>`;
+  const body = `<section class="journey-print-section"><h2>Patient Information</h2><div class="journey-print-grid">${field("Patient Name", form.patient_name)}${field("UHID / Patient ID", form.patient_id)}${field("Insurer", form.insurer_name)}${field("Status", form.verification_status)}</div></section><section class="journey-print-section"><h2>Insurance / TPA Details</h2><div class="journey-print-grid">${field("Policy Number", form.policy_number)}${field("Member ID", form.member_id)}${field("TPA Name", form.tpa_name)}${field("Pre-Authorization No", form.preauth_no)}${field("Approved Amount", form.approved_amount ? `₹${form.approved_amount}` : "-")}${field("Document Reference", form.document_reference)}${field("Coverage Notes", form.coverage_notes)}${field("Date", formatDateOnlyIST(new Date()))}</div></section>`;
   openRegistrationDeskDocumentPrint("Insurance Desk Report", body, setNotice);
 }
 
@@ -208,7 +206,7 @@ function printRegistrationToken(token: any, setNotice: Dispatch<SetStateAction<N
 export default function RegistrationDeskPage({ mode, selectedPatient, setNotice }: Props) {
   const [appointments, setAppointments] = useState<Appointment[]>([]);
   const [appointmentsLoading, setAppointmentsLoading] = useState(false);
-  const [queueDate, setQueueDate] = useState(() => new Date().toLocaleDateString('en-CA'));
+  const [queueDate, setQueueDate] = useState(() => todayIST());
   const [savingAppointment, setSavingAppointment] = useState(false);
   const [isRazorpayReady, setIsRazorpayReady] = useState(true);
   const [paymentConfirmed, setPaymentConfirmed] = useState(false);
@@ -374,16 +372,7 @@ const activeDepartments = (data.departments || []).filter((department) => {
 
   const calculateDaysDifference = (d1?: string | null, d2?: string | null) => {
     if (!d1 || !d2) return null;
-    try {
-      const date1 = new Date(d1);
-      const date2 = new Date(d2);
-      if (isNaN(date1.getTime()) || isNaN(date2.getTime())) return null;
-      const utc1 = Date.UTC(date1.getFullYear(), date1.getMonth(), date1.getDate());
-      const utc2 = Date.UTC(date2.getFullYear(), date2.getMonth(), date2.getDate());
-      return Math.floor((utc2 - utc1) / (1000 * 60 * 60 * 24));
-    } catch {
-      return null;
-    }
+    return diffISTCalendarDays(d1, d2);
   };
 
   const resolveAppointmentFee = (doctorName: string, appointmentKind: string, lastConsultationDate?: string | null, currentDate?: string) => {
@@ -956,7 +945,7 @@ const activeDepartments = (data.departments || []).filter((department) => {
     const fullName = patientFullName(patient) || patient.name || "";
     const latestVisit = appointments
       .filter((item) => item.patient_id === patient.patient_id || item.patient_name.toLowerCase() === fullName.toLowerCase())
-      .sort((a, b) => new Date(b.appointment_date || "").getTime() - new Date(a.appointment_date || "").getTime())[0];
+      .sort((a, b) => (toDate(b.appointment_date || "")?.getTime() ?? NaN) - (toDate(a.appointment_date || "")?.getTime() ?? NaN))[0];
     setSelectedConsentPatient(patient);
     setConsentForm((prev) => ({
       ...prev,
@@ -1650,7 +1639,7 @@ const activeDepartments = (data.departments || []).filter((department) => {
         </div>
         {appointmentsLoading ? <p className="muted">Loading queue...</p> : null}
         {!appointmentsLoading && queue.length === 0 ? (
-          <p className="muted">No appointments found for {queueDate === new Date().toLocaleDateString('en-CA') ? "today" : queueDate}.</p>
+          <p className="muted">No appointments found for {queueDate === todayIST() ? "today" : queueDate}.</p>
         ) : null}
         {!appointmentsLoading && queue.length > 0 ? (
           <div className="module-mobile-list" style={{ display: "grid" }}>

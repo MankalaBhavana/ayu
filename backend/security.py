@@ -18,7 +18,7 @@ import bcrypt
 from sqlalchemy.orm import Session
 
 from models import DepartmentMaster, DoctorSchedules, Hospitals, Sessions, Users
-from database import DEFAULT_HOSPITAL_CODE, IST_TIMEZONE
+from database import DEFAULT_HOSPITAL_CODE, IST_TIMEZONE, to_ist_isoformat
 
 SESSION_COOKIE_NAME = os.getenv("SESSION_COOKIE_NAME", "hospai_session")
 SESSION_TTL_HOURS = int(os.getenv("SESSION_TTL_HOURS", "12"))
@@ -133,7 +133,7 @@ def _now_utc() -> datetime:
 
 
 def _format_ts(value: datetime) -> str:
-    return value.astimezone(IST_TIMEZONE).isoformat()
+    return to_ist_isoformat(value)
 
 
 def _parse_ts(value: Union[str, datetime]) -> datetime:

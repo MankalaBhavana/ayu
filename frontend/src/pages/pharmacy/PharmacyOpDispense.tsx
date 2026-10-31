@@ -10,6 +10,7 @@ import { buildPrintDocumentHtml, buildPrintLabelsHtml } from "../../lib/printTem
 import { downloadCsv } from "../../lib/csvExport";
 import { pharmacyHeaderLines, usePharmacySettings } from "../../lib/pharmacySettings";
 
+import { formatDateOnlyIST, formatIST, formatTimeIST, toDate, todayIST, calculateAgeFromDob } from "../../lib/format";
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
   onNavigate: (pageId: string) => void;
@@ -108,8 +109,8 @@ export type DuePaymentReceipt = {
   sales?: any[];
 };
 
-function localDateKey(date = new Date()): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+function localDateKey(): string {
+  return todayIST();
 }
 
 function isExpiredBatch(expiryDate?: string): boolean {
@@ -129,7 +130,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
   const [dispenseHistory, setDispenseHistory] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [historyLoaded, setHistoryLoaded] = useState(false);
-  const [historyDate, setHistoryDate] = useState<string>(() => new Date().toISOString().slice(0, 10));
+  const [historyDate, setHistoryDate] = useState<string>(() => todayIST());
   const [historySearch, setHistorySearch] = useState("");
 
   // Patient Selection
@@ -285,8 +286,8 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
 
     // FEFO: Sort by expiry date ascending
     return matches.sort((a, b) => {
-      const dateA = a.expiry_date ? new Date(a.expiry_date).getTime() : Infinity;
-      const dateB = b.expiry_date ? new Date(b.expiry_date).getTime() : Infinity;
+      const dateA = a.expiry_date ? (toDate(a.expiry_date)?.getTime() ?? NaN) : Infinity;
+      const dateB = b.expiry_date ? (toDate(b.expiry_date)?.getTime() ?? NaN) : Infinity;
       return dateA - dateB;
     });
   }, [allBatches, searchMedQuery]);
@@ -597,7 +598,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
       ? (dispensedExtCustomer.name || "Walk-in Customer")
       : (dispensedPatient ? `${dispensedPatient.name || ""} ${dispensedPatient.last_name || ""}`.trim() : "-");
     const invoiceNumber = dispenseResult.invoice_no || `INV-${dispenseResult.invoice_id}`;
-    const invoiceDate = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+    const invoiceDate = formatDateOnlyIST(new Date(), { day: "2-digit", month: "short", year: "numeric" });
 
     try {
       printViaIframe(buildPrintDocumentHtml({
@@ -618,7 +619,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
             : [{ label: "UHID / Patient ID", value: dispensedPatient?.patient_id || "-" }]),
           { label: "Invoice Number", value: invoiceNumber },
           { label: "Payment Mode", value: paymentMode.toUpperCase() },
-          { label: "Date & Time", value: `${invoiceDate} ${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}` },
+          { label: "Date & Time", value: `${invoiceDate} ${formatTimeIST(new Date(), { hour: '2-digit', minute: '2-digit' })}` },
         ],
         columns: ["Medicine Name", "Batch", "Source", "Qty", "Unit Price", "Discount", "Total"],
         rows,
@@ -821,7 +822,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
         payment_mode: duePayMode,
         reference: duePayRef.trim() || undefined,
         payment_status: res.payment_status || (remainingDue <= 0 ? "paid" : "partial"),
-        payment_date: `${new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" })} ${new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`,
+        payment_date: `${formatDateOnlyIST(new Date(), { day: "2-digit", month: "short", year: "numeric" })} ${formatTimeIST(new Date(), { hour: "2-digit", minute: "2-digit" })}`,
         sales: res.sales || selectedDueSale.items || [],
       };
 
@@ -1001,7 +1002,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
         remaining_due: Number(inv.due_amount || 0),
         payment_mode: inv.payment_mode || "cash",
         payment_status: inv.payment_status || "paid",
-        payment_date: inv.created_at ? new Date(inv.created_at).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "",
+        payment_date: inv.created_at ? formatDateOnlyIST(inv.created_at, { day: "2-digit", month: "short", year: "numeric" }) : "",
         sales,
       };
       handlePrintUpdatedInvoice(receipt);
@@ -1115,7 +1116,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
       `op_dispense_history_${historyDate || "all"}.csv`,
       ["Time", "Invoice #", "Type", "Patient / Customer", "Mobile", "Medicine", "Quantity", "Total Amount", "Paid Amount", "Due Amount", "Status"],
       dispenseHistory.map((s) => [
-        s.sold_at ? new Date(s.sold_at).toLocaleTimeString() : "",
+        s.sold_at ? formatTimeIST(s.sold_at) : "",
         s.invoice_no || (s.invoice_id ? `INV-${s.invoice_id}` : ""),
         s.sale_type === "external" ? "External" : "Internal",
         s.sale_type === "external" ? (s.customer_name || "Walk-in") : s.patient_id,
@@ -1464,14 +1465,8 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
                       const dob = e.target.value;
                       setExtCustomerDob(dob);
                       if (dob) {
-                        const birthDate = new Date(dob);
-                        const today = new Date();
-                        let age = today.getFullYear() - birthDate.getFullYear();
-                        const monthDiff = today.getMonth() - birthDate.getMonth();
-                        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-                          age--;
-                        }
-                        if (age >= 0 && age <= 150) setExtCustomerAge(String(age));
+                        const age = calculateAgeFromDob(dob);
+                        if (age) setExtCustomerAge(age);
                       }
                     }}
                     style={{ width: "100%" }}
@@ -2483,7 +2478,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
                               {inv.invoice_no || `INV-${inv.invoice_id}`}
                             </td>
                             <td style={{ padding: "0.6rem 0.5rem", color: "#64748b", whiteSpace: "nowrap" }}>
-                              {inv.created_at ? new Date(inv.created_at).toLocaleDateString([], { day: "2-digit", month: "short", year: "numeric" }) : "-"}
+                              {inv.created_at ? formatDateOnlyIST(inv.created_at, { day: "2-digit", month: "short", year: "numeric" }) : "-"}
                             </td>
                             <td style={{ padding: "0.6rem 0.5rem" }}>
                               <div style={{ fontWeight: 600, color: "#0f172a" }}>
@@ -2647,7 +2642,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
                         <td style={{ padding: "0.5rem", color: returned > 0 ? "#c2410c" : "#94a3b8" }}>{returned}</td>
                         <td style={{ padding: "0.5rem", textAlign: "right" }}>₹{sale.unit_price}</td>
                         <td style={{ padding: "0.5rem", color: "#64748b", fontSize: "0.8rem" }}>
-                          {sale.sold_at ? new Date(sale.sold_at).toLocaleString() : "-"}
+                          {sale.sold_at ? formatIST(sale.sold_at) : "-"}
                         </td>
                         <td style={{ padding: "0.5rem", textAlign: "center" }}>
                           {remaining > 0 ? (
@@ -2826,7 +2821,7 @@ export default function PharmacyOpDispense({ setNotice, onNavigate }: Props) {
                   return (
                     <tr key={sale.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "0.5rem", color: "#64748b", fontSize: "0.8rem", whiteSpace: "nowrap" }}>
-                        {sale.sold_at ? new Date(sale.sold_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : "-"}
+                        {sale.sold_at ? formatTimeIST(sale.sold_at, { hour: '2-digit', minute: '2-digit' }) : "-"}
                       </td>
                       <td style={{ padding: "0.5rem", fontWeight: 700, color: "#0f172a", fontSize: "0.8rem", whiteSpace: "nowrap" }}>
                         {sale.invoice_no || (sale.invoice_id ? `INV-${sale.invoice_id}` : `SALE-${sale.id}`)}

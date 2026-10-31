@@ -243,8 +243,8 @@ def ensure_lab_diagnostics_tables(conn):
             report_template TEXT DEFAULT 'generic',
             rate REAL NOT NULL DEFAULT 0,
             created_by TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -289,7 +289,7 @@ def ensure_lab_diagnostics_tables(conn):
             payer_type TEXT DEFAULT 'standard',
             effective_from DATE DEFAULT CURRENT_DATE,
             changed_by TEXT,
-            changed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            changed_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -302,7 +302,7 @@ def ensure_lab_diagnostics_tables(conn):
             active BOOLEAN DEFAULT TRUE,
             rate REAL NOT NULL DEFAULT 0,
             created_by TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -325,7 +325,7 @@ def ensure_lab_diagnostics_tables(conn):
             report_type TEXT NOT NULL CHECK(report_type IN ('LAB', 'IMAGING')),
             layout TEXT NOT NULL DEFAULT 'structured' CHECK(layout IN ('structured', 'narrative')),
             active BOOLEAN DEFAULT TRUE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -349,8 +349,8 @@ def ensure_lab_diagnostics_tables(conn):
             status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft', 'confirmed', 'cancelled')),
             invoice_id INTEGER,
             created_by TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            confirmed_at TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            confirmed_at TIMESTAMPTZ
         )
         """
     )
@@ -369,9 +369,9 @@ def ensure_lab_diagnostics_tables(conn):
             progress_status TEXT NOT NULL DEFAULT 'ordered',
             is_duplicate_repeat BOOLEAN DEFAULT FALSE,
             duplicate_reason TEXT,
-            cancelled_at TIMESTAMP,
+            cancelled_at TIMESTAMPTZ,
             cancel_reason TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -399,15 +399,15 @@ def ensure_lab_diagnostics_tables(conn):
             collection_location TEXT,
             identity_verified BOOLEAN DEFAULT FALSE,
             collected_by TEXT,
-            collected_at TIMESTAMP,
+            collected_at TIMESTAMPTZ,
             collection_notes TEXT,
             status TEXT NOT NULL DEFAULT 'awaiting_collection' CHECK(status IN ('awaiting_collection', 'collected', 'received', 'rejected')),
             received_by TEXT,
-            received_at TIMESTAMP,
+            received_at TIMESTAMPTZ,
             condition_on_receipt TEXT,
             rejection_reason TEXT,
             replaces_specimen_id INTEGER,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -430,9 +430,9 @@ def ensure_lab_diagnostics_tables(conn):
             flag TEXT CHECK(flag IS NULL OR flag IN ('normal', 'high', 'low', 'critical_high', 'critical_low', 'abnormal')),
             is_draft BOOLEAN DEFAULT TRUE,
             entered_by TEXT,
-            entered_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            entered_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
             updated_by TEXT,
-            updated_at TIMESTAMP
+            updated_at TIMESTAMPTZ
         )
         """
     )
@@ -442,14 +442,14 @@ def ensure_lab_diagnostics_tables(conn):
             id {id_column},
             order_item_id INTEGER NOT NULL REFERENCES diag_order_items(id) ON DELETE CASCADE,
             vendor_id INTEGER,
-            dispatched_at TIMESTAMP,
+            dispatched_at TIMESTAMPTZ,
             dispatched_by TEXT,
             expected_turnaround TEXT,
-            received_report_at TIMESTAMP,
+            received_report_at TIMESTAMPTZ,
             report_document_id INTEGER,
             local_review_status TEXT NOT NULL DEFAULT 'pending' CHECK(local_review_status IN ('pending', 'reviewed', 'released')),
             notes TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -464,22 +464,22 @@ def ensure_lab_diagnostics_tables(conn):
             order_item_id INTEGER NOT NULL REFERENCES diag_order_items(id) ON DELETE CASCADE,
             modality TEXT,
             room TEXT,
-            scheduled_at TIMESTAMP,
+            scheduled_at TIMESTAMPTZ,
             expected_duration_min INTEGER DEFAULT 30,
             assigned_staff TEXT,
             prep_instructions TEXT,
             status TEXT NOT NULL DEFAULT 'scheduled' CHECK(status IN ('scheduled', 'arrived', 'prep', 'in_progress', 'completed', 'cancelled', 'no_show')),
-            arrived_at TIMESTAMP,
-            prep_completed_at TIMESTAMP,
+            arrived_at TIMESTAMPTZ,
+            prep_completed_at TIMESTAMPTZ,
             consent_recorded BOOLEAN DEFAULT FALSE,
             consent_notes TEXT,
-            started_at TIMESTAMP,
-            completed_at TIMESTAMP,
+            started_at TIMESTAMPTZ,
+            completed_at TIMESTAMPTZ,
             performing_staff TEXT,
             image_available BOOLEAN DEFAULT FALSE,
             reschedule_reason TEXT,
             cancel_reason TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -499,17 +499,17 @@ def ensure_lab_diagnostics_tables(conn):
             content TEXT,
             template TEXT,
             drafted_by TEXT,
-            drafted_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            submitted_at TIMESTAMP,
+            drafted_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+            submitted_at TIMESTAMPTZ,
             reviewed_by TEXT,
             return_reason TEXT,
-            returned_at TIMESTAMP,
+            returned_at TIMESTAMPTZ,
             authorized_by TEXT,
-            authorized_at TIMESTAMP,
-            released_at TIMESTAMP,
+            authorized_at TIMESTAMPTZ,
+            released_at TIMESTAMPTZ,
             previous_version_id INTEGER,
             amendment_reason TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -520,16 +520,16 @@ def ensure_lab_diagnostics_tables(conn):
             order_item_id INTEGER NOT NULL REFERENCES diag_order_items(id) ON DELETE CASCADE,
             result_id INTEGER,
             report_id INTEGER,
-            raised_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            raised_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
             contacted_person TEXT,
-            contacted_at TIMESTAMP,
+            contacted_at TIMESTAMPTZ,
             contacted_by TEXT,
             ack_method TEXT CHECK(ack_method IS NULL OR ack_method IN ('verbal_readback', 'written', 'callback')),
-            ack_at TIMESTAMP,
+            ack_at TIMESTAMPTZ,
             escalated BOOLEAN DEFAULT FALSE,
-            escalated_at TIMESTAMP,
+            escalated_at TIMESTAMPTZ,
             escalated_to TEXT,
-            resolved_at TIMESTAMP,
+            resolved_at TIMESTAMPTZ,
             notes TEXT
         )
         """
@@ -553,7 +553,7 @@ def ensure_lab_diagnostics_tables(conn):
             responsible_staff TEXT,
             next_maintenance_date DATE,
             next_calibration_date DATE,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -565,12 +565,12 @@ def ensure_lab_diagnostics_tables(conn):
             service_id INTEGER,
             control_material TEXT,
             control_lot TEXT,
-            run_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            run_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
             operator TEXT,
             measurements TEXT,
             outcome TEXT NOT NULL DEFAULT 'pending' CHECK(outcome IN ('passed', 'failed', 'pending')),
             reviewed_by TEXT,
-            reviewed_at TIMESTAMP,
+            reviewed_at TIMESTAMPTZ,
             notes TEXT
         )
         """
@@ -588,9 +588,9 @@ def ensure_lab_diagnostics_tables(conn):
             assigned_to TEXT,
             repeat_qc_run_id INTEGER,
             released_by TEXT,
-            released_at TIMESTAMP,
+            released_at TIMESTAMPTZ,
             release_notes TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -606,11 +606,11 @@ def ensure_lab_diagnostics_tables(conn):
             responsible TEXT,
             completion_status TEXT NOT NULL DEFAULT 'completed' CHECK(completion_status IN ('scheduled', 'in_progress', 'completed')),
             next_due_date DATE,
-            downtime_start TIMESTAMP,
-            downtime_end TIMESTAMP,
+            downtime_start TIMESTAMPTZ,
+            downtime_end TIMESTAMPTZ,
             return_to_service_by TEXT,
-            return_to_service_at TIMESTAMP,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            return_to_service_at TIMESTAMPTZ,
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -626,7 +626,7 @@ def ensure_lab_diagnostics_tables(conn):
             storage_location TEXT,
             supplier_ref TEXT,
             status TEXT NOT NULL DEFAULT 'available' CHECK(status IN ('available', 'quarantined', 'expired', 'consumed')),
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(item_name, lot_no)
         )
         """
@@ -639,7 +639,7 @@ def ensure_lab_diagnostics_tables(conn):
             movement_type TEXT NOT NULL CHECK(movement_type IN ('receipt', 'consume', 'adjustment', 'quarantine', 'release')),
             delta_qty REAL NOT NULL,
             actor TEXT,
-            created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
             notes TEXT
         )
         """
@@ -1586,7 +1586,7 @@ def list_discharged_admissions(db, hospital_id=None, from_date=None, to_date=Non
                     (SELECT i.created_at FROM invoices i
                      WHERE i.patient_id = a.patient_id AND i.invoice_no LIKE 'INV-DIS-%%' AND DATE(i.created_at) = a.discharge_date
                      ORDER BY i.created_at DESC LIMIT 1),
-                    a.discharge_date::timestamp
+                    a.discharge_date::timestamptz
                 ) AS discharged_at,
                 (SELECT ba.ward FROM bed_allocations ba WHERE ba.admission_id = a.id ORDER BY ba.allocated_at DESC LIMIT 1) AS ward,
                 (SELECT ba.room_no FROM bed_allocations ba WHERE ba.admission_id = a.id ORDER BY ba.allocated_at DESC LIMIT 1) AS room_no,
@@ -4677,8 +4677,7 @@ def normalize_payment_mode_breakdown(rows):
 def get_revenue_summary(db, collection_date=None, collection_month=None):
     if not collection_date and not collection_month:
         from datetime import datetime, timedelta, timezone
-        IST_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
-        collection_date = datetime.now(IST_TIMEZONE).date().isoformat()
+        collection_date = current_ist_datetime().date().isoformat()
 
     with get_connection(db) as conn:
         cursor = conn.cursor()
@@ -5351,7 +5350,7 @@ def get_reports_overview(db):
             """
             SELECT AVG(
                 GREATEST(
-                    EXTRACT(EPOCH FROM (COALESCE(discharge_date::timestamp, CURRENT_TIMESTAMP) - admission_date)) / 86400.0,
+                    EXTRACT(EPOCH FROM (COALESCE(discharge_date::timestamptz, CURRENT_TIMESTAMP) - admission_date)) / 86400.0,
                     0
                 )
             ) AS avg_los,
@@ -5539,7 +5538,7 @@ def ensure_pharmacy_master_schema(conn):
             key TEXT PRIMARY KEY,
             value TEXT,
             updated_by TEXT,
-            updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
         )
         """
     )
@@ -9186,8 +9185,7 @@ def collect_diagnostic_payment(db, diagnostic_id, amount, payment_mode, transact
         new_status = "paid" if new_due == 0 else "partial"
         
         # 6. Insert payment record
-        from datetime import date
-        payment_date = date.today().isoformat()
+        payment_date = current_ist_datetime().date().isoformat()
         
         cursor.execute(
             """
@@ -9735,8 +9733,7 @@ def get_hospital_dashboard_summary(db, selected_date=None):
 
         # 2. Revenue Summary
         if not date_str:
-            IST_TZ = timezone(timedelta(hours=5, minutes=30))
-            date_str = datetime.now(IST_TZ).date().isoformat()
+            date_str = current_ist_datetime().date().isoformat()
             target_month_val = date_str[:7]
             selected_date_clause = f"{date_clause('arrival_at')} = DATE(?)"
             selected_date_params = (date_str,)
@@ -11524,8 +11521,8 @@ def schedule_diag_imaging_exam(db, exam_id, data, username=None):
                 SELECT id FROM diag_imaging_exams
                 WHERE room = ? AND id != ? AND status NOT IN ('cancelled', 'completed', 'no_show')
                   AND scheduled_at IS NOT NULL
-                  AND scheduled_at < (? ::timestamp + (? || ' minutes')::interval)
-                  AND (scheduled_at + (expected_duration_min || ' minutes')::interval) > ? ::timestamp
+                  AND scheduled_at < (? ::timestamptz + (? || ' minutes')::interval)
+                  AND (scheduled_at + (expected_duration_min || ' minutes')::interval) > ? ::timestamptz
                 """,
                 (room, exam_id, scheduled_at, duration, scheduled_at),
             )
@@ -12496,7 +12493,7 @@ def init_beds_table(db):
                 daily_rate REAL DEFAULT 1000,
                 status TEXT DEFAULT 'available',
                 notes TEXT,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 UNIQUE (ward, bed_no)
             )
             """

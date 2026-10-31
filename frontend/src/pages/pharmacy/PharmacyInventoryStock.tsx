@@ -6,6 +6,7 @@ import { downloadCsv } from "../../lib/csvExport";
 import { generatePDFBlob, printPDF } from "../../lib/exportService";
 import type { Notice } from "../../types";
 
+import { formatIST, toDate, todayIST, toISTDateKey } from "../../lib/format";
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
   onNavigate: (pageId: string) => void;
@@ -56,8 +57,8 @@ type StockMovement = {
   created_at: string;
 };
 
-function localDateKey(date = new Date()): string {
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+function localDateKey(): string {
+  return todayIST();
 }
 
 function isExpiredBatch(expiryDate?: string): boolean {
@@ -165,7 +166,7 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
       `stock_ledger_${ledgerFromDate || "all"}_to_${ledgerToDate || "all"}.csv`,
       ["Date/Time", "Movement Type", "Medicine", "Batch", "Delta Qty", "Stock Source", "Actor"],
       filteredLedgerMovements.map((m) => [
-        m.created_at ? new Date(m.created_at).toLocaleString("en-IN") : "",
+        m.created_at ? formatIST(m.created_at) : "",
         m.movement_type,
         m.medicine_name,
         m.batch_no || "",
@@ -474,7 +475,7 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
     setPrinting(true);
     try {
       const now = new Date();
-      const dateStr = now.toLocaleDateString("en-IN", {
+      const dateStr = formatIST(now, {
         day: "2-digit",
         month: "short",
         year: "numeric",
@@ -500,7 +501,7 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
           subtitle: `Low Stock Items: ${lowStockItems.length} · Completely Out: ${outOfStockCount} · Total Reorder Needed: ${totalSuggestedUnits.toLocaleString("en-IN")} units · Generated on ${dateStr}`,
           brand_logo: "ayu" as const,
           document_type: "Low Stock & Reorders Report",
-          filename: `Pharmacy_Low_Stock_${now.toISOString().split("T")[0]}`,
+          filename: `Pharmacy_Low_Stock_${toISTDateKey(now)}`,
           sections: [
             {
               title: "Low Stock & Reorder Level KPI Summary",
@@ -576,7 +577,7 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
       } else if (activeTab === "batches") {
         const displayedBatches = filteredStock.filter((b) => {
           const isExp = isExpiredBatch(b.expiry_date);
-          const isNear = !isExp && !!b.expiry_date && (new Date(b.expiry_date).getTime() - new Date().getTime()) < (90 * 24 * 60 * 60 * 1000);
+          const isNear = !isExp && !!b.expiry_date && ((toDate(b.expiry_date)?.getTime() ?? NaN) - new Date().getTime()) < (90 * 24 * 60 * 60 * 1000);
           if (batchExpiryFilter === "expired") return isExp;
           if (batchExpiryFilter === "near_expiry") return isNear;
           if (batchExpiryFilter === "valid") return !isExp && !isNear;
@@ -596,15 +597,15 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
         const totalBatchVal = displayedBatches.reduce((sum, b) => sum + (b.qty_available * (b.unit_price || 0)), 0);
 
         const expCount = filteredStock.filter((b) => isExpiredBatch(b.expiry_date)).length;
-        const nearCount = filteredStock.filter((b) => !isExpiredBatch(b.expiry_date) && b.expiry_date && (new Date(b.expiry_date).getTime() - new Date().getTime()) < (90 * 24 * 60 * 60 * 1000)).length;
-        const validCount = filteredStock.filter((b) => !isExpiredBatch(b.expiry_date) && (!b.expiry_date || (new Date(b.expiry_date).getTime() - new Date().getTime()) >= (90 * 24 * 60 * 60 * 1000))).length;
+        const nearCount = filteredStock.filter((b) => !isExpiredBatch(b.expiry_date) && b.expiry_date && ((toDate(b.expiry_date)?.getTime() ?? NaN) - new Date().getTime()) < (90 * 24 * 60 * 60 * 1000)).length;
+        const validCount = filteredStock.filter((b) => !isExpiredBatch(b.expiry_date) && (!b.expiry_date || ((toDate(b.expiry_date)?.getTime() ?? NaN) - new Date().getTime()) >= (90 * 24 * 60 * 60 * 1000))).length;
 
         payload = {
           title: "Pharmacy Batch Inventory & Expiry Tracking Report",
           subtitle: `Filter Scope: ${filterLabel} · Batches Listed: ${displayedBatches.length} · Generated on ${dateStr}`,
           brand_logo: "ayu" as const,
           document_type: "Batch & Expiry Report",
-          filename: `Pharmacy_Batch_Expiry_${now.toISOString().split("T")[0]}`,
+          filename: `Pharmacy_Batch_Expiry_${toISTDateKey(now)}`,
           sections: [
             {
               title: "Batch & Expiry Metrics Summary",
@@ -631,7 +632,7 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
               ],
               rows: displayedBatches.map((b) => {
                 const isExp = isExpiredBatch(b.expiry_date);
-                const isNear = !isExp && !!b.expiry_date && (new Date(b.expiry_date).getTime() - new Date().getTime()) < (90 * 24 * 60 * 60 * 1000);
+                const isNear = !isExp && !!b.expiry_date && ((toDate(b.expiry_date)?.getTime() ?? NaN) - new Date().getTime()) < (90 * 24 * 60 * 60 * 1000);
                 const stateStr = isExp ? "EXPIRED" : isNear ? "< 90 Days" : "Valid";
                 const val = (b.qty_available || 0) * (b.unit_price || 0);
 
@@ -661,7 +662,7 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
           subtitle: `Date Range: ${ledgerFromDate || "All Time"} to ${ledgerToDate || "Present"} · Total Transactions: ${filteredLedgerMovements.length} · Generated on ${dateStr}`,
           brand_logo: "ayu" as const,
           document_type: "Stock Ledger Report",
-          filename: `Pharmacy_Stock_Ledger_${now.toISOString().split("T")[0]}`,
+          filename: `Pharmacy_Stock_Ledger_${toISTDateKey(now)}`,
           sections: [
             {
               title: "Stock Movement Audit Trail",
@@ -675,7 +676,7 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
                 "Actor",
               ],
               rows: filteredLedgerMovements.slice(0, 100).map((m) => [
-                m.created_at ? new Date(m.created_at).toLocaleString("en-IN") : "-",
+                m.created_at ? formatIST(m.created_at) : "-",
                 m.movement_type,
                 m.medicine_name,
                 m.batch_no || "-",
@@ -695,7 +696,7 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
           subtitle: `Physical stock count reconciliation audit · Total Batches: ${stock.length} · Generated on ${dateStr}`,
           brand_logo: "ayu" as const,
           document_type: "Physical Count Worksheet",
-          filename: `Pharmacy_Physical_Count_${now.toISOString().split("T")[0]}`,
+          filename: `Pharmacy_Physical_Count_${toISTDateKey(now)}`,
           sections: [
             {
               title: "Physical Inventory Verification List",
@@ -728,7 +729,7 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
           subtitle: `Internal Departmental & Ward Transfers · Generated on ${dateStr}`,
           brand_logo: "ayu" as const,
           document_type: "Stock Transfer Report",
-          filename: `Pharmacy_Stock_Transfers_${now.toISOString().split("T")[0]}`,
+          filename: `Pharmacy_Stock_Transfers_${toISTDateKey(now)}`,
           sections: [
             {
               title: "Stock Transfer Movements",
@@ -750,7 +751,7 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
           subtitle: `Distinct Medicines: ${medicineAggregates.length} · Total Batches: ${stock.length} · Generated on ${dateStr}`,
           brand_logo: "ayu" as const,
           document_type: "Inventory Stock Report",
-          filename: `Pharmacy_Stock_Report_${now.toISOString().split("T")[0]}`,
+          filename: `Pharmacy_Stock_Report_${toISTDateKey(now)}`,
           sections: [
             {
               title: "Stock & Inventory KPI Summary",
@@ -1020,7 +1021,7 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
                   filteredLedgerMovements.map((mov) => (
                     <tr key={mov.id} style={{ borderBottom: "1px solid #f1f5f9" }}>
                       <td style={{ padding: "0.5rem 0.75rem", color: "#64748b" }}>
-                        {mov.created_at ? new Date(mov.created_at).toLocaleString("en-IN") : "-"}
+                        {mov.created_at ? formatIST(mov.created_at) : "-"}
                       </td>
                       <td style={{ padding: "0.5rem 0.75rem" }}>
                         <span
@@ -1072,13 +1073,13 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
                 { id: "expired", label: `Expired (${filteredStock.filter((b) => isExpiredBatch(b.expiry_date)).length})`, color: "#dc2626", bg: "#fee2e2" },
                 {
                   id: "near_expiry",
-                  label: `Near Expiry < 90d (${filteredStock.filter((b) => !isExpiredBatch(b.expiry_date) && b.expiry_date && (new Date(b.expiry_date).getTime() - new Date().getTime()) < (90 * 24 * 60 * 60 * 1000)).length})`,
+                  label: `Near Expiry < 90d (${filteredStock.filter((b) => !isExpiredBatch(b.expiry_date) && b.expiry_date && ((toDate(b.expiry_date)?.getTime() ?? NaN) - new Date().getTime()) < (90 * 24 * 60 * 60 * 1000)).length})`,
                   color: "#d97706",
                   bg: "#fef3c7",
                 },
                 {
                   id: "valid",
-                  label: `Valid Shelf Life (${filteredStock.filter((b) => !isExpiredBatch(b.expiry_date) && (!b.expiry_date || (new Date(b.expiry_date).getTime() - new Date().getTime()) >= (90 * 24 * 60 * 60 * 1000))).length})`,
+                  label: `Valid Shelf Life (${filteredStock.filter((b) => !isExpiredBatch(b.expiry_date) && (!b.expiry_date || ((toDate(b.expiry_date)?.getTime() ?? NaN) - new Date().getTime()) >= (90 * 24 * 60 * 60 * 1000))).length})`,
                   color: "#16a34a",
                   bg: "#dcfce7",
                 },
@@ -1131,14 +1132,14 @@ export default function PharmacyInventoryStock({ setNotice, onNavigate }: Props)
               <tbody>
                 {filteredStock.filter((b) => {
                   const isExp = isExpiredBatch(b.expiry_date);
-                  const isNear = !isExp && !!b.expiry_date && (new Date(b.expiry_date).getTime() - new Date().getTime()) < (90 * 24 * 60 * 60 * 1000);
+                  const isNear = !isExp && !!b.expiry_date && ((toDate(b.expiry_date)?.getTime() ?? NaN) - new Date().getTime()) < (90 * 24 * 60 * 60 * 1000);
                   if (batchExpiryFilter === "expired") return isExp;
                   if (batchExpiryFilter === "near_expiry") return isNear;
                   if (batchExpiryFilter === "valid") return !isExp && !isNear;
                   return true;
                 }).map((b) => {
                   const isExpired = isExpiredBatch(b.expiry_date);
-                  const isNearExp = b.expiry_date && !isExpired && (new Date(b.expiry_date).getTime() - new Date().getTime()) < (90 * 24 * 60 * 60 * 1000);
+                  const isNearExp = b.expiry_date && !isExpired && ((toDate(b.expiry_date)?.getTime() ?? NaN) - new Date().getTime()) < (90 * 24 * 60 * 60 * 1000);
 
                   return (
                     <tr key={b.id} style={{ borderBottom: "1px solid #f1f5f9" }}>

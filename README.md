@@ -78,12 +78,25 @@ When deploying to a clean or existing PostgreSQL server, schemas and seeds are *
 2. **116 Table Schemas:** Executes `Base.metadata.create_all(bind=engine)` to create all tables.
 3. **Additive SQL Migrations:** Executes `migrations_insurance_providers.sql` and `migrations_billing_v2.sql` (cashier drawers, receipts, split payments, doctor shares).
 4. **Master Seeding:** Ensures lab/diagnostic and pharmacy tables, creates clinical master defaults, and registers the baseline admin user.
+5. **Timestamp Normalisation:** `migrations_timestamptz.sql` converts any remaining `timestamp without time zone` column to `TIMESTAMPTZ` (existing values are read as IST, so nothing shifts). It is idempotent and a no-op once converted.
 
 You can also run initialization manually from the command line:
 
 ```bash
 python backend/init_db.py
 ```
+
+### Date & Time Handling (IST, no drift)
+
+Every module uses one convention, so dates and times can never drift:
+
+| Layer | Rule |
+|---|---|
+| PostgreSQL | Every timestamp column is `TIMESTAMPTZ` (an absolute instant). Calendar-only fields stay `DATE`. |
+| DB session | Each connection runs with `TimeZone=Asia/Kolkata` (`backend/database.py`), so `NOW()`, `CURRENT_DATE`, `DATE(col)` and naive literals are IST. |
+| Python | Datetimes are naive and mean IST. Use `legacy_queries.current_ist_datetime()` for "now"; never `datetime.now()` / `date.today()` (server-local, UTC in Docker). |
+| API | Datetimes are serialised with an explicit `+05:30` offset. |
+| Frontend | Use the helpers in `frontend/src/lib/format.ts`: `todayIST()`, `currentMonthIST()`, `toISTDateKey()`, `formatIST()` / `formatDateOnlyIST()` / `formatTimeIST()`, `toISTDateTimeLocal()`, `nowISTISOString()`. Never use `toISOString()` for a calendar date (it is UTC: "yesterday" between 00:00 and 05:30 IST) or `toLocale*String()` without the IST timezone. |
 
 ---
 

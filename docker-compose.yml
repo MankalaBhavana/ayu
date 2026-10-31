@@ -7,6 +7,10 @@ services:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres123}
       POSTGRES_DB: ${POSTGRES_DB:-hospital}
+      # Timestamps are stored as TIMESTAMPTZ (absolute instants); this only makes
+      # psql/admin sessions display them in IST. The app sets IST per connection.
+      TZ: Asia/Kolkata
+      PGTZ: Asia/Kolkata
     volumes:
       - postgres_data:/var/lib/postgresql/data
     ports:

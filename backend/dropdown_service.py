@@ -91,8 +91,8 @@ def init_and_seed_dropdowns():
                 sort_order INTEGER NOT NULL DEFAULT 0,
                 is_system BOOLEAN NOT NULL DEFAULT FALSE,
                 hospital_id INTEGER DEFAULT 1,
-                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
                 CONSTRAINT uq_category_value UNIQUE(category, value)
             );
             CREATE INDEX IF NOT EXISTS idx_dropdown_cat ON dropdown_configurations(category);

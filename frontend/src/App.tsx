@@ -54,7 +54,7 @@ import HospitalBrand from "./components/HospitalBrand";
 import BrandLogo from "./components/BrandLogo";
 import { API_BASE, EMPTY_PATIENT_FORM, EMPTY_STATS, LEGACY_MODULE_EXPANSIONS, NAV_ITEMS, PAGE_MODULE_MAP } from "./lib/constants";
 import { apiFetch, getHospitalCode, reportError, setHospitalCode } from "./lib/api";
-import { resolvePermissions } from "./lib/format";
+import { resolvePermissions, toDate, todayIST } from "./lib/format";
 import type { DashboardAnalytics, HospitalSummary, Notice, Patient, Stats, User } from "./types";
 import { downloadExportBlob } from "./lib/exportShare";
 
@@ -422,7 +422,7 @@ function App() {
   const scheduleSessionExpiry = (expiresAt?: string) => {
     clearSessionExpiry();
     if (!expiresAt || typeof window === "undefined") return;
-    const msRemaining = new Date(expiresAt).getTime() - Date.now();
+    const msRemaining = (toDate(expiresAt)?.getTime() ?? NaN) - Date.now();
     const handleExpired = () => {
       setUser(null);
       setPage(getDefaultPage(null));
@@ -554,13 +554,7 @@ function App() {
     shareUrl?: string;
   } | null>(null);
   const [authChecked, setAuthChecked] = useState(false);
-  const [dashboardDate, setDashboardDate] = useState(() => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  });
+  const [dashboardDate, setDashboardDate] = useState(() => todayIST());
   const [hospitalCode, setHospitalCodeState] = useState(getHospitalCode());
   const [collapsedSidebarGroups, setCollapsedSidebarGroups] = useState<Record<string, boolean>>({});
   useEffect(() => {
@@ -1119,7 +1113,7 @@ function App() {
         throw new Error("Unable to export patients CSV.");
       }
       const blob = await response.blob();
-      downloadExportBlob(blob, `patients_${new Date().toISOString().slice(0, 10)}.csv`);
+      downloadExportBlob(blob, `patients_${todayIST()}.csv`);
       setNotice({ type: "success", message: "Patients CSV exported." });
     } catch (error) {
       reportError(setNotice, error as { message?: string; status?: number }, "Unable to export patients CSV.");

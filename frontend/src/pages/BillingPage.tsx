@@ -3,7 +3,7 @@ import type { Dispatch, FormEvent, SetStateAction } from "react";
 import StatCard from "../components/StatCard";
 import { Button, Input, Label, Select, Table, TableCell, TableHead, TableRow } from "../components/ui";
 import { apiFetch, reportError } from "../lib/api";
-import { formatDateTime } from "../lib/format";
+import { formatDateTime, formatIST, toISTDateKey } from "../lib/format";
 import { openRazorpayCheckout } from "../lib/razorpay";
 import { fullPatientName, lookupPatientByUhid, normalizeUhidLookup } from "../lib/patientLookup";
 import type { Notice } from "../types";
@@ -221,11 +221,11 @@ function formatCurrency(amount?: number) {
 }
 
 function toDateInputValue(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return toISTDateKey(date);
 }
 
 function toMonthInputValue(date: Date) {
-  return date.toISOString().slice(0, 7);
+  return toISTDateKey(date).slice(0, 7);
 }
 
 function invoiceCollectedAmount(invoice: Invoice) {
@@ -611,7 +611,7 @@ export default function BillingPage({ setNotice, view = "record-payment" }: Prop
   };
 
   const handlePrintInvoice = (invoice: Invoice) => {
-    const printedAt = new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+    const printedAt = formatIST(new Date(), { dateStyle: "medium", timeStyle: "short" });
     const paid = invoice.total_amount - invoice.due_amount;
     const html = `
       <!DOCTYPE html>

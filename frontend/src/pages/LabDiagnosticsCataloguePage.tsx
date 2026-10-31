@@ -4,6 +4,7 @@ import { Button, Checkbox, Input, Label, Modal, Select, Tabs, TabsTrigger } from
 import { apiFetch, reportError } from "../lib/api";
 import type { Notice } from "../types";
 
+import { formatIST } from "../lib/format";
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
 };
@@ -429,7 +430,7 @@ export default function LabDiagnosticsCataloguePage({ setNotice }: Props) {
                   <thead><tr><th>Rate</th><th>Payer type</th><th>Changed by</th><th>Changed at</th></tr></thead>
                   <tbody>
                     {(selected.pricing_history || []).map((h) => (
-                      <tr key={h.id}><td>Rs. {h.rate}</td><td>{h.payer_type}</td><td>{h.changed_by || "-"}</td><td>{new Date(h.changed_at).toLocaleString()}</td></tr>
+                      <tr key={h.id}><td>Rs. {h.rate}</td><td>{h.payer_type}</td><td>{h.changed_by || "-"}</td><td>{formatIST(h.changed_at)}</td></tr>
                     ))}
                   </tbody>
                 </table>

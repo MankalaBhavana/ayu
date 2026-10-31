@@ -5,7 +5,7 @@ import { apiFetch, reportError } from "../lib/api";
 import { fetchDepartmentNames, onDepartmentsChanged } from "../lib/departments";
 import { printViaIframe } from "../lib/printViaIframe";
 import { PRINT_BRAND_HEADER_DATA_URI } from "../lib/printBrand";
-import { calculateAgeFromDob } from "../lib/format";
+import { calculateAgeFromDob, formatDateOnlyIST, todayIST } from "../lib/format";
 import { Modal } from "../components/ui";
 
 type Props = {
@@ -332,13 +332,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
     }
   };
 
-  const getTodayIso = () => {
-    const d = new Date();
-    const year = d.getFullYear();
-    const month = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  };
+  const getTodayIso = () => todayIST();
 
   const handleDobChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     let val = e.target.value;
@@ -426,7 +420,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
     if (dob.trim()) {
       const dobParts = dob.trim().split("-");
       const birthYear = parseInt(dobParts[0], 10);
-      const currentYear = new Date().getFullYear();
+      const currentYear = Number(todayIST().slice(0, 4));
       if (!birthYear || dobParts[0].length !== 4 || birthYear < 1900 || birthYear > currentYear) {
         setNotice({ type: "warning", message: "Please enter a valid 4-digit birth year between 1900 and present." });
         return null;
@@ -673,7 +667,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
         department: selectedDepartment,
         fee: consultationFee,
         paymentMode,
-        date: new Date().toLocaleDateString("en-GB"),
+        date: formatDateOnlyIST(new Date(), undefined, "en-GB"),
       });
 
       setLastRegisteredPatient((prev) => ({
@@ -781,7 +775,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
             <strong>Live Queue Token:</strong> <span style="font-size: 18px; font-weight: 900; color: #2563eb;">#${tokenPart}</span>
           </div>
           ` : ""}
-          <div><strong>Date:</strong> ${new Date().toLocaleDateString("en-GB")}</div>
+          <div><strong>Date:</strong> ${formatDateOnlyIST(new Date(), undefined, "en-GB")}</div>
           <div><strong>Name:</strong> ${target.name}</div>
           <div><strong>Age / Gender:</strong> ${target.age || "-"} / ${target.gender || "-"}</div>
           <div><strong>Mobile:</strong> ${target.phone || "-"}</div>
@@ -806,11 +800,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
     });
   };
 
-  const todayFormatted = new Intl.DateTimeFormat("en-GB", {
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-  }).format(new Date()).replace(/\//g, "-");
+  const todayFormatted = formatDateOnlyIST(new Date(), undefined, "en-GB").replace(/\//g, "-");
 
   return (
     <div className="patient-registration-page" style={{ padding: "20px 28px 48px", background: "#f8fafc", minHeight: "100vh" }}>
@@ -1449,7 +1439,7 @@ export default function AddPatientPage({ setNotice, onNavigate, onCreate }: Prop
               value={dob}
               onChange={handleDobChange}
               onBlur={handleDobBlur}
-              max={new Date().toISOString().split("T")[0]}
+              max={todayIST()}
               min="1900-01-01"
               className="pharmacy-rx-search-input"
               style={{ height: "42px", padding: "0 12px", borderRadius: "8px", border: "1px solid #cbd5e1", width: "100%", boxSizing: "border-box" }}

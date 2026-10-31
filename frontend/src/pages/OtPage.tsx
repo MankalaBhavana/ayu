@@ -3,7 +3,7 @@ import type { Dispatch, FormEvent, SetStateAction } from "react";
 import StatCard from "../components/StatCard";
 import { Button, Input, Select, Table, TableCell, TableHead, TableRow, Textarea } from "../components/ui";
 import { apiFetch, reportError } from "../lib/api";
-import { formatDateTime } from "../lib/format";
+import { formatDateTime, toISTDateTimeLocal } from "../lib/format";
 import type { Notice, OtSummary } from "../types";
 
 type Props = {
@@ -87,21 +87,7 @@ const DEFAULT_SURGERY_FORM: SurgeryForm = {
 
 function toDateTimeLocalValue(value?: string | null) {
   if (!value) return "";
-  const normalized = value.trim().replace(" ", "T");
-  const parsed = new Date(normalized);
-  if (Number.isNaN(parsed.getTime())) return "";
-  const pad = (part: number) => String(part).padStart(2, "0");
-  return [
-    parsed.getFullYear(),
-    "-",
-    pad(parsed.getMonth() + 1),
-    "-",
-    pad(parsed.getDate()),
-    "T",
-    pad(parsed.getHours()),
-    ":",
-    pad(parsed.getMinutes()),
-  ].join("");
+  return toISTDateTimeLocal(value.trim());
 }
 
 export default function OtPage({ setNotice }: Props) {

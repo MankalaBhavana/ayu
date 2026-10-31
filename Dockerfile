@@ -22,6 +22,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     libpq5 \
+    tzdata \
     && rm -rf /var/lib/apt/lists/*
 
 # Install python dependencies
@@ -37,6 +38,7 @@ COPY --from=frontend-builder /app/frontend/dist ./frontend/dist
 
 # Environment settings
 ENV PYTHONUNBUFFERED=1 \
+    TZ=Asia/Kolkata \
     PORT=8000 \
     HOST=0.0.0.0
 

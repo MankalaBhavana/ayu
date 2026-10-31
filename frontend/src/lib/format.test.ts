@@ -1,4 +1,4 @@
-import { formatDateIST, formatDateTimeIST, getISTDateKey, resolvePermissions, stripUploadTimestampPrefix } from "./format";
+import { addDaysToDateKey, currentMonthIST, diffISTCalendarDays, formatDateIST, formatDateOnlyIST, formatDateTimeIST, formatIST, formatTimeIST, getISTDateKey, getISTHour, istDateKeyOffset, nowISTISOString, resolvePermissions, stripUploadTimestampPrefix, toISTDateKey, toISTDateTimeLocal, todayIST } from "./format";
 
 describe("resolvePermissions", () => {
   test("returns explicit user permissions when provided", () => {
@@ -102,3 +102,46 @@ describe("format helpers", () => {
   });
 });
 
+
+describe("IST helpers (independent of device timezone)", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // 2026-10-30T19:45:00Z == 2026-10-31 01:15 IST: the window where UTC-based
+  // code (toISOString) used to report the previous day.
+  const EARLY_MORNING_IST = new Date("2026-10-30T19:45:00Z");
+
+  test("todayIST / currentMonthIST use the IST calendar date, not UTC", () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(EARLY_MORNING_IST);
+    expect(todayIST()).toBe("2026-10-31");
+    expect(currentMonthIST()).toBe("2026-10");
+    expect(istDateKeyOffset(1)).toBe("2026-11-01");
+    expect(getISTHour()).toBe(1);
+    expect(nowISTISOString()).toBe("2026-10-31T01:15:00+05:30");
+  });
+
+  test("naive API timestamps are treated as IST; offset timestamps are honoured", () => {
+    expect(toISTDateKey("2026-10-31 01:15:00")).toBe("2026-10-31");
+    expect(toISTDateKey("2026-10-31T01:15:00+05:30")).toBe("2026-10-31");
+    expect(toISTDateKey("2026-10-30T19:45:00Z")).toBe("2026-10-31");
+    expect(toISTDateKey("2026-10-31")).toBe("2026-10-31");
+    expect(toISTDateTimeLocal("2026-10-30T19:45:00Z")).toBe("2026-10-31T01:15");
+    expect(toISTDateTimeLocal("2026-10-31T00:05:00+05:30")).toBe("2026-10-31T00:05");
+  });
+
+  test("formatIST / formatTimeIST render IST wall-clock time", () => {
+    expect(formatTimeIST("2026-10-30T19:45:00Z", { hour: "2-digit", minute: "2-digit", hour12: false })).toBe("01:15");
+    expect(formatDateOnlyIST("2026-10-30T19:45:00Z", undefined, "en-GB")).toBe("31/10/2026");
+    expect(formatIST(null)).toBe("-");
+    expect(formatIST("not-a-date", undefined, "en-IN", "n/a")).toBe("n/a");
+  });
+
+  test("calendar-day arithmetic is timezone independent", () => {
+    expect(addDaysToDateKey("2026-12-31", 1)).toBe("2027-01-01");
+    expect(addDaysToDateKey("2026-03-01", -1)).toBe("2026-02-28");
+    expect(diffISTCalendarDays("2026-10-30T23:30:00+05:30", "2026-10-31T00:30:00+05:30")).toBe(1);
+    expect(diffISTCalendarDays("2026-10-31", "2026-10-31 23:59:59")).toBe(0);
+  });
+});

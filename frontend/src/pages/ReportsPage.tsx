@@ -3,7 +3,7 @@ import type { Dispatch, SetStateAction } from "react";
 import StatCard from "../components/StatCard";
 import { Input, Label, Modal, Table, TableCell, TableHead, TableRow } from "../components/ui";
 import { apiFetch, reportError } from "../lib/api";
-import { formatDateTime } from "../lib/format";
+import { formatDateTime, toISTDateKey } from "../lib/format";
 import type { Notice, ReportsOverview } from "../types";
 
 type Props = {
@@ -28,7 +28,7 @@ type DoctorPayout = {
 type BillingReportSummary = ReportsOverview["billing_summary"];
 
 function toDateInputValue(date: Date) {
-  return date.toISOString().slice(0, 10);
+  return toISTDateKey(date);
 }
 
 export default function ReportsPage({ setNotice }: Props) {

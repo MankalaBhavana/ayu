@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { todayIST } from "../lib/format";
 
 const MONTH_NAMES = [
   "January", "February", "March", "April", "May", "June",
@@ -26,7 +27,7 @@ type Props = {
 /** The same calendar pill + popover used on the Main Dashboard, extracted so
  * every module that needs a date picker looks and behaves identically. */
 export default function DateCalendarPicker({ value, onChange, formatLabel }: Props) {
-  const todayIso = toIsoDate(new Date());
+  const todayIso = todayIST();
   const [pending, setPending] = useState(value);
   const [month, setMonth] = useState(parseIsoDate(value).getMonth());
   const [year, setYear] = useState(parseIsoDate(value).getFullYear());
@@ -39,7 +40,7 @@ export default function DateCalendarPicker({ value, onChange, formatLabel }: Pro
   const pendingLabel = new Intl.DateTimeFormat("en-US", { month: "long", day: "numeric", year: "numeric" }).format(parseIsoDate(pending));
 
   const years = useMemo(() => {
-    const baseYear = new Date().getFullYear();
+    const baseYear = Number(todayIST().slice(0, 4));
     return Array.from({ length: 9 }, (_, index) => baseYear - 4 + index);
   }, []);
 

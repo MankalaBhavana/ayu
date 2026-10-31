@@ -59,9 +59,9 @@ def ensure_database_exists():
         print(f"[INIT_DB] Notice: Could not inspect/create database via maintenance DB ({exc}). Proceeding...")
 
 
-def run_sql_migrations(target_engine):
+def run_sql_migrations(target_engine, migration_files=None):
     """Execute raw SQL migration files in backend directory (idempotent)."""
-    migration_files = [
+    migration_files = migration_files or [
         "migrations_insurance_providers.sql",
         "migrations_billing_v2.sql",
         "migrations_pharmacy_v2.sql",
@@ -103,6 +103,10 @@ def init_all():
             legacy_queries.ensure_lab_diagnostics_tables(conn)
             legacy_queries.ensure_pharmacy_master_schema(conn)
         db.commit()
+
+    # Runs last so it also covers tables created by the legacy ensure_* helpers.
+    print("[INIT_DB] Normalising timestamp columns to TIMESTAMPTZ...")
+    run_sql_migrations(engine, ["migrations_timestamptz.sql"])
 
     print("[INIT_DB] Database initialization completed successfully.")
 

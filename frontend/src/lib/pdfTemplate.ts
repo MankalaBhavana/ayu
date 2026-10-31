@@ -4,6 +4,7 @@
  */
 import { PRINT_CADUCEUS_DATA_URI, PRINT_BRAND_HEADER_DATA_URI } from "./printBrand";
 import { CLINIC_CONFIG } from "./clinicConfig";
+import { formatDateOnlyIST, formatTimeIST } from "./format";
 
 export const AYU_PDF_COLORS = {
   primary: "#1d4289",
@@ -32,10 +33,10 @@ export type PdfHeaderOptions = {
  */
 export function renderAyuPdfHeaderHtml(options?: PdfHeaderOptions): string {
   const now = new Date();
-  const printDate = options?.printDate || now.toLocaleDateString("en-GB");
+  const printDate = options?.printDate || formatDateOnlyIST(now, undefined, "en-GB");
   const printTime =
     options?.printTime ||
-    now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
+    formatTimeIST(now, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }, "en-US");
   const generatedBy = options?.generatedBy || `${CLINIC_CONFIG.name} System`;
   const logoSrc = options?.brandLogoDataUri || (options?.useAyuLogo !== false ? PRINT_BRAND_HEADER_DATA_URI : PRINT_CADUCEUS_DATA_URI);
 

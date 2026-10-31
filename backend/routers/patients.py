@@ -69,7 +69,7 @@ def _validate_patient_registration_payload(payload, is_update=False):
                 d_month = int(parts[1])
                 d_day = int(parts[2])
                 b_date = date(d_year, d_month, d_day)
-                if b_date > date.today():
+                if b_date > lq.current_ist_datetime().date():
                     errors["dob"] = "Date of Birth cannot be in the future."
                 elif d_year < 1900:
                     errors["dob"] = "Date of Birth cannot be earlier than 1900."
@@ -337,7 +337,7 @@ def admissions_create(patient_id: str, request: Request, payload: dict = Body(..
         raise HTTPException(status_code=400, detail=vitals_err)
 
     # Check if patient is already in queue with an active consultation for today
-    now_dt = lq.current_ist_datetime() if hasattr(lq, "current_ist_datetime") else datetime.now()
+    now_dt = lq.current_ist_datetime()
     appointment_day = now_dt.strftime("%Y-%m-%d")
     with lq.get_connection(db) as conn:
         cursor = conn.cursor()

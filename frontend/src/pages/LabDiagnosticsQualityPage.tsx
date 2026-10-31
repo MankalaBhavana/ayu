@@ -4,6 +4,7 @@ import { Button, Checkbox, Input, Label, Modal, Select, Tabs, TabsTrigger, Texta
 import { apiFetch, reportError } from "../lib/api";
 import type { Notice } from "../types";
 
+import { formatIST, toDate } from "../lib/format";
 type Props = { setNotice: Dispatch<SetStateAction<Notice | null>> };
 
 type Overview = { open_qc_reviews: number; equipment_ready: number; equipment_total: number; maintenance_due_soon: number; expiring_lots: number; open_release_holds: number };
@@ -88,7 +89,7 @@ export default function LabDiagnosticsQualityPage({ setNotice }: Props) {
   }, [loadAll]);
 
   const expiringLots = useMemo(
-    () => lots.filter((l) => l.status === "available" && l.expiry_date && new Date(l.expiry_date).getTime() - Date.now() < EXPIRY_WARNING_MS),
+    () => lots.filter((l) => l.status === "available" && l.expiry_date && (toDate(l.expiry_date)?.getTime() ?? NaN) - Date.now() < EXPIRY_WARNING_MS),
     [lots]
   );
 
@@ -149,7 +150,7 @@ export default function LabDiagnosticsQualityPage({ setNotice }: Props) {
                   <tr key={r.id}>
                     <td>{r.equipment_name}</td>
                     <td><span className={`diag-badge ${qcOutcomeBadgeClass(r.outcome)}`}>{r.outcome}</span></td>
-                    <td>{new Date(r.run_at).toLocaleString()}</td>
+                    <td>{formatIST(r.run_at)}</td>
                   </tr>
                 ))}
                 {qcRuns.length === 0 && <tr><td colSpan={3} className="diag-empty">No QC runs recorded.</td></tr>}

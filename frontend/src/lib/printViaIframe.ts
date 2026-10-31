@@ -1,5 +1,6 @@
 import { renderAyuPdfHeaderHtml, renderAyuPdfFooterHtml } from "./pdfTemplate";
 import { CLINIC_CONFIG } from "./clinicConfig";
+import { formatDateOnlyIST, formatTimeIST } from "./format";
 
 /**
  * printViaIframe – shared print utility
@@ -46,8 +47,8 @@ function applySharedHospaiPrintFrame(html: string, options: SharedPrintOptions):
   const rawTitle = extractSharedPrintTitle(html);
   const title = escapeSharedPrintText(rawTitle);
   const now = new Date();
-  const printDate = now.toLocaleDateString("en-GB");
-  const printTime = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
+  const printDate = formatDateOnlyIST(now, undefined, "en-GB");
+  const printTime = formatTimeIST(now, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }, "en-US");
   const pageMargin = suppressBrowserHeadersAndFooters ? "0" : "10mm 18mm 14mm";
   const bodyPadding = suppressBrowserHeadersAndFooters ? "10mm 18mm 14mm" : "0";
 

@@ -5,6 +5,7 @@ import { apiFetch, reportError } from "../lib/api";
 import { onDepartmentsChanged } from "../lib/departments";
 import type { Notice } from "../types";
 
+import { formatTimeIST, todayIST, toISTDateKey } from "../lib/format";
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
   onOpenPatient?: (patientId: string) => void;
@@ -41,7 +42,7 @@ export default function OpQueuePage({ setNotice, onOpenPatient, onNavigate }: Pr
   const [queue, setQueue] = useState<QueueItem[]>([]);
 
   // Filters state
-  const [selectedDate, setSelectedDate] = useState(() => new Date().toLocaleDateString("en-CA"));
+  const [selectedDate, setSelectedDate] = useState(() => todayIST());
   const [selectedDepartment, setSelectedDepartment] = useState("All Departments");
   const [selectedDoctor, setSelectedDoctor] = useState("All Doctors");
   const [selectedVisitType, setSelectedVisitType] = useState("All");
@@ -129,7 +130,7 @@ export default function OpQueuePage({ setNotice, onOpenPatient, onNavigate }: Pr
             : ["completed", "done", "consulted", "finished"].includes(rawStatus)
             ? "Completed"
             : "Waiting";
-        const timeStr = a.appointment_time || (a.created_at ? new Date(a.created_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : (a.appointment_date ? new Date(a.appointment_date).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "-"));
+        const timeStr = a.appointment_time || (a.created_at ? formatTimeIST(a.created_at, { hour: "2-digit", minute: "2-digit" }) : (a.appointment_date ? formatTimeIST(a.appointment_date, { hour: "2-digit", minute: "2-digit" }) : "-"));
         return {
           id: String(a.id),
           token: String(a.token_no || a.id),
@@ -157,10 +158,7 @@ export default function OpQueuePage({ setNotice, onOpenPatient, onNavigate }: Pr
           readmitEntries = stored
             .filter((item) => {
               if (!item || !["In Queue", "In Consultation"].includes(String(item.status || ""))) return false;
-              const createdAt = item.createdAt ? new Date(item.createdAt) : null;
-              const createdDate = createdAt && !Number.isNaN(createdAt.getTime())
-                ? `${createdAt.getFullYear()}-${String(createdAt.getMonth() + 1).padStart(2, "0")}-${String(createdAt.getDate()).padStart(2, "0")}`
-                : "";
+              const createdDate = toISTDateKey(item.createdAt);
               if (createdDate && createdDate !== targetDate) return false;
               return !mapped.some((appointment) =>
                 (item.appointmentId && appointment.appointmentId === Number(item.appointmentId)) ||

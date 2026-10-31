@@ -7,6 +7,7 @@ import { printViaIframe } from "../lib/printViaIframe";
 import type { ReportRow, ReportDetail } from "../lib/diagReports";
 import { IMAGING_FIELDS, patientName, buildReportPrintHtml, buildWhatsAppMessage } from "../lib/diagReports";
 
+import { formatDateOnlyIST, formatIST } from "../lib/format";
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
   onNavigate?: (pageId: string) => void;
@@ -39,7 +40,7 @@ function statusBadgeClass(status: string): string {
 
 function reportDate(r: ReportRow): string {
   const raw = r.released_at || r.authorized_at || r.created_at;
-  return raw ? new Date(raw).toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" }) : "-";
+  return raw ? formatDateOnlyIST(raw, { day: "2-digit", month: "short", year: "numeric" }) : "-";
 }
 
 type WhatsAppRecipient = "patient" | "doctor";
@@ -212,8 +213,8 @@ export default function LabDiagnosticsReportsHistoryPage({ setNotice, onNavigate
 
               {selected.authorized_by && (
                 <div className="diag-note-box">
-                  Authorized by {selected.authorized_by}{selected.authorized_at ? ` on ${new Date(selected.authorized_at).toLocaleString()}` : ""}
-                  {selected.released_at ? ` -- released ${new Date(selected.released_at).toLocaleString()}` : ""}
+                  Authorized by {selected.authorized_by}{selected.authorized_at ? ` on ${formatIST(selected.authorized_at)}` : ""}
+                  {selected.released_at ? ` -- released ${formatIST(selected.released_at)}` : ""}
                 </div>
               )}
               {selected.status === "amended" && selected.amendment_reason && (

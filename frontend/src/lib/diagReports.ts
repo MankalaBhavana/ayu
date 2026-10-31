@@ -5,6 +5,7 @@
 
 import { CLINIC_CONFIG } from "./clinicConfig";
 
+import { formatDateOnlyIST, formatIST } from "./format";
 export type ReportRow = {
   id: number; order_item_id: number; report_type: string; version: number; status: string;
   service_name: string; department_type: string; order_no: string; patient_id: string; priority: string;
@@ -60,7 +61,7 @@ export function buildReportPrintHtml(report: ReportDetail, content: Record<strin
     <p>Patient: ${patient.name || ""} ${patient.last_name || ""} &nbsp; UHID: ${report.patient_id} &nbsp; Age/Sex: ${patient.age ?? "-"}/${patient.gender ?? "-"}</p>
     <p>Order: ${report.order_no} &nbsp; Test: ${report.service_name}</p>
     ${buildPrintBody(report, content)}
-    <p style="margin-top:2rem;">Authorized by: ${report.authorized_by || "-"} ${report.authorized_at ? "on " + new Date(report.authorized_at).toLocaleString() : ""}</p>
+    <p style="margin-top:2rem;">Authorized by: ${report.authorized_by || "-"} ${report.authorized_at ? "on " + formatIST(report.authorized_at) : ""}</p>
     </body></html>
   `;
 }
@@ -93,7 +94,7 @@ export function buildWhatsAppMessage(report: ReportDetail, content: Record<strin
     `*Patient:* ${patientName(patient.name, patient.last_name, report.patient_id)} (${report.patient_id})`,
     `*Investigation:* ${report.service_name} (Order #${report.order_no})`,
     `*Status:* ${report.status.toUpperCase()} (v${report.version})`,
-    `*Date:* ${new Date().toLocaleDateString("en-GB")}`,
+    `*Date:* ${formatDateOnlyIST(new Date(), undefined, "en-GB")}`,
     "",
     "*Clinical Summary:*",
     summary,

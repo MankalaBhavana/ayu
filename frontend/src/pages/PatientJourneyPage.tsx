@@ -5,6 +5,7 @@ import { generatePDFBlob, downloadPDF, printPDF } from "../lib/exportService";
 import type { StandardPdfPayload } from "../lib/exportService";
 import type { Notice, Patient } from "../types";
 
+import { formatDateOnlyIST } from "../lib/format";
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
   onNavigate?: (pageId: string) => void;
@@ -56,7 +57,7 @@ function formatCurrency(amount?: number | null) {
 }
 
 function formatDateHeading(iso: string) {
-  return new Date(`${iso}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "long", year: "numeric", weekday: "long" });
+  return formatDateOnlyIST(`${iso}T00:00:00`, { day: "2-digit", month: "long", year: "numeric", weekday: "long" });
 }
 
 function eventDotColor(type: string) {

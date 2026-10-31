@@ -9,7 +9,7 @@ import DocumentUploadDropzone from "../components/DocumentUploadDropzone";
 import { API_BASE } from "../lib/constants";
 import { apiFetch, getHospitalCode, reportError } from "../lib/api";
 import { downloadExportBlob } from "../lib/exportShare";
-import { filterInteger, filterDecimal } from "../lib/format";
+import { filterInteger, filterDecimal, formatDateOnlyIST, todayIST, istDateKeyOffset } from "../lib/format";
 import { printViaIframe } from "../lib/printViaIframe";
 import { PRINT_WATERMARK_DATA_URI, PRINT_RX_SYMBOL_DATA_URI, PRINT_CADUCEUS_DATA_URI } from "../lib/printBrand";
 import { renderAyuPdfFooterHtml } from "../lib/pdfTemplate";
@@ -634,14 +634,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
   const [uploadingScan, setUploadingScan] = useState(false);
   const MAX_SCAN_SIZE_BYTES = 10 * 1024 * 1024;
 
-  const minFollowUpDate = useMemo(() => {
-    const d = new Date();
-    d.setDate(d.getDate() + 1);
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  }, []);
+  const minFollowUpDate = useMemo(() => istDateKeyOffset(1), []);
 
   const uploadPrescriptionScan = async () => {
     if (!scanFile) return;
@@ -701,7 +694,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
 
   useEffect(() => {
     if (view === "prescription") {
-      const queueDate = new Date().toLocaleDateString("en-CA");
+      const queueDate = todayIST();
       fetch(`${API_BASE}/api/appointments?date=${encodeURIComponent(queueDate)}`, {
         credentials: "include",
         headers: { "X-Hospital-Code": getHospitalCode() }
@@ -1110,7 +1103,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
   };
 
   const getPrescriptionHtml = () => {
-    const printDate = new Date().toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const printDate = formatDateOnlyIST(new Date(), { day: "2-digit", month: "2-digit", year: "numeric" }, "en-GB");
     const patientAddress = bannerPatient ? [bannerPatient.address, (bannerPatient as any).city].filter(Boolean).join(", ") : "";
 
     return buildPrescriptionHtml({
@@ -1133,7 +1126,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
 
   const getHistoryPrescriptionHtml = (rx: any) => {
     const printDate = rx.created_at
-      ? new Date(rx.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" })
+      ? formatDateOnlyIST(rx.created_at, { day: "2-digit", month: "2-digit", year: "numeric" }, "en-GB")
       : "";
     const rxMeds = (rx.medicines || []).filter((m: any) => (m.medicine_name || "").trim());
     const patientAddress = bannerPatient ? [bannerPatient.address, (bannerPatient as any).city].filter(Boolean).join(", ") : "";
@@ -1610,7 +1603,7 @@ export default function PatientWorkflowPage({ setNotice, view }: Props) {
             <div style={{ display: "flex", flexDirection: "column", gap: "0.75rem" }}>
               {prescriptionHistory.map((rx: any) => {
                 const isExpanded = expandedHistoryId === rx.id;
-                const rxDate = rx.created_at ? new Date(rx.created_at).toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" }) : "-";
+                const rxDate = rx.created_at ? formatDateOnlyIST(rx.created_at, { day: "2-digit", month: "short", year: "numeric" }, "en-GB") : "-";
                 const rxMeds = rx.medicines || [];
                 return (
                   <div key={rx.id} style={{ border: "1px solid var(--border)", borderRadius: "8px", overflow: "hidden", background: isExpanded ? "var(--bg-card)" : undefined, transition: "background 0.2s" }}>

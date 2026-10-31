@@ -8,6 +8,7 @@ import { printViaIframe } from "../../lib/printViaIframe";
 import { buildPrintDocumentHtml } from "../../lib/printTemplates";
 import { PRINT_BRAND_HEADER_DATA_URI } from "../../lib/printBrand";
 
+import { formatDateOnlyIST, formatIST, todayIST, getTimestamp, toISTDateKey } from "../../lib/format";
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
   onNavigate: (pageId: string) => void;
@@ -69,19 +70,19 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
   // Filtered sales
   const filteredSales = useMemo(() => {
     if (dateFilter === "all") return sales;
-    const now = new Date();
+    const today = todayIST();
     return sales.filter((s) => {
       if (!s.sold_at) return false;
-      const d = new Date(s.sold_at);
+      const day = toISTDateKey(s.sold_at);
       if (dateFilter === "today") {
-        return d.toDateString() === now.toDateString();
+        return day === today;
       }
       if (dateFilter === "week") {
-        const diffDays = (now.getTime() - d.getTime()) / (1000 * 3600 * 24);
+        const diffDays = (Date.now() - getTimestamp(s.sold_at)) / (1000 * 3600 * 24);
         return diffDays <= 7;
       }
       if (dateFilter === "month") {
-        return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        return day.slice(0, 7) === today.slice(0, 7);
       }
       return true;
     });
@@ -94,13 +95,13 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
   // still-quarantined ones.
   const filteredReturns = useMemo(() => {
     if (dateFilter === "all") return returns;
-    const now = new Date();
+    const today = todayIST();
     return returns.filter((r) => {
       if (!r.created_at) return false;
-      const d = new Date(r.created_at);
-      if (dateFilter === "today") return d.toDateString() === now.toDateString();
-      if (dateFilter === "week") return (now.getTime() - d.getTime()) / (1000 * 3600 * 24) <= 7;
-      if (dateFilter === "month") return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+      const day = toISTDateKey(r.created_at);
+      if (dateFilter === "today") return day === today;
+      if (dateFilter === "week") return (Date.now() - getTimestamp(r.created_at)) / (1000 * 3600 * 24) <= 7;
+      if (dateFilter === "month") return day.slice(0, 7) === today.slice(0, 7);
       return true;
     });
   }, [returns, dateFilter]);
@@ -206,7 +207,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
     a.href = url;
-    a.download = `pharmacy_${reportCategory}_report_${new Date().toISOString().split("T")[0]}.csv`;
+    a.download = `pharmacy_${reportCategory}_report_${todayIST()}.csv`;
     a.click();
     URL.revokeObjectURL(url);
     setNotice({ type: "success", message: `Exported ${reportCategory} report as CSV.` });
@@ -226,7 +227,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
     setPrinting(mode);
     try {
       const now = new Date();
-      const dateStr = now.toLocaleDateString("en-IN", {
+      const dateStr = formatIST(now, {
         day: "2-digit",
         month: "short",
         year: "numeric",
@@ -252,7 +253,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
           subtitle: `Complete Operational, Revenue, Valuation & Audit Master Report · Generated on ${dateStr}`,
           brand_logo: "ayu",
           document_type: "Pharmacy Comprehensive Report",
-          filename: `Pharmacy_Master_Report_${now.toISOString().split("T")[0]}`,
+          filename: `Pharmacy_Master_Report_${toISTDateKey(now)}`,
           sections: [
             {
               title: "Revenue & Sales Performance Summary",
@@ -276,7 +277,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
                 `₹${(s.amount || 0).toFixed(2)}`,
                 s.stock_source || "CASH",
                 s.patient_id || "-",
-                s.sold_at ? new Date(s.sold_at).toLocaleString("en-IN") : "-",
+                s.sold_at ? formatIST(s.sold_at) : "-",
               ]),
             },
             {
@@ -314,7 +315,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
                       r.quantity,
                       r.reason || "Return",
                       r.status || "Processed",
-                      r.created_at ? new Date(r.created_at).toLocaleDateString("en-IN") : "-",
+                      r.created_at ? formatDateOnlyIST(r.created_at) : "-",
                     ])
                   : [["-", "-", "-", "No returns recorded", "-", "-"]],
             },
@@ -355,7 +356,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
                 `₹${(s.amount || 0).toFixed(2)}`,
                 s.stock_source || "CASH",
                 s.patient_id || "-",
-                s.sold_at ? new Date(s.sold_at).toLocaleString("en-IN") : "-",
+                s.sold_at ? formatIST(s.sold_at) : "-",
               ]),
             },
           ],
@@ -429,7 +430,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
                       r.quantity,
                       r.reason || "Return",
                       r.status || "Processed",
-                      r.created_at ? new Date(r.created_at).toLocaleDateString("en-IN") : "-",
+                      r.created_at ? formatDateOnlyIST(r.created_at) : "-",
                     ])
                   : [["-", "-", "-", "No returns recorded", "-", "-"]],
             },
@@ -612,7 +613,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
                       </td>
                       <td style={{ padding: "0.5rem 0.75rem", color: "#64748b" }}>{s.patient_id || "-"}</td>
                       <td style={{ padding: "0.5rem 0.75rem", color: "#64748b", fontSize: "0.8rem" }}>
-                        {s.sold_at ? new Date(s.sold_at).toLocaleString("en-IN") : "-"}
+                        {s.sold_at ? formatIST(s.sold_at) : "-"}
                       </td>
                     </tr>
                   ))}
@@ -719,7 +720,7 @@ export default function PharmacyReports({ setNotice, onNavigate }: Props) {
                       </span>
                     </td>
                     <td style={{ padding: "0.5rem", color: "#64748b", fontSize: "0.8rem" }}>
-                      {r.created_at ? new Date(r.created_at).toLocaleDateString() : "-"}
+                      {r.created_at ? formatDateOnlyIST(r.created_at) : "-"}
                     </td>
                   </tr>
                 ))}

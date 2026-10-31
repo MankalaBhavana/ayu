@@ -7,7 +7,7 @@ import { Button, Checkbox, Input, Label, Select, Table, TableCell, TableHead, Ta
 import { API_BASE, DOC_TYPES, SUPPORTED_DOCUMENT_ACCEPT, SUPPORTED_DOCUMENT_EXTENSIONS, isSupportedDocumentFile } from "../lib/constants";
 import { apiFetch, reportError } from "../lib/api";
 import { fetchDepartmentNames, onDepartmentsChanged } from "../lib/departments";
-import { formatDateTimeIST, getISTDateTimeKey, getTimestamp, stripUploadTimestampPrefix, filterInteger, filterDecimal } from "../lib/format";
+import { formatDateTimeIST, getISTDateTimeKey, getTimestamp, stripUploadTimestampPrefix, filterInteger, filterDecimal, formatTimeIST, formatDateOnlyIST, nowISTISOString, todayIST } from "../lib/format";
 import { printViaIframe } from "../lib/printViaIframe";
 import { renderAyuPdfHeaderHtml, renderAyuPdfFooterHtml } from "../lib/pdfTemplate";
 import { PRINT_BRAND_HEADER_DATA_URI } from "../lib/printBrand";
@@ -140,13 +140,7 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
   const [submitting, setSubmitting] = useState(false);
   const [todayAppointments, setTodayAppointments] = useState<Array<any>>([]);
 
-  const getTodayIso = () => {
-    const d = new Date();
-    const y = d.getFullYear();
-    const m = String(d.getMonth() + 1).padStart(2, "0");
-    const day = String(d.getDate()).padStart(2, "0");
-    return `${y}-${m}-${day}`;
-  };
+  const getTodayIso = () => todayIST();
 
   const loadTodayAppointments = async () => {
     try {
@@ -572,8 +566,8 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
     if (!activePatient) return;
     
     const now = new Date();
-    const printDate = now.toLocaleDateString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric" });
-    const printTime = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
+    const printDate = formatDateOnlyIST(now, { day: "2-digit", month: "2-digit", year: "numeric" }, "en-GB");
+    const printTime = formatTimeIST(now, { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }, "en-US");
 
 
 
@@ -587,7 +581,7 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
     const mobile = profileUpdates.phone || activePatient.phone || activePatient.family_mobile || "-";
     const fee = Number(reviewFee || 0).toFixed(2);
     const operatorName = "name";
-    const visitTime = now.toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", hour12: true });
+    const visitTime = formatTimeIST(now, { hour: "2-digit", minute: "2-digit", hour12: true }, "en-US");
 
     const html = `<!doctype html>
       <html>
@@ -784,14 +778,14 @@ export default function ReadmitPage({ onSelect, setNotice, onReadmitComplete, oc
         name: [activePatient.name, activePatient.middle_name, activePatient.last_name].filter(Boolean).join(" ").trim() || activePatient.patient_id || "Patient",
         ageGender: `${profileUpdates.age || activePatient.age || "-"} / ${profileUpdates.gender || activePatient.gender || "-"}`,
         visitType: "Re-visit",
-        arrivedAt: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+        arrivedAt: formatTimeIST(new Date(), { hour: "2-digit", minute: "2-digit" }),
         status: "In Queue",
         mobile: profileUpdates.phone || activePatient.phone || activePatient.family_mobile || "",
         source: "readmit",
         admissionId: data.admission_id,
         appointmentId: data.appointment_id,
         paymentMode: paymentMode || undefined,
-        createdAt: new Date().toISOString(),
+        createdAt: nowISTISOString(),
         department: doctorDepartment || undefined,
         doctor: doctorName || undefined,
         priority: "Follow-up",

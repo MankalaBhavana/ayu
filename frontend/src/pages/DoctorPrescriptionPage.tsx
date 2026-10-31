@@ -6,6 +6,7 @@ import { apiFetch, getHospitalCode, reportError } from "../lib/api";
 import { fullPatientName } from "../lib/patientLookup";
 import type { Notice, Patient } from "../types";
 
+import { formatIST } from "../lib/format";
 type Props = {
   setNotice: Dispatch<SetStateAction<Notice | null>>;
   onNavigate?: (pageId: string) => void;
@@ -104,7 +105,7 @@ export default function DoctorPrescriptionPage({ setNotice, onNavigate }: Props)
     if (previewUrl) URL.revokeObjectURL(previewUrl);
     setSelectedFile(file);
     setPreviewUrl(file.type.startsWith("image/") ? URL.createObjectURL(file) : null);
-    setUploadedAt(new Date().toLocaleString("en-GB", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }));
+    setUploadedAt(formatIST(new Date(), { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }, "en-GB"));
     setPrescriptionStatus("Draft");
     setNotice({ type: "success", message: `"${file.name}" ready. Send to Pharmacy to upload it.` });
   };
@@ -398,7 +399,7 @@ export default function DoctorPrescriptionPage({ setNotice, onNavigate }: Props)
                 {!loadingHistory && sentList.map((item) => (
                   <tr key={item.id}>
                     <td className="patient-name-cell">{item.file_name || `Document #${item.id}`}</td>
-                    <td className="time-cell">{new Date(item.created_at).toLocaleString()}</td>
+                    <td className="time-cell">{formatIST(item.created_at)}</td>
                     <td>
                       <span className="status-badge status-sent">
                         <span className="badge-dot">●</span> Visible to Pharmacy
@@ -482,7 +483,7 @@ export default function DoctorPrescriptionPage({ setNotice, onNavigate }: Props)
         {viewModalItem && (
           <div className="doc-rx-modal-body">
             <div className="modal-meta-grid">
-              <div><strong>Uploaded:</strong> {new Date(viewModalItem.created_at).toLocaleString()}</div>
+              <div><strong>Uploaded:</strong> {formatIST(viewModalItem.created_at)}</div>
             </div>
             <div className="modal-sheet-preview" style={{ margin: "16px 0" }}>
               {(viewModalItem.mime_type || "").startsWith("image/") ? (

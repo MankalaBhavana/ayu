@@ -1,14 +1,16 @@
 import os
 import re
 import traceback
+from datetime import datetime
 
 from fastapi import FastAPI, HTTPException, Request
+from fastapi import encoders as fastapi_encoders
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from sqlalchemy.exc import IntegrityError, OperationalError
 
-from database import db_session
+from database import db_session, to_ist_isoformat
 import security
 import legacy_sql
 import legacy_queries
@@ -19,6 +21,10 @@ PROJECT_ROOT = os.path.abspath(os.path.join(BASE_DIR, ".."))
 FRONTEND_DIST = os.path.join(PROJECT_ROOT, "frontend", "dist")
 
 app = FastAPI(title="HospAI API")
+
+# Every datetime in an API response carries an explicit +05:30 offset, so the
+# frontend never has to guess which timezone a timestamp is in.
+fastapi_encoders.ENCODERS_BY_TYPE[datetime] = to_ist_isoformat
 
 # ------------------------------------------------------------------ CORS --
 default_allowed_origins = {

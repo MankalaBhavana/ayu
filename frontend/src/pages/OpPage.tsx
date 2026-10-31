@@ -3,7 +3,7 @@ import type { Dispatch, FormEvent, SetStateAction } from "react";
 import StatCard from "../components/StatCard";
 import { Button, Input, Select, Table, TableCell, TableHead, TableRow } from "../components/ui";
 import { apiFetch, reportError } from "../lib/api";
-import { formatDateTime } from "../lib/format";
+import { formatDateTime, formatIST, todayIST, nowISTISOString, toISTDateTimeLocal } from "../lib/format";
 import { openRazorpayCheckout } from "../lib/razorpay";
 import { fullPatientName, lookupPatientByUhid, normalizeUhidLookup } from "../lib/patientLookup";
 import type { Appointment, DoctorSchedule, Notice, OpSummary } from "../types";
@@ -101,7 +101,7 @@ const DEFAULT_APPOINTMENT_FORM: AppointmentForm = {
   notes: "",
 };
 
-const todayIsoDate = () => new Date().toLocaleDateString('en-CA');
+const todayIsoDate = () => todayIST();
 
 const OP_PAYMENT_METHODS = [
   { value: "upi", label: "UPI", detail: "QR / UPI ID" },
@@ -112,10 +112,7 @@ const OP_PAYMENT_METHODS = [
 
 function toDateTimeLocalValue(value?: string | null) {
   if (!value) return "";
-  const parsed = new Date(String(value).replace(" ", "T"));
-  if (Number.isNaN(parsed.getTime())) return "";
-  const pad = (num: number) => String(num).padStart(2, "0");
-  return `${parsed.getFullYear()}-${pad(parsed.getMonth() + 1)}-${pad(parsed.getDate())}T${pad(parsed.getHours())}:${pad(parsed.getMinutes())}`;
+  return toISTDateTimeLocal(value);
 }
 
 const safeText = (value: unknown) => String(value ?? "-")
@@ -135,9 +132,7 @@ function getAmPmLabel(value?: string | null) {
 
 function getAppointmentTimeLabel(value?: string | null) {
   if (!value) return "No appointment time selected";
-  const parsed = new Date(String(value).replace(" ", "T"));
-  if (Number.isNaN(parsed.getTime())) return `Time: ${value}`;
-  return parsed.toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  return formatIST(value, { dateStyle: "medium", timeStyle: "short" }, "en-IN", `Time: ${value}`);
 }
 
 function printTokenSlip(appointment: { token_no?: number | string; patient_id?: string; patient_name?: string; doctor_name?: string; department?: string; appointment_date?: string; appointment_kind?: string; visit_type?: string; status?: string; notes?: string }, setNotice: Dispatch<SetStateAction<Notice | null>>) {
@@ -145,7 +140,7 @@ function printTokenSlip(appointment: { token_no?: number | string; patient_id?: 
     setNotice({ type: "warning", message: "Generate a token before printing." });
     return;
   }
-  const printedAt = new Date().toLocaleString("en-IN", { dateStyle: "medium", timeStyle: "short" });
+  const printedAt = formatIST(new Date(), { dateStyle: "medium", timeStyle: "short" });
     const row = (label: string, value: unknown) => `<div class="token-field"><span>${safeText(label)}</span><strong>${safeText(value || "-")}</strong></div>`;
   const html = `<!doctype html><html><head><title>Token ${safeText(appointment.token_no)} OP Visit</title><style>
     @page { size: A5 portrait; margin: 10mm; } *{box-sizing:border-box} body{margin:0;background:#fff;color:#111827;font-family:Arial,Helvetica,sans-serif;font-size:11px}.token-sheet{width:100%}.token-head{display:flex;flex-direction:column;align-items:stretch;gap:8px;margin-bottom:12px}.token-brand{display:flex;align-items:center;gap:10px;width:100%;max-width:none}.token-brand img{display:block;width:100%;max-height:86px;height:auto;object-fit:contain;object-position:left center}.token-brand strong{display:block;color:#062f56;font-size:22px;line-height:1}.token-brand span{display:block;margin-top:4px;color:#475569;font-size:10px;letter-spacing:.04em;text-transform:uppercase}.token-title{text-align:right;border-top:1px solid #e5e7eb;padding-top:5px}.token-title h1{margin:0 0 5px;font-size:16px;text-decoration:underline}.token-title p{margin:2px 0;color:#475569}.token-no{margin:0 0 12px;padding:12px;border:2px solid #111827;text-align:center}.token-no span{display:block;color:#334155;font-size:10px;font-weight:700;letter-spacing:.08em;text-transform:uppercase}.token-no strong{display:block;margin-top:4px;color:#062f56;font-size:34px;line-height:1}.token-section{border:1px solid #111827;border-bottom:0}.token-section:last-child{border-bottom:1px solid #111827}.token-section h2{margin:0;padding:6px 8px;border-bottom:1px solid #111827;background:#eef7fb;color:#062f56;font-size:12px;letter-spacing:.02em;text-transform:uppercase}.token-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}.token-field{min-height:32px;padding:6px 8px;border-right:1px solid #111827;border-bottom:1px solid #111827}.token-field:nth-child(2n){border-right:0}.token-field span{display:block;margin-bottom:3px;color:#334155;font-size:9px;font-weight:700;text-transform:uppercase}.token-field strong{display:block;color:#111827;font-size:11px}.token-note{padding:8px;border-bottom:1px solid #111827;color:#334155;line-height:1.45}.token-sign{display:grid;grid-template-columns:repeat(2,1fr);gap:18px;margin-top:24px}.token-sign div{padding-top:22px;border-top:1px solid #111827;text-align:center;font-weight:700}
@@ -506,7 +501,7 @@ export default function OpPage({ setNotice, canEdit }: Props) {
     try {
       await apiFetch(`/api/appointments/${appointment.id}`, {
         method: "PUT",
-        body: JSON.stringify({ reminder_sent_at: new Date().toISOString() }),
+        body: JSON.stringify({ reminder_sent_at: nowISTISOString() }),
       });
       setNotice({ type: "success", message: "Reminder marked as sent." });
       await loadOpDesk(selectedDate, selectedDoctor);

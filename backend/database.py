@@ -1,9 +1,10 @@
 import os
 from contextlib import contextmanager
-from datetime import timedelta, timezone
+from datetime import datetime, timedelta, timezone
 
 from dotenv import load_dotenv
-from sqlalchemy import create_engine
+from psycopg.types.datetime import TimestamptzBinaryLoader, TimestamptzLoader
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, Session
 
 BASE_DIR = os.path.dirname(__file__)
@@ -32,16 +33,63 @@ if not (DATABASE_URL.startswith("postgresql://") or DATABASE_URL.startswith("pos
 if DATABASE_URL.startswith("postgresql://"):
     DATABASE_URL = "postgresql+psycopg://" + DATABASE_URL[len("postgresql://"):]
 
+# ----------------------------------------------------------- time handling --
+# Single timestamp convention for the whole HIMS:
+#   * PostgreSQL: every timestamp column is TIMESTAMPTZ (an absolute instant),
+#     so stored values can never drift whatever the server/session timezone is.
+#   * DB session: TimeZone=Asia/Kolkata, so NOW()/CURRENT_DATE/DATE(col) and
+#     naive literals/params are all evaluated in IST.
+#   * Python: datetimes are naive and mean IST wall-clock time. TIMESTAMPTZ
+#     values are loaded as naive IST (loader below), and naive values written
+#     back are interpreted by PostgreSQL in the IST session timezone.
+#   * API: datetimes are serialised with an explicit +05:30 offset
+#     (see to_ist_isoformat, wired into FastAPI's encoder in main.py).
+DB_TIMEZONE = "Asia/Kolkata"
+IST_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
+
 engine = create_engine(
     DATABASE_URL,
     pool_pre_ping=True,
     future=True,
-    connect_args={"options": "-c timezone=Asia/Kolkata"},
+    connect_args={"options": f"-c timezone={DB_TIMEZONE}"},
 )
 SessionLocal = sessionmaker(bind=engine, autoflush=False, autocommit=False, future=True)
 
-IST_TIMEZONE = timezone(timedelta(hours=5, minutes=30))
 DEFAULT_HOSPITAL_CODE = (os.getenv("DEFAULT_HOSPITAL_CODE") or "hosp-default").strip().lower()
+
+
+def to_naive_ist(value: datetime) -> datetime:
+    """Normalise any datetime to naive IST wall-clock time (naive input is assumed IST)."""
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(IST_TIMEZONE).replace(tzinfo=None)
+
+
+def to_ist_isoformat(value: datetime) -> str:
+    """ISO-8601 string with an explicit +05:30 offset (naive input is assumed IST)."""
+    if value.tzinfo is None:
+        value = value.replace(tzinfo=IST_TIMEZONE)
+    return value.astimezone(IST_TIMEZONE).isoformat()
+
+
+class _ISTTimestamptzLoader(TimestamptzLoader):
+    def load(self, data):
+        return to_naive_ist(super().load(data))
+
+
+class _ISTTimestamptzBinaryLoader(TimestamptzBinaryLoader):
+    def load(self, data):
+        return to_naive_ist(super().load(data))
+
+
+@event.listens_for(engine, "connect")
+def _configure_ist_connection(dbapi_connection, _connection_record):
+    # Belt and braces in case a pooler drops the startup "options" parameter.
+    with dbapi_connection.cursor() as cur:
+        cur.execute(f"SET TIME ZONE '{DB_TIMEZONE}'")
+    dbapi_connection.commit()
+    dbapi_connection.adapters.register_loader("timestamptz", _ISTTimestamptzLoader)
+    dbapi_connection.adapters.register_loader("timestamptz", _ISTTimestamptzBinaryLoader)
 
 
 def get_db():

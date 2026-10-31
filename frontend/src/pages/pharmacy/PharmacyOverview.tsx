@@ -3,9 +3,9 @@ import type { Dispatch, SetStateAction } from "react";
 import { Button, Input, Modal } from "../../components/ui";
 import { apiFetch, reportError } from "../../lib/api";
 import type { Notice, Patient } from "../../types";
-import DateCalendarPicker, { toIsoDate, parseIsoDate } from "../../components/DateCalendarPicker";
+import DateCalendarPicker, { parseIsoDate } from "../../components/DateCalendarPicker";
 import { DonutChart } from "../../components/charts";
-import { formatDateTimeIST } from "../../lib/format";
+import { formatDateTimeIST, formatDateOnlyIST, toDate, todayIST } from "../../lib/format";
 import { downloadPDF, printPDF, generatePDFBlob } from "../../lib/exportService";
 import type { StandardPdfPayload } from "../../lib/exportService";
 import PdfExportDropdown from "../../components/PdfExportDropdown";
@@ -136,7 +136,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
   const [refreshing, setRefreshing] = useState(false);
   const [summary, setSummary] = useState<PharmacySummary | null>(null);
   const [globalSearch, setGlobalSearch] = useState("");
-  const [dateRange, setDateRange] = useState(() => toIsoDate(new Date()));
+  const [dateRange, setDateRange] = useState(() => todayIST());
   const [exportStatus, setExportStatus] = useState<string>("");
 
   const currentDateLabel = useMemo(() => {
@@ -196,7 +196,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           ],
         },
         {
-          title: dateRange === toIsoDate(new Date()) ? "Today's Pharmacy Operations Ledger" : `Pharmacy Operations for ${currentDateLabel}`,
+          title: dateRange === todayIST() ? "Today's Pharmacy Operations Ledger" : `Pharmacy Operations for ${currentDateLabel}`,
           headers: ["Activity / Event", "Count", "Status"],
           rows: [
             ["OP Dispensations", String(todayActivity.op_dispensations), "Completed"],
@@ -305,7 +305,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           available_qty: number;
           reorder_level: number;
         }>();
-        const todayStr = new Date().toISOString().slice(0, 10);
+        const todayStr = todayIST();
         let expiredBatches = 0;
         let nearExpiryBatches = 0;
 
@@ -321,7 +321,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
             reorder_level: (item as any).master_reorder_level ?? 10,
           };
           const isExpired = !!item.expiry_date && item.expiry_date.slice(0, 10) < todayStr;
-          const isNearExp = !isExpired && !!item.expiry_date && (new Date(item.expiry_date).getTime() - new Date().getTime()) < (90 * 24 * 60 * 60 * 1000);
+          const isNearExp = !isExpired && !!item.expiry_date && ((toDate(item.expiry_date)?.getTime() ?? NaN) - new Date().getTime()) < (90 * 24 * 60 * 60 * 1000);
 
           if (isExpired) expiredBatches += 1;
           if (isNearExp) nearExpiryBatches += 1;
@@ -522,7 +522,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
     const s = summary;
     const totalBills = (s?.opd_prescriptions_count || 0) + (s?.external_sales_count || 0);
     setPharmacyPopup({
-      title: dateRange === toIsoDate(new Date()) ? "Today's Pharmacy Revenue Breakdown" : `Pharmacy Revenue Breakdown (${currentDateLabel})`,
+      title: dateRange === todayIST() ? "Today's Pharmacy Revenue Breakdown" : `Pharmacy Revenue Breakdown (${currentDateLabel})`,
       subtitle: `Consolidated pharmacy sales and counter billing for ${currentDateLabel}`,
       total: s?.sales_today || 0,
       secondaryLabel: "YESTERDAY SALES",
@@ -646,8 +646,8 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
   // Chart data breakdown -- real daily aggregates from the backend
   // (summary.sales_trend), never synthesized. A day with no sales is a
   // real zero, not a fabricated estimate.
-  const dayLabel = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-IN", { weekday: "short" });
-  const dateLabel = (iso: string) => new Date(`${iso}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+  const dayLabel = (iso: string) => formatDateOnlyIST(`${iso}T00:00:00`, { weekday: "short" });
+  const dateLabel = (iso: string) => formatDateOnlyIST(`${iso}T00:00:00`, { day: "2-digit", month: "short" });
 
   const totalConsumptionRevenue = useMemo(() => {
     return (summary?.top_medicines || []).reduce((acc, m) => acc + Number(m.total_amount || 0), 0);
@@ -926,7 +926,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
             onChange={setDateRange}
             formatLabel={(iso) => {
               const formatted = new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", year: "numeric" }).format(parseIsoDate(iso));
-              return iso === toIsoDate(new Date()) ? `Today (${formatted})` : formatted;
+              return iso === todayIST() ? `Today (${formatted})` : formatted;
             }}
           />
 
@@ -1215,7 +1215,7 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
           </div>
           <div className="hosp-kpi-body">
             <p className="hosp-kpi-label">
-              {dateRange === toIsoDate(new Date()) ? "Today's Sales" : `Sales (${currentDateLabel})`}
+              {dateRange === todayIST() ? "Today's Sales" : `Sales (${currentDateLabel})`}
             </p>
             <h3 className="hosp-kpi-value">₹{(summary?.sales_today ?? 0).toLocaleString("en-IN")}</h3>
             <span className="hosp-kpi-sub">
@@ -1358,10 +1358,10 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
       >
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
           <h2 style={{ fontSize: "13.5px", fontWeight: 700, margin: 0, color: "#1e293b", textTransform: "uppercase", letterSpacing: "0.03em" }}>
-            {dateRange === toIsoDate(new Date()) ? "Today's Pharmacy Activity" : `Pharmacy Activity (${currentDateLabel})`}
+            {dateRange === todayIST() ? "Today's Pharmacy Activity" : `Pharmacy Activity (${currentDateLabel})`}
           </h2>
           <span style={{ fontSize: "12px", color: "#64748b", fontWeight: 500 }}>
-            {dateRange === toIsoDate(new Date()) ? "Live Operations Ledger" : `Operations Ledger for ${currentDateLabel}`}
+            {dateRange === todayIST() ? "Live Operations Ledger" : `Operations Ledger for ${currentDateLabel}`}
           </span>
         </div>
 
@@ -2026,10 +2026,10 @@ export default function PharmacyOverview({ setNotice, onNavigate }: Props) {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "12px" }}>
           <div>
             <h2 style={{ fontSize: "14px", fontWeight: 700, margin: 0, color: "#0f172a" }}>
-              {dateRange === toIsoDate(new Date()) ? "Recent Pharmacy Operations" : `Pharmacy Operations (${currentDateLabel})`}
+              {dateRange === todayIST() ? "Recent Pharmacy Operations" : `Pharmacy Operations (${currentDateLabel})`}
             </h2>
             <p style={{ margin: "2px 0 0 0", fontSize: "11.5px", color: "#64748b" }}>
-              {dateRange === toIsoDate(new Date())
+              {dateRange === todayIST()
                 ? "Audit log across OP Dispensations, returns, and inventory adjustments"
                 : `Transactions and operations recorded for ${currentDateLabel}`}
             </p>

@@ -24,7 +24,7 @@ class AccountsLedger(Base):
     reference_no: Mapped[Optional[str]] = mapped_column(Text)
     counterparty_name: Mapped[Optional[str]] = mapped_column(Text)
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class AdmissionConsumption(Base):
@@ -51,7 +51,7 @@ class AdmissionConsumption(Base):
     tablet_count: Mapped[Optional[float]] = mapped_column(Double(53), server_default=text('0'))
     bill_number: Mapped[Optional[str]] = mapped_column(Text)
     generated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class Appointments(Base):
@@ -69,17 +69,17 @@ class Appointments(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     patient_name: Mapped[str] = mapped_column(Text, nullable=False)
     visit_type: Mapped[str] = mapped_column(Text, nullable=False)
-    appointment_date: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
+    appointment_date: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     token_no: Mapped[int] = mapped_column(Integer, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'scheduled'::text"))
     patient_id: Mapped[Optional[str]] = mapped_column(Text)
     department: Mapped[Optional[str]] = mapped_column(Text)
     doctor_name: Mapped[Optional[str]] = mapped_column(Text)
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     appointment_kind: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'new'::text"))
     follow_up_for: Mapped[Optional[int]] = mapped_column(Integer)
-    reminder_sent_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    reminder_sent_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     no_show_marked: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('0'))
     consultation_fee: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
 
@@ -115,7 +115,7 @@ class AuditLogs(Base):
     entity_key: Mapped[Optional[str]] = mapped_column(Text)
     payload: Mapped[Optional[str]] = mapped_column(Text)
     ip_address: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class BedAllocations(Base):
@@ -134,16 +134,16 @@ class BedAllocations(Base):
     ward: Mapped[Optional[str]] = mapped_column(Text)
     room_no: Mapped[Optional[str]] = mapped_column(Text)
     bed_no: Mapped[Optional[str]] = mapped_column(Text)
-    allocated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    released_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    allocated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    released_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     daily_charge: Mapped[Optional[float]] = mapped_column(Double(53), server_default=text('0.0'))
     number_of_days: Mapped[Optional[float]] = mapped_column(Double(53), server_default=text('1'))
     total_amount: Mapped[Optional[float]] = mapped_column(Double(53), server_default=text('0.0'))
     discount: Mapped[Optional[float]] = mapped_column(Double(53), server_default=text('0.0'))
     additional_charges: Mapped[Optional[float]] = mapped_column(Double(53), server_default=text('0.0'))
     bed_type: Mapped[Optional[str]] = mapped_column(Text)
-    expected_discharge_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    expected_discharge_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'active'::text"))
     assigned_doctor: Mapped[Optional[str]] = mapped_column(Text)
     amount_per_day: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
@@ -188,7 +188,7 @@ class Certificates(Base):
     body: Mapped[str] = mapped_column(Text, nullable=False)
     admission_id: Mapped[Optional[int]] = mapped_column(Integer)
     issued_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class ChatbotAuditLogs(Base):
@@ -206,7 +206,7 @@ class ChatbotAuditLogs(Base):
     response_status: Mapped[Optional[str]] = mapped_column(Text)
     execution_time_ms: Mapped[Optional[int]] = mapped_column(Integer)
     hospital_id: Mapped[Optional[int]] = mapped_column(Integer)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DepartmentMaster(Base):
@@ -222,7 +222,7 @@ class DepartmentMaster(Base):
     department_name: Mapped[str] = mapped_column(Text, nullable=False)
     hospital_id: Mapped[Optional[int]] = mapped_column(Integer)
     mapped_head_employee_id: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     doctor_name: Mapped[Optional[str]] = mapped_column(Text)
 
 
@@ -245,7 +245,7 @@ class DiagEquipment(Base):
     responsible_staff: Mapped[Optional[str]] = mapped_column(Text)
     next_maintenance_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
     next_calibration_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     diag_equipment_maintenance: Mapped[list['DiagEquipmentMaintenance']] = relationship('DiagEquipmentMaintenance', back_populates='equipment')
     diag_qc_runs: Mapped[list['DiagQcRuns']] = relationship('DiagQcRuns', back_populates='equipment')
@@ -279,8 +279,8 @@ class DiagOrders(Base):
     source_document_id: Mapped[Optional[int]] = mapped_column(Integer)
     invoice_id: Mapped[Optional[int]] = mapped_column(Integer)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    confirmed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    confirmed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
 
     diag_order_items: Mapped[list['DiagOrderItems']] = relationship('DiagOrderItems', back_populates='order')
 
@@ -298,7 +298,7 @@ class DiagPackages(Base):
     rate: Mapped[float] = mapped_column(REAL, nullable=False, server_default=text('0'))
     active: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text('true'))
     created_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     diag_package_items: Mapped[list['DiagPackageItems']] = relationship('DiagPackageItems', back_populates='package')
 
@@ -321,7 +321,7 @@ class DiagReagentLots(Base):
     expiry_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
     storage_location: Mapped[Optional[str]] = mapped_column(Text)
     supplier_ref: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     diag_stock_movements: Mapped[list['DiagStockMovements']] = relationship('DiagStockMovements', back_populates='reagent_lot')
 
@@ -341,7 +341,7 @@ class DiagReportTemplates(Base):
     report_type: Mapped[str] = mapped_column(Text, nullable=False)
     layout: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'structured'::text"))
     active: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text('true'))
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DiagServices(Base):
@@ -370,8 +370,8 @@ class DiagServices(Base):
     requires_scheduling: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text('false'))
     report_template: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'generic'::text"))
     created_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     diag_order_items: Mapped[list['DiagOrderItems']] = relationship('DiagOrderItems', back_populates='service')
     diag_package_items: Mapped[list['DiagPackageItems']] = relationship('DiagPackageItems', back_populates='service')
@@ -399,11 +399,11 @@ class Diagnostics(Base):
     paid_amount: Mapped[Optional[float]] = mapped_column(Double(53), server_default=text('0'))
     due_amount: Mapped[Optional[float]] = mapped_column(Double(53), server_default=text('0'))
     status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'due'::text"))
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     sample_barcode: Mapped[Optional[str]] = mapped_column(Text)
     order_status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'ordered'::text"))
-    collected_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    reported_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    collected_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
+    reported_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     patient_name: Mapped[Optional[str]] = mapped_column(Text)
     age: Mapped[Optional[int]] = mapped_column(Integer)
     gender: Mapped[Optional[str]] = mapped_column(Text)
@@ -449,8 +449,8 @@ class DischargePreparations(Base):
     prepared_by: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DoctorPayouts(Base):
@@ -470,7 +470,7 @@ class DoctorPayouts(Base):
     due_amount: Mapped[Optional[float]] = mapped_column(Double(53), server_default=text('0'))
     paid_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     doctor_payout_payments: Mapped[list['DoctorPayoutPayments']] = relationship('DoctorPayoutPayments', back_populates='payout')
 
@@ -489,7 +489,7 @@ class DoctorRoundAttachments(Base):
     file_name: Mapped[Optional[str]] = mapped_column(Text)
     file_path: Mapped[Optional[str]] = mapped_column(Text)
     uploaded_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DoctorRoundFollowups(Base):
@@ -509,8 +509,8 @@ class DoctorRoundFollowups(Base):
     alerts: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DoctorRoundInstructions(Base):
@@ -525,14 +525,14 @@ class DoctorRoundInstructions(Base):
     patient_id: Mapped[Optional[str]] = mapped_column(Text)
     instruction_text: Mapped[Optional[str]] = mapped_column(Text)
     acknowledged_by: Mapped[Optional[str]] = mapped_column(Text)
-    acknowledged_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    acknowledged_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     completed_by: Mapped[Optional[str]] = mapped_column(Text)
-    completed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    completed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     status: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DoctorRoundInvestigations(Base):
@@ -552,8 +552,8 @@ class DoctorRoundInvestigations(Base):
     remarks: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DoctorRoundMedications(Base):
@@ -575,13 +575,13 @@ class DoctorRoundMedications(Base):
     end_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
     priority: Mapped[Optional[str]] = mapped_column(Text)
     given_during_round: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('0'))
-    administered_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    administered_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     administered_by: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DoctorRoundProcedures(Base):
@@ -600,8 +600,8 @@ class DoctorRoundProcedures(Base):
     remarks: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DoctorRoundSchedules(Base):
@@ -624,8 +624,8 @@ class DoctorRoundSchedules(Base):
     status: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DoctorRounds(Base):
@@ -653,11 +653,11 @@ class DoctorRounds(Base):
     next_review_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
     doctor_signature: Mapped[Optional[str]] = mapped_column(Text)
     nurse_acknowledgement: Mapped[Optional[str]] = mapped_column(Text)
-    acknowledged_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    acknowledged_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DoctorSchedules(Base):
@@ -678,7 +678,7 @@ class DoctorSchedules(Base):
     end_time: Mapped[Optional[str]] = mapped_column(Text)
     slot_capacity: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('12'))
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     consultation_fee: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
     review_fee: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
 
@@ -695,7 +695,7 @@ class DocumentAccessLogs(Base):
     hospital_id: Mapped[Optional[int]] = mapped_column(Integer)
     user_name: Mapped[Optional[str]] = mapped_column(Text)
     ip_address: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DocumentCategories(Base):
@@ -709,7 +709,7 @@ class DocumentCategories(Base):
     hospital_id: Mapped[Optional[int]] = mapped_column(Integer)
     module_name: Mapped[Optional[str]] = mapped_column(Text)
     is_active: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('1'))
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DocumentDuplicates(Base):
@@ -726,7 +726,7 @@ class DocumentDuplicates(Base):
     match_type: Mapped[Optional[str]] = mapped_column(Text)
     similarity_score: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
     status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'open'::text"))
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DocumentModuleLinks(Base):
@@ -744,7 +744,7 @@ class DocumentModuleLinks(Base):
     module_record_id: Mapped[Optional[str]] = mapped_column(Text)
     link_status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'active'::text"))
     created_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DocumentNotifications(Base):
@@ -763,7 +763,7 @@ class DocumentNotifications(Base):
     module_name: Mapped[Optional[str]] = mapped_column(Text)
     message: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'unread'::text"))
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DocumentTags(Base):
@@ -776,7 +776,7 @@ class DocumentTags(Base):
     document_id: Mapped[int] = mapped_column(Integer, nullable=False)
     tag: Mapped[str] = mapped_column(Text, nullable=False)
     hospital_id: Mapped[Optional[int]] = mapped_column(Integer)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DocumentVerification(Base):
@@ -793,8 +793,8 @@ class DocumentVerification(Base):
     verified_by: Mapped[Optional[str]] = mapped_column(Text)
     verified_data_json: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'{}'::text"))
     remarks: Mapped[Optional[str]] = mapped_column(Text)
-    verified_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    verified_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class DocumentVersions(Base):
@@ -811,7 +811,7 @@ class DocumentVersions(Base):
     file_hash: Mapped[Optional[str]] = mapped_column(Text)
     file_size: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('0'))
     uploaded_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class EmarRecords(Base):
@@ -826,7 +826,7 @@ class EmarRecords(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     patient_id: Mapped[str] = mapped_column(Text, nullable=False)
     medicine_name: Mapped[str] = mapped_column(Text, nullable=False)
-    scheduled_time: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
+    scheduled_time: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'pending'::text"))
     indent_id: Mapped[Optional[int]] = mapped_column(Integer)
     indent_item_id: Mapped[Optional[int]] = mapped_column(Integer)
@@ -835,9 +835,9 @@ class EmarRecords(Base):
     route: Mapped[Optional[str]] = mapped_column(Text)
     sale_id: Mapped[Optional[int]] = mapped_column(Integer)
     administered_by: Mapped[Optional[str]] = mapped_column(Text)
-    administered_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    administered_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class Encounters(Base):
@@ -851,7 +851,7 @@ class Encounters(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     patient_id: Mapped[str] = mapped_column(Text, nullable=False)
     encounter_type: Mapped[str] = mapped_column(Text, nullable=False)
-    arrival_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    arrival_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     insurance_provider: Mapped[Optional[str]] = mapped_column(Text)
     insurance_policy_no: Mapped[Optional[str]] = mapped_column(Text)
     is_accident: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('0'))
@@ -866,7 +866,7 @@ class Encounters(Base):
     attending_doctor: Mapped[Optional[str]] = mapped_column(Text)
     disposition: Mapped[Optional[str]] = mapped_column(Text)
     disposition_notes: Mapped[Optional[str]] = mapped_column(Text)
-    disposition_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    disposition_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     admission_id: Mapped[Optional[int]] = mapped_column(Integer)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
 
@@ -918,7 +918,7 @@ class GoodsReceipts(Base):
     purchase_order_id: Mapped[Optional[int]] = mapped_column(Integer)
     received_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
     supplier_invoice_no: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     stock_source: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'CASH'::text"))
     supplier_id: Mapped[Optional[int]] = mapped_column(Integer)
     idempotency_key: Mapped[Optional[str]] = mapped_column(Text)
@@ -947,7 +947,7 @@ class SupplierPayments(Base):
     payment_mode: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'BANK_TRANSFER'::text"))
     reference_no: Mapped[Optional[str]] = mapped_column(Text)
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class HospitalBeds(Base):
@@ -966,7 +966,7 @@ class HospitalBeds(Base):
     daily_rate: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('1000'))
     status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'available'::text"))
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class Hospitals(Base):
@@ -982,9 +982,9 @@ class Hospitals(Base):
     code: Mapped[str] = mapped_column(Text, nullable=False)
     name: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'active'::text"))
-    disabled_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    disabled_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     disabled_reason: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class IcuMonitoring(Base):
@@ -998,7 +998,7 @@ class IcuMonitoring(Base):
     hospital_id: Mapped[Optional[int]] = mapped_column(Integer)
     patient_id: Mapped[Optional[str]] = mapped_column(Text)
     patient_name: Mapped[Optional[str]] = mapped_column(Text)
-    record_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    record_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     ventilator_mode: Mapped[Optional[str]] = mapped_column(Text)
     fio2: Mapped[Optional[float]] = mapped_column(Double(53))
     peep: Mapped[Optional[float]] = mapped_column(Double(53))
@@ -1010,8 +1010,8 @@ class IcuMonitoring(Base):
     recorded_by: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class IncidentReports(Base):
@@ -1033,8 +1033,8 @@ class IncidentReports(Base):
     reporter_role: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class InsuranceClaims(Base):
@@ -1055,7 +1055,7 @@ class InsuranceClaims(Base):
     patient_id: Mapped[Optional[str]] = mapped_column(Text)
     approved_amount: Mapped[Optional[float]] = mapped_column(Double(53), server_default=text('0'))
     external_ref: Mapped[Optional[str]] = mapped_column(Text)
-    submitted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    submitted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     notes: Mapped[Optional[str]] = mapped_column(Text)
     settlement_status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'unpaid'::text"))
     patient_responsibility: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
@@ -1079,7 +1079,7 @@ class InsuranceStatusHistory(Base):
     old_status: Mapped[Optional[str]] = mapped_column(Text)
     changed_by: Mapped[Optional[str]] = mapped_column(Text)
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    changed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    changed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class InsuranceVerifications(Base):
@@ -1098,7 +1098,7 @@ class InsuranceVerifications(Base):
     policy_number: Mapped[Optional[str]] = mapped_column(Text)
     member_id: Mapped[Optional[str]] = mapped_column(Text)
     coverage_notes: Mapped[Optional[str]] = mapped_column(Text)
-    checked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    checked_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class InvoiceItems(Base):
@@ -1124,8 +1124,8 @@ class InvoiceItems(Base):
     status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'due'::text"))
     payment_mode: Mapped[Optional[str]] = mapped_column(Text)
     generated_by: Mapped[Optional[str]] = mapped_column(Text)
-    generated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    generated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class InvoicePayments(Base):
@@ -1143,7 +1143,7 @@ class InvoicePayments(Base):
     gateway_ref: Mapped[Optional[str]] = mapped_column(Text)
     converted_from_mode: Mapped[Optional[str]] = mapped_column(Text)
     converted_to_mode: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     canonical_receipt_id: Mapped[Optional[int]] = mapped_column(Integer)
     canonical_allocation_id: Mapped[Optional[int]] = mapped_column(Integer)
     receipt_no: Mapped[Optional[str]] = mapped_column(Text)
@@ -1183,7 +1183,7 @@ class Invoices(Base):
     due_amount: Mapped[Optional[float]] = mapped_column(Double(53), server_default=text('0'))
     payment_status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'due'::text"))
     created_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     patient_name: Mapped[Optional[str]] = mapped_column(Text)
     invoice_type: Mapped[Optional[str]] = mapped_column(Text)
     source_reference: Mapped[Optional[str]] = mapped_column(Text)
@@ -1191,7 +1191,7 @@ class Invoices(Base):
     refunded_amount: Mapped[Optional[float]] = mapped_column(Double(53), server_default=text('0'))
     appointment_id: Mapped[Optional[int]] = mapped_column(Integer)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     master_invoice_id: Mapped[Optional[int]] = mapped_column(Integer)
     is_master_invoice: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('0'))
 
@@ -1206,7 +1206,7 @@ class LabCategories(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     category_type: Mapped[str] = mapped_column(Text, nullable=False)
     category_name: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class LabVendors(Base):
@@ -1238,7 +1238,7 @@ class LeaveRequests(Base):
     reason: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'pending'::text"))
     decided_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class MedicationSchedules(Base):
@@ -1250,12 +1250,12 @@ class MedicationSchedules(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     patient_id: Mapped[str] = mapped_column(Text, nullable=False)
     medicine_name: Mapped[str] = mapped_column(Text, nullable=False)
-    schedule_time: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
+    schedule_time: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     dosage: Mapped[Optional[str]] = mapped_column(Text)
     administered: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('0'))
     alert_enabled: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('1'))
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class Medicines(Base):
@@ -1276,7 +1276,7 @@ class Medicines(Base):
     gst_rate: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
     manufacturer: Mapped[Optional[str]] = mapped_column(Text)
     reorder_level: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('10'))
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class NurseAttendance(Base):
@@ -1293,8 +1293,8 @@ class NurseAttendance(Base):
     nurse_name: Mapped[Optional[str]] = mapped_column(Text)
     department: Mapped[Optional[str]] = mapped_column(Text)
     shift: Mapped[Optional[str]] = mapped_column(Text)
-    login_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    logout_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    login_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
+    logout_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     break_time: Mapped[Optional[int]] = mapped_column(Integer)
     working_hours: Mapped[Optional[float]] = mapped_column(Double(53))
     attendance_status: Mapped[Optional[str]] = mapped_column(Text)
@@ -1302,8 +1302,8 @@ class NurseAttendance(Base):
     remarks: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class NurseMedicationAdministration(Base):
@@ -1322,15 +1322,15 @@ class NurseMedicationAdministration(Base):
     dose: Mapped[Optional[str]] = mapped_column(Text)
     route: Mapped[Optional[str]] = mapped_column(Text)
     frequency: Mapped[Optional[str]] = mapped_column(Text)
-    scheduled_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    administered_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    scheduled_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
+    administered_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     nurse_name: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[Optional[str]] = mapped_column(Text)
     remarks: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class NursePerformance(Base):
@@ -1354,8 +1354,8 @@ class NursePerformance(Base):
     evaluation_period: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class NursingCareLogs(Base):
@@ -1378,8 +1378,8 @@ class NursingCareLogs(Base):
     signature: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     admission_id: Mapped[Optional[int]] = mapped_column(Integer)
 
 
@@ -1398,13 +1398,13 @@ class NursingTasks(Base):
     task_type: Mapped[Optional[str]] = mapped_column(Text)
     assigned_nurse: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[Optional[str]] = mapped_column(Text)
-    due_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    completed_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    due_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
+    completed_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     remarks: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class ObservationNotes(Base):
@@ -1419,7 +1419,7 @@ class ObservationNotes(Base):
     admission_id: Mapped[Optional[int]] = mapped_column(Integer)
     doctor_name: Mapped[Optional[str]] = mapped_column(Text)
     treatment_plan: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class OcrLogs(Base):
@@ -1438,7 +1438,7 @@ class OcrLogs(Base):
     module_name: Mapped[Optional[str]] = mapped_column(Text)
     error_details: Mapped[Optional[str]] = mapped_column(Text)
     processing_ms: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('0'))
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class OcrResults(Base):
@@ -1456,7 +1456,7 @@ class OcrResults(Base):
     language: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'en'::text"))
     confidence: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
     engine: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'central_ocr'::text"))
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class OtSurgeries(Base):
@@ -1472,13 +1472,13 @@ class OtSurgeries(Base):
     theatre_id: Mapped[int] = mapped_column(Integer, nullable=False)
     procedure_name: Mapped[str] = mapped_column(Text, nullable=False)
     surgeon_name: Mapped[str] = mapped_column(Text, nullable=False)
-    scheduled_start: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
+    scheduled_start: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'scheduled'::text"))
     patient_id: Mapped[Optional[str]] = mapped_column(Text)
     estimated_duration_hours: Mapped[Optional[float]] = mapped_column(Double(53), server_default=text('1'))
     equipment_required: Mapped[Optional[str]] = mapped_column(Text)
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class OtTheatres(Base):
@@ -1494,7 +1494,7 @@ class OtTheatres(Base):
     theatre_name: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'available'::text"))
     equipment_notes: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class PatientAssignments(Base):
@@ -1514,13 +1514,13 @@ class PatientAssignments(Base):
     assigned_nurse: Mapped[Optional[str]] = mapped_column(Text)
     department: Mapped[Optional[str]] = mapped_column(Text)
     priority: Mapped[Optional[str]] = mapped_column(Text)
-    admission_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    admission_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     shift: Mapped[Optional[str]] = mapped_column(Text)
     status: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class PatientConsents(Base):
@@ -1538,7 +1538,7 @@ class PatientConsents(Base):
     patient_id: Mapped[Optional[str]] = mapped_column(Text)
     relation_to_patient: Mapped[Optional[str]] = mapped_column(Text)
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    signed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    signed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class PatientJourneyEvents(Base):
@@ -1558,9 +1558,9 @@ class PatientJourneyEvents(Base):
     module: Mapped[Optional[str]] = mapped_column(Text)
     reference_id: Mapped[Optional[str]] = mapped_column(Text)
     responsible_user: Mapped[Optional[str]] = mapped_column(Text)
-    event_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    event_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     metadata_json: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'{}'::text"))
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class PatientMovements(Base):
@@ -1574,7 +1574,7 @@ class PatientMovements(Base):
     to_department: Mapped[str] = mapped_column(Text, nullable=False)
     admission_id: Mapped[Optional[int]] = mapped_column(Integer)
     from_department: Mapped[Optional[str]] = mapped_column(Text)
-    moved_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    moved_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     moved_by: Mapped[Optional[str]] = mapped_column(Text)
 
 
@@ -1589,7 +1589,7 @@ class PatientVitals(Base):
     hospital_id: Mapped[Optional[int]] = mapped_column(Integer)
     patient_id: Mapped[Optional[str]] = mapped_column(Text)
     patient_name: Mapped[Optional[str]] = mapped_column(Text)
-    record_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    record_time: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     bp: Mapped[Optional[str]] = mapped_column(Text)
     pulse: Mapped[Optional[int]] = mapped_column(Integer)
     temperature: Mapped[Optional[float]] = mapped_column(Double(53))
@@ -1603,10 +1603,10 @@ class PatientVitals(Base):
     recorded_by: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     spo2: Mapped[Optional[float]] = mapped_column(REAL)
-    recorded_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    recorded_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     encounter_id: Mapped[Optional[int]] = mapped_column(Integer)
     admission_id: Mapped[Optional[int]] = mapped_column(Integer)
 
@@ -1624,8 +1624,8 @@ class PatientWorkflows(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'Registered'::text"))
     current_stage: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'Registered'::text"))
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    closed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    closed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
 
 
 class Patients(Base):
@@ -1655,8 +1655,8 @@ class Patients(Base):
     allergies: Mapped[Optional[str]] = mapped_column(Text)
     symptoms: Mapped[Optional[str]] = mapped_column(Text)
     phone: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     hospital_id: Mapped[Optional[int]] = mapped_column(Integer)
     address: Mapped[Optional[str]] = mapped_column(Text)
     emergency_contact: Mapped[Optional[str]] = mapped_column(Text)
@@ -1674,7 +1674,7 @@ class Patients(Base):
     insurance_policy_no: Mapped[Optional[str]] = mapped_column(Text)
     insurance_verified: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text('false'))
     insurance_verified_by: Mapped[Optional[str]] = mapped_column(Text)
-    insurance_verified_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    insurance_verified_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     insurance_verification_ref: Mapped[Optional[str]] = mapped_column(Text)
 
     admissions: Mapped[list['Admissions']] = relationship('Admissions', back_populates='patient')
@@ -1716,7 +1716,7 @@ class PharmacyDispense(Base):
     invoice_id: Mapped[Optional[int]] = mapped_column(Integer)
     total_amount: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
     created_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     pharmacy_dispense_items: Mapped[list['PharmacyDispenseItems']] = relationship('PharmacyDispenseItems', back_populates='dispense')
 
@@ -1732,7 +1732,7 @@ class PharmacyDispenseTransactions(Base):
     idempotency_key: Mapped[str] = mapped_column(Text, nullable=False)
     payload_hash: Mapped[str] = mapped_column(Text, nullable=False)
     result_json: Mapped[str] = mapped_column(Text, nullable=False)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class PharmacyInventory(Base):
@@ -1755,7 +1755,7 @@ class PharmacyInventory(Base):
     unit_price: Mapped[Optional[float]] = mapped_column(Double(53), server_default=text('0'))
     expiry_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
     stock_condition: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'proper'::text"))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     product_status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'Available'::text"))
     total_strips: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('0'))
     strip_cost: Mapped[Optional[float]] = mapped_column(Double(53), server_default=text('0.0'))
@@ -1791,7 +1791,7 @@ class PharmacyPurchases(Base):
     supplier_id: Mapped[Optional[int]] = mapped_column(Integer)
     expected_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
     received_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     stock_source: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'CASH'::text"))
     pr_id: Mapped[Optional[int]] = mapped_column(Integer)
 
@@ -1813,8 +1813,8 @@ class PharmacyReturns(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'quarantined'::text"))
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     reviewed_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    reviewed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    reviewed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     idempotency_key: Mapped[Optional[str]] = mapped_column(Text)
 
 
@@ -1833,7 +1833,7 @@ class PharmacySales(Base):
     unit_price: Mapped[float] = mapped_column(Double(53), nullable=False)
     amount: Mapped[float] = mapped_column(Double(53), nullable=False)
     invoice_id: Mapped[Optional[int]] = mapped_column(Integer)
-    sold_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    sold_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     patient_id: Mapped[Optional[str]] = mapped_column(Text)
     prescription_ref: Mapped[Optional[str]] = mapped_column(Text)
     prescription_item_id: Mapped[Optional[int]] = mapped_column(Integer)
@@ -1864,7 +1864,7 @@ class PharmacySuppliers(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'active'::text"))
     contact_person: Mapped[Optional[str]] = mapped_column(Text)
     phone: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     gst_number: Mapped[Optional[str]] = mapped_column(Text)
     drug_license_no: Mapped[Optional[str]] = mapped_column(Text)
     address: Mapped[Optional[str]] = mapped_column(Text)
@@ -1917,8 +1917,8 @@ class Prescriptions(Base):
     advice: Mapped[Optional[str]] = mapped_column(Text)
     follow_up_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     lab_fbs: Mapped[Optional[str]] = mapped_column(Text)
     lab_ppbs: Mapped[Optional[str]] = mapped_column(Text)
     lab_hba1c: Mapped[Optional[str]] = mapped_column(Text)
@@ -1954,8 +1954,8 @@ class PurchaseRequests(Base):
     priority: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'normal'::text"))
     notes: Mapped[Optional[str]] = mapped_column(Text)
     approved_by: Mapped[Optional[str]] = mapped_column(Text)
-    approved_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    approved_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     preferred_supplier_id: Mapped[Optional[int]] = mapped_column(Integer)
     supplier_id: Mapped[Optional[int]] = mapped_column(Integer)
 
@@ -1975,7 +1975,7 @@ class SharedExports(Base):
     file_path: Mapped[str] = mapped_column(Text, nullable=False)
     file_name: Mapped[Optional[str]] = mapped_column(Text)
     mime_type: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class ShiftHandovers(Base):
@@ -2004,8 +2004,8 @@ class ShiftHandovers(Base):
     handover_remarks: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class StockAdjustments(Base):
@@ -2019,7 +2019,7 @@ class StockAdjustments(Base):
     delta_qty: Mapped[int] = mapped_column(Integer, nullable=False)
     reason: Mapped[str] = mapped_column(Text, nullable=False)
     adjusted_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class StockMovements(Base):
@@ -2039,7 +2039,7 @@ class StockMovements(Base):
     ref_table: Mapped[Optional[str]] = mapped_column(Text)
     ref_id: Mapped[Optional[int]] = mapped_column(Integer)
     actor: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class Users(Base):
@@ -2069,11 +2069,11 @@ class Users(Base):
     phone: Mapped[Optional[str]] = mapped_column(Text)
     department: Mapped[Optional[str]] = mapped_column(Text)
     employee_id: Mapped[Optional[str]] = mapped_column(Text)
-    date_joined: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    date_joined: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'active'::text"))
     address: Mapped[Optional[str]] = mapped_column(Text)
     emergency_contact: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     hospital_id: Mapped[Optional[int]] = mapped_column(Integer)
 
     sessions: Mapped[list['Sessions']] = relationship('Sessions', back_populates='user')
@@ -2096,7 +2096,7 @@ class VendorPayments(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'paid'::text"))
     invoice_ref: Mapped[Optional[str]] = mapped_column(Text)
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class WardIndents(Base):
@@ -2118,9 +2118,9 @@ class WardIndents(Base):
     admission_id: Mapped[Optional[int]] = mapped_column(Integer)
     doctor_name: Mapped[Optional[str]] = mapped_column(Text)
     created_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     dispensed_by: Mapped[Optional[str]] = mapped_column(Text)
-    dispensed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    dispensed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
 
     ward_indent_items: Mapped[list['WardIndentItems']] = relationship('WardIndentItems', back_populates='indent')
 
@@ -2140,8 +2140,8 @@ class WorkflowRecords(Base):
     record_hash: Mapped[str] = mapped_column(Text, nullable=False)
     status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'saved'::text"))
     created_by: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
 
 class Admissions(Base):
@@ -2155,7 +2155,7 @@ class Admissions(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     patient_id: Mapped[str] = mapped_column(Text, nullable=False)
-    admission_date: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
+    admission_date: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     discharge_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
     notes: Mapped[Optional[str]] = mapped_column(Text)
     hospital_id: Mapped[Optional[int]] = mapped_column(Integer)
@@ -2182,11 +2182,11 @@ class DiagEquipmentMaintenance(Base):
     work_performed: Mapped[Optional[str]] = mapped_column(Text)
     responsible: Mapped[Optional[str]] = mapped_column(Text)
     next_due_date: Mapped[Optional[datetime.date]] = mapped_column(Date)
-    downtime_start: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    downtime_end: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    downtime_start: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
+    downtime_end: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     return_to_service_by: Mapped[Optional[str]] = mapped_column(Text)
-    return_to_service_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    return_to_service_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     equipment: Mapped['DiagEquipment'] = relationship('DiagEquipment', back_populates='diag_equipment_maintenance')
 
@@ -2213,9 +2213,9 @@ class DiagOrderItems(Base):
     progress_status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'ordered'::text"))
     is_duplicate_repeat: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text('false'))
     duplicate_reason: Mapped[Optional[str]] = mapped_column(Text)
-    cancelled_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    cancelled_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     cancel_reason: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     discharge_invoice_id: Mapped[Optional[int]] = mapped_column(Integer)
 
     order: Mapped['DiagOrders'] = relationship('DiagOrders', back_populates='diag_order_items')
@@ -2260,11 +2260,11 @@ class DiagQcRuns(Base):
     service_id: Mapped[Optional[int]] = mapped_column(Integer)
     control_material: Mapped[Optional[str]] = mapped_column(Text)
     control_lot: Mapped[Optional[str]] = mapped_column(Text)
-    run_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    run_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     operator: Mapped[Optional[str]] = mapped_column(Text)
     measurements: Mapped[Optional[str]] = mapped_column(Text)
     reviewed_by: Mapped[Optional[str]] = mapped_column(Text)
-    reviewed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    reviewed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     notes: Mapped[Optional[str]] = mapped_column(Text)
 
     equipment: Mapped['DiagEquipment'] = relationship('DiagEquipment', back_populates='diag_qc_runs')
@@ -2314,7 +2314,7 @@ class DiagServicePricingHistory(Base):
     payer_type: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'standard'::text"))
     effective_from: Mapped[Optional[datetime.date]] = mapped_column(Date, server_default=text('CURRENT_DATE'))
     changed_by: Mapped[Optional[str]] = mapped_column(Text)
-    changed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    changed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     service: Mapped['DiagServices'] = relationship('DiagServices', back_populates='diag_service_pricing_history')
 
@@ -2332,7 +2332,7 @@ class DiagStockMovements(Base):
     movement_type: Mapped[str] = mapped_column(Text, nullable=False)
     delta_qty: Mapped[float] = mapped_column(REAL, nullable=False)
     actor: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     notes: Mapped[Optional[str]] = mapped_column(Text)
 
     reagent_lot: Mapped['DiagReagentLots'] = relationship('DiagReagentLots', back_populates='diag_stock_movements')
@@ -2355,7 +2355,7 @@ class DiagnosticPayments(Base):
     transaction_ref: Mapped[Optional[str]] = mapped_column(Text)
     operator_name: Mapped[Optional[str]] = mapped_column(Text)
     remarks: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     diagnostic: Mapped['Diagnostics'] = relationship('Diagnostics', back_populates='diagnostic_payments')
 
@@ -2371,7 +2371,7 @@ class DoctorPayoutPayments(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     payout_id: Mapped[int] = mapped_column(Integer, nullable=False)
     amount: Mapped[float] = mapped_column(REAL, nullable=False)
-    paid_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    paid_date: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     notes: Mapped[Optional[str]] = mapped_column(Text)
     cashier_session_id: Mapped[Optional[int]] = mapped_column(Integer)
     payment_mode: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'bank_transfer'::text"))
@@ -2397,7 +2397,7 @@ class PharmacyDispenseItems(Base):
     unit_price: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
     amount: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
     balance_quantity: Mapped[Optional[float]] = mapped_column(REAL, server_default=text('0'))
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     dispense: Mapped['PharmacyDispense'] = relationship('PharmacyDispense', back_populates='pharmacy_dispense_items')
 
@@ -2429,7 +2429,7 @@ class PrescriptionItems(Base):
     instructions: Mapped[Optional[str]] = mapped_column(Text)
     generic_brand_name: Mapped[Optional[str]] = mapped_column(Text)
     remarks: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     prescription: Mapped['Prescriptions'] = relationship('Prescriptions', back_populates='prescription_items')
 
@@ -2470,9 +2470,9 @@ class Sessions(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     user_id: Mapped[int] = mapped_column(Integer, nullable=False)
     token_hash: Mapped[str] = mapped_column(Text, nullable=False)
-    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime, nullable=False)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    last_seen: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    expires_at: Mapped[datetime.datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    last_seen: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     ip_address: Mapped[Optional[str]] = mapped_column(Text)
     user_agent: Mapped[Optional[str]] = mapped_column(Text)
     hospital_id: Mapped[Optional[int]] = mapped_column(Integer)
@@ -2497,11 +2497,11 @@ class WardIndentItems(Base):
     route: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'Oral'::text"))
     quantity_dispensed: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('0'))
     status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'pending'::text"))
-    start_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    end_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    start_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
+    end_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     is_prn: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text('false'))
     instructions: Mapped[Optional[str]] = mapped_column(Text)
-    cancelled_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    cancelled_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     cancel_reason: Mapped[Optional[str]] = mapped_column(Text)
     ordered_by: Mapped[Optional[str]] = mapped_column(Text)
 
@@ -2521,16 +2521,16 @@ class DiagCriticalAlerts(Base):
     order_item_id: Mapped[int] = mapped_column(Integer, nullable=False)
     result_id: Mapped[Optional[int]] = mapped_column(Integer)
     report_id: Mapped[Optional[int]] = mapped_column(Integer)
-    raised_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    raised_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     contacted_person: Mapped[Optional[str]] = mapped_column(Text)
-    contacted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    contacted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     contacted_by: Mapped[Optional[str]] = mapped_column(Text)
     ack_method: Mapped[Optional[str]] = mapped_column(Text)
-    ack_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    ack_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     escalated: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text('false'))
-    escalated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    escalated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     escalated_to: Mapped[Optional[str]] = mapped_column(Text)
-    resolved_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    resolved_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     notes: Mapped[Optional[str]] = mapped_column(Text)
 
     order_item: Mapped['DiagOrderItems'] = relationship('DiagOrderItems', back_populates='diag_critical_alerts')
@@ -2548,13 +2548,13 @@ class DiagExternalReferrals(Base):
     order_item_id: Mapped[int] = mapped_column(Integer, nullable=False)
     local_review_status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'pending'::text"))
     vendor_id: Mapped[Optional[int]] = mapped_column(Integer)
-    dispatched_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    dispatched_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     dispatched_by: Mapped[Optional[str]] = mapped_column(Text)
     expected_turnaround: Mapped[Optional[str]] = mapped_column(Text)
-    received_report_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    received_report_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     report_document_id: Mapped[Optional[int]] = mapped_column(Integer)
     notes: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     order_item: Mapped['DiagOrderItems'] = relationship('DiagOrderItems', back_populates='diag_external_referrals')
 
@@ -2574,21 +2574,21 @@ class DiagImagingExams(Base):
     status: Mapped[str] = mapped_column(Text, nullable=False, server_default=text("'scheduled'::text"))
     modality: Mapped[Optional[str]] = mapped_column(Text)
     room: Mapped[Optional[str]] = mapped_column(Text)
-    scheduled_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    scheduled_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     expected_duration_min: Mapped[Optional[int]] = mapped_column(Integer, server_default=text('30'))
     assigned_staff: Mapped[Optional[str]] = mapped_column(Text)
     prep_instructions: Mapped[Optional[str]] = mapped_column(Text)
-    arrived_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    prep_completed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    arrived_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
+    prep_completed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     consent_recorded: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text('false'))
     consent_notes: Mapped[Optional[str]] = mapped_column(Text)
-    started_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    completed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    started_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
+    completed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     performing_staff: Mapped[Optional[str]] = mapped_column(Text)
     image_available: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text('false'))
     reschedule_reason: Mapped[Optional[str]] = mapped_column(Text)
     cancel_reason: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     order_item: Mapped['DiagOrderItems'] = relationship('DiagOrderItems', back_populates='diag_imaging_exams')
 
@@ -2614,9 +2614,9 @@ class DiagQcHolds(Base):
     assigned_to: Mapped[Optional[str]] = mapped_column(Text)
     repeat_qc_run_id: Mapped[Optional[int]] = mapped_column(Integer)
     released_by: Mapped[Optional[str]] = mapped_column(Text)
-    released_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    released_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     release_notes: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     equipment: Mapped['DiagEquipment'] = relationship('DiagEquipment', back_populates='diag_qc_holds')
     qc_run: Mapped['DiagQcRuns'] = relationship('DiagQcRuns', back_populates='diag_qc_holds')
@@ -2642,17 +2642,17 @@ class DiagReports(Base):
     content: Mapped[Optional[str]] = mapped_column(Text)
     template: Mapped[Optional[str]] = mapped_column(Text)
     drafted_by: Mapped[Optional[str]] = mapped_column(Text)
-    drafted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
-    submitted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    drafted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
+    submitted_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     reviewed_by: Mapped[Optional[str]] = mapped_column(Text)
     return_reason: Mapped[Optional[str]] = mapped_column(Text)
-    returned_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    returned_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     authorized_by: Mapped[Optional[str]] = mapped_column(Text)
-    authorized_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
-    released_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    authorized_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
+    released_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     previous_version_id: Mapped[Optional[int]] = mapped_column(Integer)
     amendment_reason: Mapped[Optional[str]] = mapped_column(Text)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     order_item: Mapped['DiagOrderItems'] = relationship('DiagOrderItems', back_populates='diag_reports')
 
@@ -2682,9 +2682,9 @@ class DiagResults(Base):
     flag: Mapped[Optional[str]] = mapped_column(Text)
     is_draft: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text('true'))
     entered_by: Mapped[Optional[str]] = mapped_column(Text)
-    entered_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    entered_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     updated_by: Mapped[Optional[str]] = mapped_column(Text)
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
 
     order_item: Mapped['DiagOrderItems'] = relationship('DiagOrderItems', back_populates='diag_results')
 
@@ -2707,14 +2707,14 @@ class DiagSpecimens(Base):
     collection_location: Mapped[Optional[str]] = mapped_column(Text)
     identity_verified: Mapped[Optional[bool]] = mapped_column(Boolean, server_default=text('false'))
     collected_by: Mapped[Optional[str]] = mapped_column(Text)
-    collected_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    collected_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     collection_notes: Mapped[Optional[str]] = mapped_column(Text)
     received_by: Mapped[Optional[str]] = mapped_column(Text)
-    received_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    received_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     condition_on_receipt: Mapped[Optional[str]] = mapped_column(Text)
     rejection_reason: Mapped[Optional[str]] = mapped_column(Text)
     replaces_specimen_id: Mapped[Optional[int]] = mapped_column(Integer)
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     order_item: Mapped['DiagOrderItems'] = relationship('DiagOrderItems', back_populates='diag_specimens')
 
@@ -2742,7 +2742,7 @@ class Documents(Base):
     file_data: Mapped[Optional[bytes]] = mapped_column(LargeBinary)
     ocr_text: Mapped[Optional[str]] = mapped_column(Text)
     ocr_language: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'en'::text"))
-    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    created_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
     hospital_id: Mapped[Optional[int]] = mapped_column(Integer)
     module_name: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'Repository'::text"))
     ocr_status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'pending'::text"))
@@ -2755,15 +2755,15 @@ class Documents(Base):
     tags_json: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'[]'::text"))
     uploaded_by: Mapped[Optional[str]] = mapped_column(Text)
     verified_by: Mapped[Optional[str]] = mapped_column(Text)
-    verified_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    verified_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     module_record_id: Mapped[Optional[str]] = mapped_column(Text)
     lifecycle_status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'uploaded'::text"))
     queue_status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'pending'::text"))
     security_status: Mapped[Optional[str]] = mapped_column(Text, server_default=text("'checked'::text"))
-    indexed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime)
+    indexed_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True))
     folder_path: Mapped[Optional[str]] = mapped_column(Text)
     thumbnail_path: Mapped[Optional[str]] = mapped_column(Text)
-    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime, server_default=text('CURRENT_TIMESTAMP'))
+    updated_at: Mapped[Optional[datetime.datetime]] = mapped_column(DateTime(timezone=True), server_default=text('CURRENT_TIMESTAMP'))
 
     admission: Mapped[Optional['Admissions']] = relationship('Admissions', back_populates='documents')
     patient: Mapped[Optional['Patients']] = relationship('Patients', back_populates='documents')

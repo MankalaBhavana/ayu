@@ -16,6 +16,7 @@ import {
   TableRow,
 } from "../components/ui";
 import type { Notice } from "../types";
+import { getISTDateTimeKey } from "../lib/format";
 
 type ConsultationRecord = {
   id: number;
@@ -208,15 +209,12 @@ export default function DoctorsHistoryPage({ setNotice, onOpenPatient }: Props) 
   const formatAppointmentDate = (dateStr: string) => {
     if (!dateStr) return "-";
     try {
-      const dt = new Date(dateStr);
-      if (isNaN(dt.getTime())) return dateStr;
-      
-      const day = String(dt.getDate()).padStart(2, "0");
-      const month = String(dt.getMonth() + 1).padStart(2, "0");
-      const year = dt.getFullYear();
-      
-      let hours = dt.getHours();
-      const minutes = String(dt.getMinutes()).padStart(2, "0");
+      if (!getISTDateTimeKey(dateStr)) return dateStr;
+      // "YYYY-MM-DD HH:mm:ss" in IST
+      const istKey = getISTDateTimeKey(dateStr);
+      const [year, month, day] = istKey.slice(0, 10).split("-");
+      let hours = Number(istKey.slice(11, 13));
+      const minutes = istKey.slice(14, 16);
       const ampm = hours >= 12 ? "PM" : "AM";
       hours = hours % 12;
       hours = hours ? hours : 12; // the hour '0' should be '12'

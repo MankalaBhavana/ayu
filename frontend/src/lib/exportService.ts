@@ -6,6 +6,7 @@ import { jsPDF } from "jspdf";
 import { renderAyuPdfHeaderHtml, renderAyuPdfFooterHtml } from "./pdfTemplate";
 import { PRINT_BRAND_HEADER_DATA_URI, PRINT_MEDICAL_SYMBOL_DATA_URI, PRINT_WATERMARK_DATA_URI } from "./printBrand";
 
+import { formatDateOnlyIST, formatTimeIST, todayIST } from "./format";
 export type StandardPdfSection = {
   title: string;
   headers: string[];
@@ -50,7 +51,7 @@ export type StandardPdfPayload = {
 };
 
 function datedFilename(base: string): string {
-  const date = new Date().toISOString().slice(0, 10);
+  const date = todayIST();
   const normalized = String(base || "Hospital_Report")
     .replace(/\.pdf$/i, "")
     .replace(/[^A-Za-z0-9_-]+/g, "_")
@@ -255,8 +256,8 @@ export async function generateClientPdf(
     wrapper.style.padding = "40px";
     wrapper.style.fontFamily = "Arial, sans-serif";
     
-    const printDate = new Date().toLocaleDateString("en-GB");
-    const printTime = new Date().toLocaleTimeString("en-US", { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true });
+    const printDate = formatDateOnlyIST(new Date(), undefined, "en-GB");
+    const printTime = formatTimeIST(new Date(), { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: true }, "en-US");
 
     wrapper.innerHTML = `
       <div style="position: relative; z-index: 1;">

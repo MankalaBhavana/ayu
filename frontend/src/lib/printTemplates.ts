@@ -1,3 +1,4 @@
+import { formatDateOnlyIST } from "./format";
 const escapeHtml = (value: unknown) =>
   String(value ?? "-")
     .replace(/&/g, "&amp;")
@@ -87,7 +88,7 @@ export function buildPrintLabelsHtml(opts: {
   invoiceNo?: string;
   items: { medicineName: string; batchNo?: string; expiryDate?: string; quantity: number }[];
 }) {
-  const printedAt = new Date().toLocaleDateString("en-IN", { day: "2-digit", month: "short", year: "numeric" });
+  const printedAt = formatDateOnlyIST(new Date(), { day: "2-digit", month: "short", year: "numeric" });
   const labelStyle = `
     * { box-sizing: border-box; }
     body { margin: 0; font-family: Arial, Helvetica, sans-serif; color: #0f172a; }

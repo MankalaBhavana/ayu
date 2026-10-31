@@ -7,6 +7,7 @@ import { printViaIframe } from "../../lib/printViaIframe";
 import { buildPrintDocumentHtml } from "../../lib/printTemplates";
 import { useDropdownOptions } from "../../lib/dropdownService";
 import { filterDetailRecords } from "./detailsSearch";
+import { formatTimeIST, todayIST } from "../../lib/format";
 import "./billingTheme.css";
 
 type Props = {
@@ -21,7 +22,7 @@ const fmt = (n: number) =>
   });
 
 export default function BillingOverviewPage({ setNotice, onNavigate }: Props) {
-  const [targetDate, setTargetDate] = useState(() => new Date().toISOString().split("T")[0]);
+  const [targetDate, setTargetDate] = useState(() => todayIST());
   const [department, setDepartment] = useState("All departments");
   const [visitType, setVisitType] = useState("All visit types");
   const [searchQuery, setSearchQuery] = useState("");
@@ -250,7 +251,7 @@ export default function BillingOverviewPage({ setNotice, onNavigate }: Props) {
       subtitleLines: [
         `Ayu Polyclinic & Emergency Clinic · Billing Department`,
         `Report Date: ${targetDate}`,
-        `Generated: ${new Date().toLocaleTimeString("en-IN")}`,
+        `Generated: ${formatTimeIST(new Date())}`,
       ],
       meta: [
         { label: "Net Billed", value: `₹${fmt(stats.net_billed)}` },
@@ -758,7 +759,7 @@ return (
                   <div style={{ display: "flex", justifyContent: "space-between", marginBottom: "8px", fontSize: "0.875rem" }}>
                     <span style={{ color: "#64748b" }}>Opened at</span>
                     <span style={{ fontWeight: 600, color: "#0f172a" }}>
-                      {session.opened_at ? new Date(session.opened_at).toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit" }) : "09:00 AM"}
+                      {session.opened_at ? formatTimeIST(session.opened_at, { hour: "2-digit", minute: "2-digit" }) : "09:00 AM"}
                     </span>
                   </div>
 
